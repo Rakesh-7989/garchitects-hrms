@@ -575,7 +575,7 @@
                             ${isActive
                                 ? `<button class="btn btn-sm btn-warning" onclick="toggleEmployeeStatus(${emp.id}, 'inactive')" title="Deactivate"><i class="fas fa-pause-circle"></i></button>
                                    <button class="btn btn-sm btn-info" onclick="pauseEmployee(${emp.id})" title="Pause (temp)"><i class="fas fa-pause"></i></button>
-                                   <button class="btn btn-sm btn-warning" onclick="openStatusModal(${emp.id}, 'hold')" title="Hold with reason"><i class="fas fa-hand-pause"></i></button>
+                                   <button class="btn btn-sm btn-warning" onclick="openStatusModal(${emp.id}, 'hold')" title="Hold with reason"><i class="fas fa-circle-pause"></i></button>
                                    <button class="btn btn-sm btn-dark" onclick="openStatusModal(${emp.id}, 'abscond')" title="Mark absconded" style="background:#1f2937;border-color:#1f2937;color:#fff;"><i class="fas fa-user-slash"></i></button>
                                    <button class="btn btn-sm btn-danger" onclick="openStatusModal(${emp.id}, 'terminate')" title="Terminate with reason"><i class="fas fa-trash"></i></button>`
                                 : isOnHold
@@ -584,7 +584,7 @@
                                        <button class="btn btn-sm btn-danger" onclick="openStatusModal(${emp.id}, 'terminate')" title="Terminate with reason"><i class="fas fa-trash"></i></button>`
                                     : isPaused
                                     ? `<button class="btn btn-sm btn-success" onclick="resumeEmployee(${emp.id})" title="Resume"><i class="fas fa-play"></i></button>
-                                       <button class="btn btn-sm btn-warning" onclick="openStatusModal(${emp.id}, 'hold')" title="Hold with reason"><i class="fas fa-hand-pause"></i></button>
+                                       <button class="btn btn-sm btn-warning" onclick="openStatusModal(${emp.id}, 'hold')" title="Hold with reason"><i class="fas fa-circle-pause"></i></button>
                                        <button class="btn btn-sm btn-danger" onclick="openStatusModal(${emp.id}, 'terminate')" title="Terminate with reason"><i class="fas fa-trash"></i></button>`
                                     : isAbsconded
                                     ? `<button class="btn btn-sm btn-success" onclick="rehireEmployee(${emp.id})" title="Rejoin (same ID)"><i class="fas fa-undo"></i></button>
@@ -592,7 +592,7 @@
                                     : isTerminated
                                     ? `<button class="btn btn-sm btn-success" onclick="rehireEmployee(${emp.id})" title="Rehire (same Employee ID)"><i class="fas fa-undo"></i></button>`
                                     : `<button class="btn btn-sm btn-success" onclick="toggleEmployeeStatus(${emp.id}, 'active')" title="Activate"><i class="fas fa-play-circle"></i></button>
-                                       <button class="btn btn-sm btn-warning" onclick="openStatusModal(${emp.id}, 'hold')" title="Hold with reason"><i class="fas fa-hand-pause"></i></button>`
+                                       <button class="btn btn-sm btn-warning" onclick="openStatusModal(${emp.id}, 'hold')" title="Hold with reason"><i class="fas fa-circle-pause"></i></button>`
                             }
                         </div>
                     </td>
@@ -1054,7 +1054,7 @@
             header += '<button class="btn btn-sm btn-secondary" onclick="resetEmployeePassword(' + emp.id + ')"><i class="fas fa-key"></i> Reset Password</button>';
             if (emp.status === 'active') {
                 header += '<button class="btn btn-sm btn-warning" onclick="pauseEmployee(' + emp.id + ')"><i class="fas fa-pause"></i> Pause</button>';
-                header += '<button class="btn btn-sm btn-warning" onclick="openStatusModal(' + emp.id + ', \'hold\')"><i class="fas fa-hand-pause"></i> Hold</button>';
+                header += '<button class="btn btn-sm btn-warning" onclick="openStatusModal(' + emp.id + ', \'hold\')"><i class="fas fa-circle-pause"></i> Hold</button>';
                 header += '<button class="btn btn-sm btn-dark" onclick="openStatusModal(' + emp.id + ', \'abscond\')" style="background:#1f2937;border-color:#1f2937;color:#fff;"><i class="fas fa-user-slash"></i> Abscond</button>';
                 header += '<button class="btn btn-sm btn-danger" onclick="openStatusModal(' + emp.id + ', \'terminate\')"><i class="fas fa-trash"></i> Terminate</button>';
             } else if (emp.status === 'paused') {
