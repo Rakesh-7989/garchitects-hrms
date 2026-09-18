@@ -258,16 +258,36 @@ router.post('/login', loginLimiter, validateLogin, async (req, res) => {
             // Burn the same bcrypt time as the found-user path so attackers
             // cannot enumerate valid Employee IDs by response timing.
             await bcrypt.compare(password, TIMING_EQUALIZER_HASH);
+            // Status-aware message: check if the ID exists but is not active
+            // (on_hold / absconded / terminated / paused / inactive) so the
+            // employee knows why login is blocked. Password is NOT verified
+            // here, so no credential leak — only the account state is shared.
+            let statusMessage = 'Invalid Employee ID or password';
+            try {
+                const stRes = await query(
+                    `SELECT status FROM employees
+                     WHERE LOWER(employee_id) = LOWER($1) OR LOWER(email) = LOWER($1) LIMIT 1`,
+                    [employee_id]
+                );
+                if (stRes.rows.length > 0) {
+                    const st = stRes.rows[0].status;
+                    if (st === 'on_hold') statusMessage = 'Your account is on hold. Please contact HR.';
+                    else if (st === 'absconded') statusMessage = 'Your account is marked absconded. Please contact HR.';
+                    else if (st === 'terminated') statusMessage = 'Your account has been terminated. Please contact HR.';
+                    else if (st === 'paused') statusMessage = 'Your account is paused. Please contact your administrator.';
+                    else if (st === 'inactive') statusMessage = 'Your account is inactive. Please contact your administrator.';
+                }
+            } catch (stErr) { /* keep generic message on DB error */ }
             logAudit({
                 action: 'auth.login_failed',
                 entityType: 'employee',
                 entityId: null,
-                details: { identifier: String(employee_id || ''), reason: 'unknown_user' },
+                details: { identifier: String(employee_id || ''), reason: 'unknown_user_or_inactive' },
                 ip: req.ip
             });
-            return res.status(401).json({ 
-                success: false, 
-                message: 'Invalid Employee ID or password' 
+            return res.status(401).json({
+                success: false,
+                message: statusMessage
             });
         }
         

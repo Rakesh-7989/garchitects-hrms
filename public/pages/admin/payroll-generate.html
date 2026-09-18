@@ -303,8 +303,8 @@
             employees = d.employees;
             const sel = document.getElementById('ppEmployee');
             sel.innerHTML = '<option value="">Select Employee...</option>' + employees
-                .filter(e => e.status === 'active' && e.role !== 'admin')
-                .map(e => '<option value="' + e.id + '" data-salary="' + (e.salary || 0) + '">' + ppEsc(e.first_name + ' ' + e.last_name) + ' (' + ppEsc(e.employee_id) + ')</option>')
+                .filter(e => (e.status === 'active' || e.status === 'on_hold') && e.role !== 'admin')
+                .map(e => '<option value="' + e.id + '" data-salary="' + (e.salary || 0) + '">' + ppEsc(e.first_name + ' ' + e.last_name) + ' (' + ppEsc(e.employee_id) + ')' + (e.status === 'on_hold' ? ' — ON HOLD ⚠' : '') + '</option>')
                 .join('');
         }
 
@@ -386,6 +386,11 @@
                             }
                             dv.style.display = 'block';
                             dv.textContent = parts.join(' + ') + ' = ' + s.working_days + ' total days | Present ' + s.present_days + ' (incl. check-ins, WFH, week offs & holidays)' + extra + ' | LOP ' + s.lop_days + ' days will be deducted (period ' + s.period_start + ' to ' + s.period_end + ')';
+                            if (s.status_warning) {
+                                dv.textContent = '⚠ ' + s.status_warning + ' | ' + dv.textContent;
+                                dv.style.background = '#FEF3C7'; dv.style.border = '1px solid #F59E0B'; dv.style.color = '#92400E';
+                                showToast(s.status_warning, 'warning');
+                            }
                         }
                     }
                     updateSummary();
@@ -413,6 +418,9 @@
                 chip('Bank', (emp.bank_name || '') + ' ' + (emp.bank_account || '')),
                 chip('IFSC', emp.bank_ifsc || '-')
             ];
+            if (emp.status === 'on_hold') {
+                chips.push('<span class="pp-chip" style="color:#92400E;border-color:#F59E0B;background:#FEF3C7;"><b>⚠ ON HOLD</b>' + (emp.status_reason ? ' — ' + ppEsc(emp.status_reason) : '') + (emp.last_working_day ? ' | LWD: ' + ppEsc(String(emp.last_working_day).substring(0,10)) : '') + ' — generate with caution</span>');
+            }
             document.getElementById('profileChips').innerHTML = chips.join('');
             document.getElementById('emailChips').innerHTML = emp.personal_email
                 ? '<span class="pp-chip"><b>' + ppEsc(emp.personal_email) + '</b></span>'

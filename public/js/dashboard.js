@@ -547,6 +547,8 @@ function getStatusBadge(status) {
         active: 'success',
         inactive: 'secondary',
         paused: 'warning',
+        on_hold: 'warning',
+        absconded: 'danger',
         terminated: 'danger',
         pending: 'warning',
         approved: 'success',

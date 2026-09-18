@@ -150,7 +150,8 @@ async function getProfileSalaryValues(employeeId, values) {
         `SELECT salary, basic_salary, hra, conveyance, special_allowance, other_allowance,
                 pf, esi, professional_tax, income_tax, other_deduction,
                 employer_pf, employer_esi, employer_contribution, personal_email,
-                first_name, last_name, employee_id as emp_code
+                first_name, last_name, employee_id as emp_code,
+                status as employee_status, status_reason, last_working_day
          FROM employees WHERE id = $1`,
         [employeeId]
     );
@@ -182,9 +183,20 @@ async function getProfileSalaryValues(employeeId, values) {
     };
     merged.monthly_gross = merged.basic_salary + merged.hra + merged.conveyance
         + merged.special_allowance + merged.other_allowance;
+    // Employment-status warning (Hold/Abscond/Terminated): generation is NOT
+    // blocked, but the UI shows an amber banner so payroll is done knowingly.
+    const empStatus = profile.employee_status || 'active';
+    let status_warning = null;
+    if (empStatus === 'on_hold') status_warning = 'Employee is ON HOLD' + (profile.status_reason ? ' — ' + profile.status_reason : '') + (profile.last_working_day ? ' | LWD: ' + String(profile.last_working_day).substring(0, 10) : '') + '. Generate with caution.';
+    else if (empStatus === 'absconded') status_warning = 'Employee is marked ABSCONDED' + (profile.status_reason ? ' — ' + profile.status_reason : '') + (profile.last_working_day ? ' | LWD: ' + String(profile.last_working_day).substring(0, 10) : '') + '. Generate with caution.';
+    else if (empStatus === 'terminated') status_warning = 'Employee is TERMINATED' + (profile.status_reason ? ' — ' + profile.status_reason : '') + (profile.last_working_day ? ' | LWD: ' + String(profile.last_working_day).substring(0, 10) : '') + '. Generate with caution.';
+    else if (empStatus === 'paused' || empStatus === 'inactive') status_warning = 'Employee is ' + empStatus.toUpperCase() + '. Generate with caution.';
     return { ...values, ...merged, personal_email: profile.personal_email || null,
         first_name: profile.first_name || '', last_name: profile.last_name || '',
-        emp_code: profile.emp_code || '' };
+        emp_code: profile.emp_code || '', employee_status: empStatus,
+        status_reason: profile.status_reason || null,
+        last_working_day: profile.last_working_day || null,
+        status_warning };
 }
 
 // Auto-calculate payroll attendance numbers straight from the attendance,
@@ -193,8 +205,13 @@ async function getProfileSalaryValues(employeeId, values) {
 // paid (incl. approved WFH), approved leave, or LOP - so the
 // working = present + leave + LOP identity always holds.
 async function computeAttendanceSummary(employeeId, month, year) {
-    const empRes = await query('SELECT joining_date FROM employees WHERE id = $1', [employeeId]);
+    const empRes = await query('SELECT joining_date, status as employee_status, status_reason, last_working_day FROM employees WHERE id = $1', [employeeId]);
     if (empRes.rows.length === 0) return null;
+    const empStatus = empRes.rows[0];
+    let status_warning = null;
+    if (empStatus.employee_status === 'on_hold') status_warning = 'Employee is ON HOLD. Generate with caution.';
+    else if (empStatus.employee_status === 'absconded') status_warning = 'Employee is marked ABSCONDED. Generate with caution.';
+    else if (empStatus.employee_status === 'terminated') status_warning = 'Employee is TERMINATED. Generate with caution.';
 
     const pad = (n) => String(n).padStart(2, '0');
     const start = `${year}-${pad(month)}-01`;
@@ -214,7 +231,8 @@ async function computeAttendanceSummary(employeeId, month, year) {
             working_days: 0, present_days: 0, leave_days: 0, lop_days: 0,
             total_days: 0, week_offs: 0, holidays: 0,
             breakdown: { present: 0, late: 0, half_day: 0, absent: 0, wfh: 0, holiday: 0 },
-            period_start: effStart, period_end: end, future_period: true
+            period_start: effStart, period_end: end, future_period: true,
+            employee_status: empStatus.employee_status || 'active', status_warning
         };
     }
 
@@ -427,7 +445,11 @@ async function computeAttendanceSummary(employeeId, month, year) {
             holiday: holidaySet.size
         },
         period_start: effStart,
-        period_end: end
+        period_end: end,
+        employee_status: empStatus.employee_status || 'active',
+        status_reason: empStatus.status_reason || null,
+        last_working_day: empStatus.last_working_day || null,
+        status_warning
     };
 }
 
@@ -988,7 +1010,8 @@ router.get('/all', verifyToken, isAdmin, async (req, res) => {
     try {
         const { month, year, status, search, limit } = req.query;
         let sqlQuery = `
-            SELECT p.*, e.first_name, e.last_name, e.employee_id as emp_id
+            SELECT p.*, e.first_name, e.last_name, e.employee_id as emp_id,
+                e.status as employee_status, e.status_reason, e.last_working_day
             FROM payroll p
             JOIN employees e ON p.employee_id = e.id
             WHERE 1=1
@@ -1289,7 +1312,7 @@ router.post('/generate', verifyToken, isAdmin, async (req, res) => {
             action: 'payroll.generate',
             entityType: 'payslip',
             entityId: payslip.id,
-            details: { employee_db_id: payslip.employee_id, month, year, net },
+            details: { employee_db_id: payslip.employee_id, month, year, net, employee_status: finalValues.employee_status || payrollValues.employee_status || 'active' },
             ip: req.ip
         });
 
@@ -1313,7 +1336,9 @@ router.post('/generate', verifyToken, isAdmin, async (req, res) => {
             }
         }
 
-        res.json({ success: true, payslip, email_sent });
+        res.json({ success: true, payslip, email_sent,
+            employee_status: finalValues.employee_status || payrollValues.employee_status || 'active',
+            status_warning: finalValues.status_warning || payrollValues.status_warning || null });
     } catch (error) {
         console.error('Generate payroll error:', error);
         res.status(500).json({ success: false, message: 'Server error' });

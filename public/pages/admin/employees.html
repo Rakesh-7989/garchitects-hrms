@@ -109,6 +109,10 @@
                         <option value="">All Status</option>
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
+                        <option value="paused">Paused</option>
+                        <option value="on_hold">On Hold</option>
+                        <option value="absconded">Absconded</option>
+                        <option value="terminated">Terminated</option>
                     </select>
                 </div>
             </div>
@@ -232,7 +236,7 @@
                             <small style="color:var(--text-secondary);">Chain: Employee &rarr; Team Lead &rarr; Manager &rarr; Admin; HR reports to a Manager. Admin is top. Set the immediate supervisor.</small></div>
                         <div class="form-group"><label>Total Compensation</label><input type="number" class="form-control" id="editSalary"></div>
                         <div class="form-group"><label>UAN Number</label><input type="text" class="form-control" id="editUAN" maxlength="12" pattern="[0-9]{12}" title="UAN must be exactly 12 digits" placeholder="e.g. 123456789012"></div>
-                        <div class="form-group"><label>Status</label><select class="form-control" id="editStatus"><option value="active">Active</option><option value="inactive">Inactive</option><option value="terminated">Terminated</option></select></div>
+                        <div class="form-group"><label>Status</label><select class="form-control" id="editStatus"><option value="active">Active</option><option value="inactive">Inactive</option><option value="paused">Paused</option><option value="on_hold">On Hold</option><option value="absconded">Absconded</option><option value="terminated">Terminated</option></select></div>
                     </div>
                     <div style="padding:9px 12px;border-radius:var(--radius);background:#F0FDF4;border:1px solid #86EFAC;color:#15803D;font-size:0.78rem;font-weight:700;letter-spacing:0.4px;margin-bottom:12px;">
                         <i class="fas fa-user" style="margin-right:6px;"></i>PERSONAL DATA &mdash; EMPLOYEE FILLS VIA MY PROFILE (CHANGES COME TO YOU FOR APPROVAL)
@@ -375,6 +379,24 @@
         </div>
     </div>
 
+    <div class="modal" id="statusActionModal">
+        <div class="modal-content" style="max-width:460px;">
+            <div class="modal-header">
+                <h2 id="statusModalTitle">Hold Employee</h2>
+                <button onclick="closeModal('statusActionModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="statusModalDesc" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;"></p>
+                <div class="form-group"><label>Reason * (min 3 chars)</label><textarea class="form-control" id="statusReason" rows="3" placeholder="e.g. Under enquiry / absconded since ..."></textarea></div>
+                <div class="form-group"><label>Last Working Day *</label><input type="date" class="form-control" id="statusLwd"></div>
+                <div class="modal-footer" style="padding:0;margin-top:12px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('statusActionModal')">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="statusConfirmBtn" onclick="confirmStatusAction()">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal" id="rejectModal">
         <div class="modal-content" style="max-width:440px;">
             <div class="modal-header">
@@ -509,13 +531,17 @@
                 return;
             }
             const sorted = [...employees].sort((a, b) => {
-                const order = { active: 0, inactive: 1, paused: 1, terminated: 2 };
-                return (order[a.status] || 1) - (order[b.status] || 1);
+                const order = { active: 0, inactive: 1, paused: 1, on_hold: 1, absconded: 2, terminated: 3 };
+                return (order[a.status] ?? 1) - (order[b.status] ?? 1);
             });
             tbody.innerHTML = sorted.map(emp => {
                 const isActive = emp.status === 'active';
                 const isTerminated = emp.status === 'terminated';
                 const isPaused = emp.status === 'paused';
+                const isOnHold = emp.status === 'on_hold';
+                const isAbsconded = emp.status === 'absconded';
+                const isInactive = emp.status === 'inactive';
+                const holdTitle = emp.status_reason ? 'Reason: ' + emp.status_reason + (emp.last_working_day ? ' | LWD: ' + String(emp.last_working_day).substring(0,10) : '') : emp.status;
                 const incFields = getIncompleteFields(emp);
                 const incCount = incFields.length;
                 const incLabel = incCount > 0 ? (incCount + ' from employee') : 'Complete';
@@ -541,20 +567,33 @@
                     <td>${escapeHtml(emp.designation_name || '-')}${emp.designation_level ? '<br><span class="badge badge-secondary" style="font-size:0.62rem;">Level ' + escapeHtml(String(emp.designation_level)) + '</span>' : ''}</td>
                     <td>${emp.reporting_manager_name ? '<span style="font-size:0.85rem;">' + escapeHtml(emp.reporting_manager_name) + '</span><br><span class="badge badge-secondary" style="font-size:0.62rem;">' + escapeHtml(emp.reporting_manager_employee_id || '') + '</span>' : '<span class="badge badge-secondary" style="font-size:0.7rem;">Not Assigned</span>'}</td>
                     <td><span class="badge badge-${emp.role==='admin'?'danger':emp.role==='hr'?'warning':emp.role==='manager'?'info':emp.role==='team_lead'?'primary':'secondary'}">${escapeHtml(emp.role)}</span></td>
-                    <td><span class="badge badge-${getStatusBadge(emp.status)}">${escapeHtml(emp.status)}</span></td>
+                    <td><span class="badge badge-${getStatusBadge(emp.status)}" title="${escapeHtml(holdTitle)}">${escapeHtml(emp.status)}${emp.status_reason ? '*' : ''}</span></td>
                     <td>
-                        <div style="display:flex;gap:4px;">
+                        <div style="display:flex;gap:4px;flex-wrap:wrap;">
                             <button class="btn btn-sm btn-info" onclick="viewEmployee(${emp.id})" title="View"><i class="fas fa-eye"></i></button>
                             <button class="btn btn-sm btn-secondary" onclick="editEmployee(${emp.id})" title="Edit"><i class="fas fa-edit"></i></button>
-                            ${!isTerminated ? (isActive
+                            ${isActive
                                 ? `<button class="btn btn-sm btn-warning" onclick="toggleEmployeeStatus(${emp.id}, 'inactive')" title="Deactivate"><i class="fas fa-pause-circle"></i></button>
-                                   <button class="btn btn-sm btn-info" onclick="pauseEmployee(${emp.id})" title="Pause"><i class="fas fa-pause"></i></button>
-                                   <button class="btn btn-sm btn-danger" onclick="deleteEmployee(${emp.id})" title="Terminate"><i class="fas fa-trash"></i></button>`
-                                : isPaused
+                                   <button class="btn btn-sm btn-info" onclick="pauseEmployee(${emp.id})" title="Pause (temp)"><i class="fas fa-pause"></i></button>
+                                   <button class="btn btn-sm btn-warning" onclick="openStatusModal(${emp.id}, 'hold')" title="Hold with reason"><i class="fas fa-hand-pause"></i></button>
+                                   <button class="btn btn-sm btn-dark" onclick="openStatusModal(${emp.id}, 'abscond')" title="Mark absconded" style="background:#1f2937;border-color:#1f2937;color:#fff;"><i class="fas fa-user-slash"></i></button>
+                                   <button class="btn btn-sm btn-danger" onclick="openStatusModal(${emp.id}, 'terminate')" title="Terminate with reason"><i class="fas fa-trash"></i></button>`
+                                : isOnHold
+                                    ? `<button class="btn btn-sm btn-success" onclick="unholdEmployee(${emp.id})" title="Release from hold"><i class="fas fa-play"></i></button>
+                                       <button class="btn btn-sm btn-dark" onclick="openStatusModal(${emp.id}, 'abscond')" title="Mark absconded" style="background:#1f2937;border-color:#1f2937;color:#fff;"><i class="fas fa-user-slash"></i></button>
+                                       <button class="btn btn-sm btn-danger" onclick="openStatusModal(${emp.id}, 'terminate')" title="Terminate with reason"><i class="fas fa-trash"></i></button>`
+                                    : isPaused
                                     ? `<button class="btn btn-sm btn-success" onclick="resumeEmployee(${emp.id})" title="Resume"><i class="fas fa-play"></i></button>
-                                       <button class="btn btn-sm btn-danger" onclick="deleteEmployee(${emp.id})" title="Terminate"><i class="fas fa-trash"></i></button>`
-                                    : `<button class="btn btn-sm btn-success" onclick="toggleEmployeeStatus(${emp.id}, 'active')" title="Activate"><i class="fas fa-play-circle"></i></button>`
-                            ) : ''}
+                                       <button class="btn btn-sm btn-warning" onclick="openStatusModal(${emp.id}, 'hold')" title="Hold with reason"><i class="fas fa-hand-pause"></i></button>
+                                       <button class="btn btn-sm btn-danger" onclick="openStatusModal(${emp.id}, 'terminate')" title="Terminate with reason"><i class="fas fa-trash"></i></button>`
+                                    : isAbsconded
+                                    ? `<button class="btn btn-sm btn-success" onclick="rehireEmployee(${emp.id})" title="Rejoin (same ID)"><i class="fas fa-undo"></i></button>
+                                       <button class="btn btn-sm btn-danger" onclick="openStatusModal(${emp.id}, 'terminate')" title="Convert to terminated"><i class="fas fa-trash"></i></button>`
+                                    : isTerminated
+                                    ? `<button class="btn btn-sm btn-success" onclick="rehireEmployee(${emp.id})" title="Rehire (same Employee ID)"><i class="fas fa-undo"></i></button>`
+                                    : `<button class="btn btn-sm btn-success" onclick="toggleEmployeeStatus(${emp.id}, 'active')" title="Activate"><i class="fas fa-play-circle"></i></button>
+                                       <button class="btn btn-sm btn-warning" onclick="openStatusModal(${emp.id}, 'hold')" title="Hold with reason"><i class="fas fa-hand-pause"></i></button>`
+                            }
                         </div>
                     </td>
                 </tr>`;
@@ -861,6 +900,72 @@
             }
         }
 
+        let statusActionTargetId = null;
+        let statusActionType = null;
+        function openStatusModal(id, type) {
+            statusActionTargetId = id;
+            statusActionType = type;
+            const emp = (allEmployees || []).find(e => String(e.id) === String(id)) || {};
+            const name = ((emp.first_name || '') + ' ' + (emp.last_name || '')).trim() + (emp.employee_id ? ' (' + emp.employee_id + ')' : '');
+            const titles = { hold: 'Hold Employee', abscond: 'Mark Absconded', terminate: 'Terminate Employee' };
+            const descs = {
+                hold: 'Account Hold: login blocked, data safe. Reason + Last Working Day mandatory. ' + name,
+                abscond: 'Abscond: employee left without intimation. Login blocked, data safe. Reason + Last Working Day mandatory. ' + name,
+                terminate: 'Terminate: permanent exit. Login blocked, data kept, rehire possible with same Employee ID. Reason + Last Working Day mandatory. ' + name
+            };
+            document.getElementById('statusModalTitle').textContent = titles[type] || 'Update Status';
+            document.getElementById('statusModalDesc').textContent = descs[type] || name;
+            document.getElementById('statusReason').value = '';
+            document.getElementById('statusLwd').value = '';
+            document.getElementById('statusActionModal').classList.add('active');
+        }
+
+        async function confirmStatusAction() {
+            const reason = document.getElementById('statusReason').value.trim();
+            const lwd = document.getElementById('statusLwd').value;
+            if (!reason || reason.length < 3) { showToast('Reason is required (min 3 characters)', 'error'); return; }
+            if (!lwd) { showToast('Last working day is required', 'error'); return; }
+            const d = new Date(lwd);
+            if (isNaN(d.getTime())) { showToast('Invalid last working day', 'error'); return; }
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const dd = new Date(d); dd.setHours(0, 0, 0, 0);
+            if (dd > today) { showToast('Last working day cannot be in the future', 'error'); return; }
+            const endpoint = statusActionType === 'hold' ? 'hold' : statusActionType === 'abscond' ? 'abscond' : 'terminate';
+            const result = await apiCall(`/employees/${statusActionTargetId}/${endpoint}`, 'POST', { reason, last_working_day: lwd });
+            if (result && result.success) {
+                showToast(result.message || 'Status updated successfully', 'success');
+                closeModal('statusActionModal');
+                await Promise.all([loadEmployees(), loadPendingCounts()]);
+                if (currentViewEmployee && String(currentViewEmployee.id) === String(statusActionTargetId)) viewEmployee(statusActionTargetId);
+            } else {
+                showToast((result && result.errors ? result.errors.join('; ') : result?.message) || 'Failed to update status', 'error');
+            }
+        }
+
+        async function unholdEmployee(id) {
+            const result = await apiCall(`/employees/${id}/unhold`, 'POST', {});
+            if (result && result.success) {
+                showToast('Employee released from hold successfully', 'success');
+                await Promise.all([loadEmployees(), loadPendingCounts()]);
+                if (currentViewEmployee && String(currentViewEmployee.id) === String(id)) viewEmployee(id);
+            } else {
+                showToast(result?.message || 'Failed to release from hold', 'error');
+            }
+        }
+
+        async function rehireEmployee(id) {
+            showConfirmDialog('Rehire Employee', 'Rehire with SAME Employee ID? All old data stays, status becomes active.', 'Rehire', 'btn-success', async () => {
+                const result = await apiCall(`/employees/${id}/rehire`, 'POST', {});
+                if (result && result.success) {
+                    showToast('Employee rehired successfully with same Employee ID', 'success');
+                    await Promise.all([loadEmployees(), loadPendingCounts()]);
+                    if (currentViewEmployee && String(currentViewEmployee.id) === String(id)) viewEmployee(id);
+                } else {
+                    showToast(result?.message || 'Failed to rehire employee', 'error');
+                }
+            });
+        }
+
         let permanentDeleteTargetId = null;
         function openPermanentDeleteModal(id) {
             permanentDeleteTargetId = id;
@@ -949,10 +1054,20 @@
             header += '<button class="btn btn-sm btn-secondary" onclick="resetEmployeePassword(' + emp.id + ')"><i class="fas fa-key"></i> Reset Password</button>';
             if (emp.status === 'active') {
                 header += '<button class="btn btn-sm btn-warning" onclick="pauseEmployee(' + emp.id + ')"><i class="fas fa-pause"></i> Pause</button>';
-                header += '<button class="btn btn-sm btn-danger" onclick="deleteEmployee(' + emp.id + ')"><i class="fas fa-trash"></i> Delete</button>';
+                header += '<button class="btn btn-sm btn-warning" onclick="openStatusModal(' + emp.id + ', \'hold\')"><i class="fas fa-hand-pause"></i> Hold</button>';
+                header += '<button class="btn btn-sm btn-dark" onclick="openStatusModal(' + emp.id + ', \'abscond\')" style="background:#1f2937;border-color:#1f2937;color:#fff;"><i class="fas fa-user-slash"></i> Abscond</button>';
+                header += '<button class="btn btn-sm btn-danger" onclick="openStatusModal(' + emp.id + ', \'terminate\')"><i class="fas fa-trash"></i> Terminate</button>';
             } else if (emp.status === 'paused') {
                 header += '<button class="btn btn-sm btn-success" onclick="resumeEmployee(' + emp.id + ')"><i class="fas fa-play"></i> Resume</button>';
-                header += '<button class="btn btn-sm btn-danger" onclick="deleteEmployee(' + emp.id + ')"><i class="fas fa-trash"></i> Delete</button>';
+                header += '<button class="btn btn-sm btn-danger" onclick="openStatusModal(' + emp.id + ', \'terminate\')"><i class="fas fa-trash"></i> Terminate</button>';
+            } else if (emp.status === 'on_hold') {
+                header += '<button class="btn btn-sm btn-success" onclick="unholdEmployee(' + emp.id + ')"><i class="fas fa-play"></i> Unhold</button>';
+                header += '<button class="btn btn-sm btn-danger" onclick="openStatusModal(' + emp.id + ', \'terminate\')"><i class="fas fa-trash"></i> Terminate</button>';
+            } else if (emp.status === 'absconded') {
+                header += '<button class="btn btn-sm btn-success" onclick="rehireEmployee(' + emp.id + ')"><i class="fas fa-undo"></i> Rejoin</button>';
+                header += '<button class="btn btn-sm btn-danger" onclick="openStatusModal(' + emp.id + ', \'terminate\')"><i class="fas fa-trash"></i> Terminate</button>';
+            } else if (emp.status === 'terminated') {
+                header += '<button class="btn btn-sm btn-success" onclick="rehireEmployee(' + emp.id + ')"><i class="fas fa-undo"></i> Rehire (same ID)</button>';
             }
             header += '<button class="btn btn-sm btn-danger" onclick="openPermanentDeleteModal(' + emp.id + ')"><i class="fas fa-trash"></i> Delete Permanently</button>';
             header += '</div>';
@@ -1043,6 +1158,9 @@
                     vRow('Languages Spoken', emp.languages_spoken)) +
                 vSection('Employment', 'fa-briefcase',
                     vRow('Joining Date', emp.joining_date ? formatDate(emp.joining_date) : null) +
+                    vRow('Status', emp.status || 'active') +
+                    vRow('Status Reason', emp.status_reason) +
+                    vRow('Last Working Day', emp.last_working_day ? formatDate(emp.last_working_day) : null) +
                     vRow('Department', emp.department_name) +
                     vRow('Designation', emp.designation_name ? emp.designation_name + (emp.designation_level ? ' (Level ' + emp.designation_level + ')' : '') : null) +
                     vRow('Reporting To', emp.reporting_manager_name ? emp.reporting_manager_name + (emp.reporting_manager_employee_id ? ' (' + emp.reporting_manager_employee_id + ')' : '') : null));

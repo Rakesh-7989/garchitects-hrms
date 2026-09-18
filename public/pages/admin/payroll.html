@@ -249,9 +249,17 @@
 
             t.innerHTML = payroll.map(p => {
                 const period = PP_MONTHS[p.month] + ' ' + p.year;
+                const empSt = p.employee_status || null;
+                const empWarn = empSt === 'on_hold'
+                    ? '<div style="margin-top:4px;font-size:0.7rem;color:#92400E;background:#FEF3C7;border:1px solid #F59E0B;border-radius:6px;padding:2px 6px;display:inline-block;"><i class="fas fa-exclamation-triangle"></i> ON HOLD' + (p.status_reason ? ' — ' + ppEsc(p.status_reason) : '') + (p.last_working_day ? ' | LWD: ' + ppEsc(String(p.last_working_day).substring(0,10)) : '') + '</div>'
+                    : empSt === 'absconded'
+                    ? '<div style="margin-top:4px;font-size:0.7rem;color:#fff;background:#1f2937;border-radius:6px;padding:2px 6px;display:inline-block;"><i class="fas fa-user-slash"></i> ABSCONDED' + (p.last_working_day ? ' | LWD: ' + ppEsc(String(p.last_working_day).substring(0,10)) : '') + '</div>'
+                    : empSt === 'terminated'
+                    ? '<div style="margin-top:4px;font-size:0.7rem;color:#fff;background:#DC2626;border-radius:6px;padding:2px 6px;display:inline-block;">TERMINATED</div>'
+                    : '';
                 return '<tr>' +
                     '<td><div class="pp-emp"><div class="pp-emp-avatar">' + ppEsc(getInitials(p.first_name, p.last_name)) + '</div>' +
-                        '<div><b>' + ppEsc(p.first_name) + ' ' + ppEsc(p.last_name) + '</b><small>' + ppEsc(p.emp_id) + '</small></div></div></td>' +
+                        '<div><b>' + ppEsc(p.first_name) + ' ' + ppEsc(p.last_name) + '</b><small>' + ppEsc(p.emp_id) + '</small>' + empWarn + '</div></div></td>' +
                     '<td style="white-space:nowrap;">' + ppEsc(period) + '</td>' +
                     '<td class="pp-num">' + ppFormatINR(p.gross_salary) + '</td>' +
                     '<td class="pp-num">' + ppFormatINR((parseFloat(p.total_deductions) || 0) + (parseFloat(p.employer_pf) || 0) + (parseFloat(p.employer_esi) || 0) + (parseFloat(p.employer_contribution) || 0)) + '</td>' +

@@ -296,6 +296,29 @@ async function runMigrations() {
             CHECK (status IN ('active', 'inactive', 'paused', 'terminated', 'on_hold', 'completed', 'cancelled'))`);
         console.log('[Migration] projects.status CHECK constraint relaxed.');
     } catch (e) { console.warn('[Migration] projects status CHECK skipped:', e.message); }
+
+    // Employee hold/abscond release (additive only, never touches existing rows).
+    // Old statuses active/inactive/paused/terminated stay valid; on_hold +
+    // absconded are added. New tracking columns are nullable/IF NOT EXISTS.
+    try {
+        await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS status_reason TEXT`);
+        await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMP DEFAULT NOW()`);
+        await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS status_changed_by INT REFERENCES employees(id) ON DELETE SET NULL`);
+        await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_working_day DATE`);
+        await query(`ALTER TABLE employees DROP CONSTRAINT IF EXISTS employees_status_check`);
+        await query(`ALTER TABLE employees ADD CONSTRAINT employees_status_check
+            CHECK (status IN ('active', 'inactive', 'paused', 'terminated', 'on_hold', 'absconded'))`);
+        await query(`CREATE TABLE IF NOT EXISTS employee_status_history (
+            id SERIAL PRIMARY KEY,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            old_status VARCHAR(20), new_status VARCHAR(20) NOT NULL,
+            reason TEXT NOT NULL, last_working_day DATE,
+            changed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_status_history_employee ON employee_status_history(employee_id, created_at DESC)`);
+        console.log('[Migration] employees hold/abscond statuses ensured.');
+    } catch (e) { console.warn('[Migration] employees hold/abscond skipped:', e.message); }
 }
 runMigrations();
 

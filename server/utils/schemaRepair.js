@@ -49,7 +49,12 @@ const EMPLOYEE_ALTER_COLUMNS = {
     // Added by the session-revocation release; verifyToken selects it on every
     // request, so a missing column must be healed before anything else works.
     must_change_password: 'INTEGER DEFAULT 0',
-    token_version: 'INTEGER NOT NULL DEFAULT 0'
+    token_version: 'INTEGER NOT NULL DEFAULT 0',
+    // Hold/abscond release: tracking columns, purely additive (nullable).
+    status_reason: 'TEXT',
+    status_changed_at: 'TIMESTAMP DEFAULT NOW()',
+    status_changed_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+    last_working_day: 'DATE'
 };
 
 // Projects module columns that a half-initialized live database may be missing.
@@ -228,6 +233,17 @@ const ENSURE_TABLE_DDL = {
         `CREATE INDEX IF NOT EXISTS idx_daily_work_counts_employee ON daily_work_counts(employee_id)`,
         `CREATE INDEX IF NOT EXISTS idx_daily_work_counts_date ON daily_work_counts(work_date)`,
         `CREATE INDEX IF NOT EXISTS idx_daily_work_counts_unique ON daily_work_counts(project_id, set_id, employee_id, work_date)`
+    ],
+    employee_status_history: [
+        `CREATE TABLE IF NOT EXISTS employee_status_history (
+            id SERIAL PRIMARY KEY,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            old_status VARCHAR(20), new_status VARCHAR(20) NOT NULL,
+            reason TEXT NOT NULL, last_working_day DATE,
+            changed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_status_history_employee ON employee_status_history(employee_id, created_at DESC)`
     ]
 };
 

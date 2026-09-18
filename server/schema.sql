@@ -53,7 +53,11 @@ CREATE TABLE IF NOT EXISTS employees (
     salary DECIMAL(10,2),
     profile_photo VARCHAR(500),
     role VARCHAR(20) DEFAULT 'employee' CHECK (role IN ('admin', 'hr', 'manager', 'team_lead', 'employee')),
-    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'paused', 'terminated')),
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'paused', 'terminated', 'on_hold', 'absconded')),
+    status_reason TEXT,
+    status_changed_at TIMESTAMP DEFAULT NOW(),
+    status_changed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    last_working_day DATE,
     address TEXT,
     date_of_birth DATE,
     gender VARCHAR(10),
@@ -77,6 +81,19 @@ CREATE TABLE IF NOT EXISTS employees (
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
+
+-- 4b. EMPLOYEE STATUS HISTORY (additive: tracks hold/abscond/terminate/rehire, never deletes)
+CREATE TABLE IF NOT EXISTS employee_status_history (
+    id SERIAL PRIMARY KEY,
+    employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    old_status VARCHAR(20),
+    new_status VARCHAR(20) NOT NULL,
+    reason TEXT NOT NULL,
+    last_working_day DATE,
+    changed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_status_history_employee ON employee_status_history(employee_id, created_at DESC);
 
 -- 5. ATTENDANCE
 CREATE TABLE IF NOT EXISTS attendance (

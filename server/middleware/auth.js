@@ -40,9 +40,16 @@ const verifyToken = async (req, res, next) => {
             }
             const current = result.rows[0];
             if (current.status !== 'active') {
+                let msg = 'Your account has been deactivated. Contact your administrator.';
+                if (current.status === 'on_hold') msg = 'Your account is on hold. Please contact HR.';
+                else if (current.status === 'absconded') msg = 'Your account is marked absconded. Please contact HR.';
+                else if (current.status === 'terminated') msg = 'Your account has been terminated. Please contact HR.';
+                else if (current.status === 'paused') msg = 'Your account is paused. Please contact your administrator.';
+                else if (current.status === 'inactive') msg = 'Your account is inactive. Please contact your administrator.';
                 return res.status(401).json({
                     success: false,
-                    message: 'Your account has been deactivated. Contact your administrator.'
+                    message: msg,
+                    status: current.status
                 });
             }
             if (Number(decoded.token_version || 0) !== Number(current.token_version || 0)) {

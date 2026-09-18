@@ -292,6 +292,8 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
             reporting_manager: e.reporting_manager_name,
             joining_date: e.joining_date,
             status: e.status,
+            status_reason: e.status_reason,
+            last_working_day: e.last_working_day,
             gender: e.gender,
             date_of_birth: e.date_of_birth,
             blood_group: e.blood_group,
@@ -348,6 +350,8 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
             { header: 'Reporting Manager', key: 'reporting_manager', width: 20 },
             { header: 'Joining Date', key: 'joining_date', type: 'date', width: 13 },
             { header: 'Status', key: 'status', type: 'status' },
+            { header: 'Status Reason', key: 'status_reason', width: 24 },
+            { header: 'Last Working Day', key: 'last_working_day', type: 'date', width: 14 },
             { header: 'Gender', key: 'gender' },
             { header: 'Date of Birth', key: 'date_of_birth', type: 'date', width: 13 },
             { header: 'Blood Group', key: 'blood_group', width: 11 },
@@ -953,23 +957,212 @@ router.post('/:id/pause', verifyToken, isAdmin, async (req, res) => {
 });
 
 // @route   POST /api/employees/:id/resume
-// @desc    Resume a paused employee back to active
+// @desc    Resume a paused/on_hold/inactive employee back to active (legacy, kept for compatibility)
 // @access  Private (Admin)
 router.post('/:id/resume', verifyToken, isAdmin, async (req, res) => {
     try {
-        const result = await query(
-            `UPDATE employees SET status = 'active', updated_at = NOW() 
-            WHERE id = $1 AND status = 'paused' RETURNING id`,
-            [req.params.id]
-        );
+        const result = await runWithSchemaRepair(() => query(
+            `UPDATE employees SET status = 'active', status_reason = COALESCE($2, status_reason),
+                status_changed_at = NOW(), status_changed_by = $3, updated_at = NOW()
+            WHERE id = $1 AND status IN ('paused', 'on_hold', 'inactive') RETURNING id, status`,
+            [req.params.id, req.body && req.body.reason ? String(req.body.reason).trim() : null, req.user.id]
+        ));
         if (result.rows.length === 0) {
-            return res.status(400).json({ success: false, message: 'Employee is not paused' });
+            return res.status(400).json({ success: false, message: 'Employee is not paused / on hold' });
         }
         logAudit({ actorId: req.user.id, action: 'employee.resume', entityType: 'employee', entityId: req.params.id, ip: req.ip });
         res.json({ success: true, message: 'Employee resumed successfully' });
     } catch (error) {
         console.error('Resume employee error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Validate reason + last_working_day for hold/abscond/terminate.
+// Both mandatory per requirements; LWD must be a valid date, not future,
+// and not before joining_date (checked against DB when possible).
+function validateStatusChange(body) {
+    const errors = [];
+    const reason = body && body.reason ? String(body.reason).trim() : '';
+    const lwd = body && body.last_working_day ? String(body.last_working_day).trim() : '';
+    if (!reason || reason.length < 3) errors.push('Reason is required (min 3 characters)');
+    if (reason.length > 1000) errors.push('Reason must be under 1000 characters');
+    if (!lwd) errors.push('Last working day is required');
+    else {
+        const d = new Date(lwd);
+        if (isNaN(d.getTime())) errors.push('Last working day must be a valid date (YYYY-MM-DD)');
+        else {
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const dd = new Date(d); dd.setHours(0, 0, 0, 0);
+            if (dd > today) errors.push('Last working day cannot be in the future');
+        }
+    }
+    return { errors, reason, lwd };
+}
+
+async function changeEmployeeStatus(targetId, newStatus, reason, lwd, actorId, ip, auditAction) {
+    const cur = await query('SELECT id, employee_id, status, joining_date FROM employees WHERE id = $1', [targetId]);
+    if (cur.rows.length === 0) return { ok: false, status: 404, message: 'Employee not found' };
+    const emp = cur.rows[0];
+    if (emp.status === newStatus) return { ok: false, status: 400, message: 'Employee is already ' + newStatus };
+    if (lwd && emp.joining_date) {
+        const join = String(emp.joining_date).substring(0, 10);
+        if (String(lwd).substring(0, 10) < join) {
+            return { ok: false, status: 400, message: 'Last working day cannot be before joining date (' + join + ')' };
+        }
+    }
+    const updated = await runWithSchemaRepair(() => query(
+        `UPDATE employees SET status = $1, status_reason = $2, last_working_day = $3,
+                status_changed_at = NOW(), status_changed_by = $4,
+                token_version = COALESCE(token_version, 0) + 1, updated_at = NOW()
+         WHERE id = $5 RETURNING id, employee_id, status, status_reason, last_working_day`,
+        [newStatus, reason, lwd, actorId, targetId]
+    ));
+    try {
+        await query(
+            `INSERT INTO employee_status_history (employee_id, old_status, new_status, reason, last_working_day, changed_by)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [targetId, emp.status, newStatus, reason, lwd, actorId]
+        );
+    } catch (hErr) { console.warn('Status history insert skipped:', hErr.message); }
+    logAudit({ actorId, action: auditAction, entityType: 'employee', entityId: targetId,
+        details: { from: emp.status, to: newStatus, employee_code: emp.employee_id, reason }, ip });
+    return { ok: true, oldStatus: emp.status, employee: updated.rows[0] };
+}
+
+// @route   POST /api/employees/:id/hold
+// @desc    Put employee account on hold (reason + LWD mandatory, login blocked, data kept)
+// @access  Private (Admin)
+router.post('/:id/hold', verifyToken, isAdmin, async (req, res) => {
+    try {
+        if (parseInt(req.params.id) === parseInt(req.user.id)) {
+            return res.status(400).json({ success: false, message: 'You cannot hold your own account' });
+        }
+        const adminGuardError = await adminTargetGuard(req.params.id, req.user.id);
+        if (adminGuardError) return res.status(403).json({ success: false, message: adminGuardError });
+        const guardError = await lastActiveAdminGuard(req.params.id);
+        if (guardError) return res.status(400).json({ success: false, message: guardError });
+        const { errors, reason, lwd } = validateStatusChange(req.body);
+        if (errors.length > 0) return res.status(400).json({ success: false, errors });
+        const r = await changeEmployeeStatus(req.params.id, 'on_hold', reason, lwd, req.user.id, req.ip, 'employee.hold');
+        if (!r.ok) return res.status(r.status).json({ success: false, message: r.message });
+        res.json({ success: true, message: 'Employee put on hold successfully', employee: r.employee, previous_status: r.oldStatus });
+    } catch (error) {
+        console.error('Hold employee error:', error);
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
+    }
+});
+
+// @route   POST /api/employees/:id/unhold
+// @desc    Release an on_hold/paused/inactive employee back to active (same employee_id)
+// @access  Private (Admin)
+router.post('/:id/unhold', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const cur = await query('SELECT id, employee_id, status FROM employees WHERE id = $1', [req.params.id]);
+        if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found' });
+        if (!['on_hold', 'paused', 'inactive'].includes(cur.rows[0].status)) {
+            return res.status(400).json({ success: false, message: 'Employee is not on hold' });
+        }
+        const reason = req.body && req.body.reason ? String(req.body.reason).trim() : 'Released from hold';
+        const updated = await runWithSchemaRepair(() => query(
+            `UPDATE employees SET status = 'active', status_reason = $2,
+                    status_changed_at = NOW(), status_changed_by = $3, updated_at = NOW()
+             WHERE id = $1 RETURNING id, employee_id, status`,
+            [req.params.id, reason, req.user.id]
+        ));
+        try {
+            await query(
+                `INSERT INTO employee_status_history (employee_id, old_status, new_status, reason, changed_by)
+                 VALUES ($1, $2, 'active', $3, $4)`,
+                [req.params.id, cur.rows[0].status, reason, req.user.id]
+            );
+        } catch (hErr) { console.warn('Status history insert skipped:', hErr.message); }
+        logAudit({ actorId: req.user.id, action: 'employee.unhold', entityType: 'employee',
+            entityId: req.params.id, details: { from: cur.rows[0].status, employee_code: cur.rows[0].employee_id }, ip: req.ip });
+        res.json({ success: true, message: 'Employee released from hold successfully', employee: updated.rows[0] });
+    } catch (error) {
+        console.error('Unhold employee error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// @route   POST /api/employees/:id/abscond
+// @desc    Mark employee absconded (reason + LWD mandatory, login blocked, data kept)
+// @access  Private (Admin)
+router.post('/:id/abscond', verifyToken, isAdmin, async (req, res) => {
+    try {
+        if (parseInt(req.params.id) === parseInt(req.user.id)) {
+            return res.status(400).json({ success: false, message: 'You cannot mark your own account absconded' });
+        }
+        const adminGuardError = await adminTargetGuard(req.params.id, req.user.id);
+        if (adminGuardError) return res.status(403).json({ success: false, message: adminGuardError });
+        const guardError = await lastActiveAdminGuard(req.params.id);
+        if (guardError) return res.status(400).json({ success: false, message: guardError });
+        const { errors, reason, lwd } = validateStatusChange(req.body);
+        if (errors.length > 0) return res.status(400).json({ success: false, errors });
+        const r = await changeEmployeeStatus(req.params.id, 'absconded', reason, lwd, req.user.id, req.ip, 'employee.abscond');
+        if (!r.ok) return res.status(r.status).json({ success: false, message: r.message });
+        res.json({ success: true, message: 'Employee marked absconded successfully', employee: r.employee, previous_status: r.oldStatus });
+    } catch (error) {
+        console.error('Abscond employee error:', error);
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
+    }
+});
+
+// @route   POST /api/employees/:id/terminate
+// @desc    Terminate with reason + LWD (same employee_id kept, reversible via rehire)
+// @access  Private (Admin)
+router.post('/:id/terminate', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const adminGuardError = await adminTargetGuard(req.params.id, req.user.id);
+        if (adminGuardError) return res.status(403).json({ success: false, message: adminGuardError });
+        const guardError = await lastActiveAdminGuard(req.params.id);
+        if (guardError) return res.status(400).json({ success: false, message: guardError });
+        const { errors, reason, lwd } = validateStatusChange(req.body);
+        if (errors.length > 0) return res.status(400).json({ success: false, errors });
+        const r = await changeEmployeeStatus(req.params.id, 'terminated', reason, lwd, req.user.id, req.ip, 'employee.terminate');
+        if (!r.ok) return res.status(r.status).json({ success: false, message: r.message });
+        res.json({ success: true, message: 'Employee terminated successfully', employee: r.employee, previous_status: r.oldStatus });
+    } catch (error) {
+        console.error('Terminate employee error:', error);
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
+    }
+});
+
+// @route   POST /api/employees/:id/rehire
+// @desc    Rehire a terminated/absconded/on_hold employee (same employee_id, data kept)
+// @access  Private (Admin)
+router.post('/:id/rehire', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const cur = await query('SELECT id, employee_id, status FROM employees WHERE id = $1', [req.params.id]);
+        if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found' });
+        if (!['terminated', 'absconded', 'on_hold', 'paused', 'inactive'].includes(cur.rows[0].status)) {
+            return res.status(400).json({ success: false, message: 'Only exited employees can be rehired' });
+        }
+        const reason = req.body && req.body.reason ? String(req.body.reason).trim() : 'Rehired';
+        const updated = await runWithSchemaRepair(() => query(
+            `UPDATE employees SET status = 'active', status_reason = $2, last_working_day = NULL,
+                    status_changed_at = NOW(), status_changed_by = $3, updated_at = NOW()
+             WHERE id = $1 RETURNING id, employee_id, status`,
+            [req.params.id, reason, req.user.id]
+        ));
+        try {
+            await query(
+                `INSERT INTO employee_status_history (employee_id, old_status, new_status, reason, changed_by)
+                 VALUES ($1, $2, 'active', $3, $4)`,
+                [req.params.id, cur.rows[0].status, reason, req.user.id]
+            );
+        } catch (hErr) { console.warn('Status history insert skipped:', hErr.message); }
+        logAudit({ actorId: req.user.id, action: 'employee.rehire', entityType: 'employee',
+            entityId: req.params.id, details: { from: cur.rows[0].status, employee_code: cur.rows[0].employee_id, reason }, ip: req.ip });
+        res.json({ success: true, message: 'Employee rehired successfully with same Employee ID', employee: updated.rows[0], previous_status: cur.rows[0].status });
+    } catch (error) {
+        console.error('Rehire employee error:', error);
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
