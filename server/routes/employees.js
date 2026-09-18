@@ -1006,7 +1006,19 @@ async function changeEmployeeStatus(targetId, newStatus, reason, lwd, actorId, i
     const emp = cur.rows[0];
     if (emp.status === newStatus) return { ok: false, status: 400, message: 'Employee is already ' + newStatus };
     if (lwd && emp.joining_date) {
-        const join = String(emp.joining_date).substring(0, 10);
+        // FIX: joining_date JS Date object ga vasthe String() => "Thu Sep 03..."
+        // kabatti toISOString() tho YYYY-MM-DD ki normalize cheyyali.
+        let join;
+        if (emp.joining_date instanceof Date) {
+            join = emp.joining_date.toISOString().substring(0, 10);
+        } else {
+            const s = String(emp.joining_date).trim();
+            if (/^\d{4}-\d{2}-\d{2}/.test(s)) join = s.substring(0, 10);
+            else {
+                const jd = new Date(emp.joining_date);
+                join = !isNaN(jd.getTime()) ? jd.toISOString().substring(0, 10) : s.substring(0, 10);
+            }
+        }
         if (String(lwd).substring(0, 10) < join) {
             return { ok: false, status: 400, message: 'Last working day cannot be before joining date (' + join + ')' };
         }

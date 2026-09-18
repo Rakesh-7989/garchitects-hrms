@@ -221,7 +221,7 @@ async function computeAttendanceSummary(employeeId, month, year) {
 
     // Mid-month joiners only earn working days from their joining date.
     let effStart = start;
-    const join = empRes.rows[0].joining_date ? String(empRes.rows[0].joining_date).substring(0, 10) : null;
+    const join = empRes.rows[0].joining_date ? formatDateOnly(empRes.rows[0].joining_date) : null;
     if (join && join > start && join <= end) effStart = join;
 
     // Never count days that have not happened yet - a mid-month preview must
