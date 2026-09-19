@@ -80,7 +80,7 @@ async function startOnboarding(employeeId, actorId) {
         // Welcome push. Best-effort only - failures must not affect creation.
         try {
             await sendToUser(employeeId, {
-                title: 'Welcome to Gensar HRMS!',
+                title: 'Welcome to G-Architects HRMS!',
                 body: 'Your onboarding checklist is ready. Log in and complete your pending tasks.',
                 url: '/employee/onboarding'
             });

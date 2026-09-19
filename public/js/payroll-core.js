@@ -204,20 +204,20 @@ function buildPayslipHTML(p) {
                 rows.map((r) => '<tr><td>' + r[0] + '</td><td class="text-right">' + r[1] + '</td></tr>').join('') +
                 '<tr class="total-row"><td>' + totalLabel + '</td><td class="text-right">' + ppNumFmt(totalValue) + '</td></tr>' +
             '</tbody></table>';
-    const logoHtml = (company.logo || '/assets/images/gensar_logo.png')
-        ? '<img src="' + ppEsc(company.logo || '/assets/images/gensar_logo.png') + '" alt="Gensar Logo" style="width:175px;height:auto;object-fit:contain;flex-shrink:0;" onerror="this.style.display=\'none\';">'
+    const logoHtml = (company.logo || '/assets/images/garchitects_logo.png')
+        ? '<img src="' + ppEsc(company.logo || '/assets/images/garchitects_logo.png') + '" alt="G-Architects Logo" style="width:175px;height:auto;object-fit:contain;flex-shrink:0;" onerror="this.style.display=\'none\';">'
         : '<i class="fas fa-building" style="font-size:26px;color:#7c6ca8;"></i>';
-    // Company block from DB data with Gensar defaults as fallback, so settings
+    // Company block from DB data with garchitects defaults as fallback, so settings
     // edits reflect on payslips without code changes.
-    const coName = company.name || 'GENSAR IT SOLUTIONS PVT. LTD.';
-    const coAddress = String(company.address || 'Manjeera Trinity Corporate, 4th Floor, #402, KPHB, Kukatpally,\nHyderabad, 500072, Telangana, India');
+    const coName = company.name || 'G Architects';
+    const coAddress = String(company.address || 'Plot no. 84, Flat no. 302, Sri Nikethan, near Balaji Temple,\nSiddhi Vinayak Nagar, Balaji Hills, Khanammet, Hyderabad, 500081, Telangana, India');
     const addressHtml = ppEsc(coAddress).replace(/\r?\n/g, '<br>');
     // Contact lines must ALWAYS be visible on the payslip. If the company
-    // settings have not loaded (or fields are empty), fall back to the Gensar
+    // settings have not loaded (or fields are empty), fall back to the garchitects
     // defaults - exactly like the server-side PDF renderer does.
     const contactBits = [];
-    contactBits.push('E-Mail: ' + ppEsc(company.email || 'hr@gensarit.com'));
-    contactBits.push('Ph No: ' + ppEsc(company.phone || '+91 9121912138'));
+    contactBits.push('E-Mail: ' + ppEsc(company.email || 'garchitects99@gmail.com'));
+    contactBits.push('Ph No: ' + ppEsc(company.phone || '+91 63740 48059'));
     return '<div class="pp-sheet ppslip" style="width:794px;box-sizing:border-box;margin:0 auto;background:#ffffff;color:#222;font-family:Arial,Helvetica,sans-serif;border:1px solid #7c6ca8;padding:22px 28px;box-shadow:0 0 12px rgba(0,0,0,0.08);">' +
         '<style>' +
         '.ppslip{line-height:normal;}' +

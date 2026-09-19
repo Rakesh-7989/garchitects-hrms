@@ -37,14 +37,14 @@ async function ensureFirstAdmin(pool) {
          VALUES ('EMP001', 'Admin', 'User', $1, NULL, $2,
                  CURRENT_DATE, 0, 'admin', 'active', NULL, NULL, NULL, 1)
          ON CONFLICT (email) DO NOTHING`,
-        [process.env.ADMIN_EMAIL || 'admin@gensar.com', password_hash]
+        [process.env.ADMIN_EMAIL || 'admin@garchitects.com', password_hash]
     );
 
     console.log('');
     console.log('========================================');
     console.log(' FIRST ADMIN ACCOUNT CREATED');
     console.log('   Employee ID: EMP001');
-    console.log(`   Email: ${process.env.ADMIN_EMAIL || 'admin@gensar.com'}`);
+    console.log(`   Email: ${process.env.ADMIN_EMAIL || 'admin@garchitects.com'}`);
     console.log(`   Password: ${password}`);
     console.log(' Store this password securely now - it will NOT be shown again.');
     console.log(' The admin will be asked to change it on first login.');

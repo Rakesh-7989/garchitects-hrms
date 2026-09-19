@@ -23,7 +23,7 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 // from a browser. Requests without an Origin header (mobile apps, curl,
 // server-to-server) are still allowed since they are not subject to CORS.
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
-    'https://gensarhrms.in,https://www.gensarhrms.in,http://localhost:3000,http://127.0.0.1:3000')
+    'https://garchitects.in,https://www.garchitects.in,http://localhost:3000,http://127.0.0.1:3000')
     .split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors({
     origin(origin, callback) {
@@ -172,7 +172,7 @@ if (require.main === module) {
         purgeExpiredPhotos();
         console.log(`
     ╔══════════════════════════════════════════╗
-    ║       GENSAR HRMS Server Started         ║
+    ║       G-Architects HRMS Server Started         ║
     ║──────────────────────────────────────────║
     ║  Port: ${PORT}                              ║
     ║  Mode: ${process.env.NODE_ENV || 'development'}                    ║

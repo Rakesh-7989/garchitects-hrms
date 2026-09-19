@@ -43,9 +43,9 @@ function toDisplayText(v) {
     return String(v);
 }
 
-async function buildReportWorkbook({ company = 'GENSAR IT SOLUTIONS PVT. LTD.', reportName, subtitleExtra, columns, rows, footerNote }) {
+async function buildReportWorkbook({ company = 'G Architects', reportName, subtitleExtra, columns, rows, footerNote }) {
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'Gensar HRMS';
+    wb.creator = 'G-Architects HRMS';
     wb.created = new Date();
 
     const safeSheet = (reportName || 'Report').replace(/[\\/*?:[\]]/g, '').substring(0, 31) || 'Report';
@@ -163,7 +163,7 @@ async function buildReportWorkbook({ company = 'GENSAR IT SOLUTIONS PVT. LTD.', 
     const noteRowNum = startRow + rows.length + 1;
     ws.mergeCells(noteRowNum, 1, noteRowNum, Math.min(lastCol, 8));
     const note = ws.getCell(noteRowNum, 1);
-    note.value = `${rows.length} record(s)${footerNote ? ' • Exported by ' + footerNote : ''} • Gensar HRMS`;
+    note.value = `${rows.length} record(s)${footerNote ? ' • Exported by ' + footerNote : ''} • G-Architects HRMS`;
     note.font = { size: 9, italic: true, color: { argb: 'FF9CA3AF' } };
 
     // Auto width estimation (respect explicit widths)

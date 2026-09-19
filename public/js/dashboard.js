@@ -1,4 +1,4 @@
-﻿// Dashboard JavaScript for Gensar HRMS
+// Dashboard JavaScript for G-Architects HRMS
 
 // Toggle sidebar
 function toggleSidebar() {
@@ -450,7 +450,7 @@ function loadSidebarCounts(counts, mode) {
 function loadSidebarLogo() {
     const logoEls = document.querySelectorAll('.sidebar-logo');
     logoEls.forEach(el => {
-        el.innerHTML = '<i class="fas fa-building" style="color:var(--primary-light);font-size:1.5rem;"></i><span style="font-size:1rem;font-weight:700;">Gensar HRMS</span>';
+        el.innerHTML = '<i class="fas fa-building" style="color:var(--primary-light);font-size:1.5rem;"></i><span style="font-size:1rem;font-weight:700;">G-Architects HRMS</span>';
     });
 }
 

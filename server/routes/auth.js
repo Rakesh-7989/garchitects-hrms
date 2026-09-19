@@ -34,7 +34,7 @@ const passwordLimiter = rateLimit({
 // Constant bcrypt hash used only to equalize the response time of the
 // "unknown user" path with the "wrong password" path (prevents user
 // enumeration by timing). Computed once at startup.
-const TIMING_EQUALIZER_HASH = bcrypt.hashSync('gensar-timing-equalizer-' + Math.random(), 12);
+const TIMING_EQUALIZER_HASH = bcrypt.hashSync('garchitects-timing-equalizer-' + Math.random(), 12);
 
 // ---------- Forgot password (OTP over email) ----------
 // The password_reset_otps table + sendOTPEmail service already existed; these
@@ -57,7 +57,7 @@ const otpResetLimiter = rateLimit({
 function hashOtp(otp) {
     // Short-lived 6-digit codes don't need bcrypt; a peppered SHA-256 keeps
     // a database leak from exposing usable codes.
-    const pepper = process.env.JWT_SECRET || 'gensar-otp-pepper';
+    const pepper = process.env.JWT_SECRET || 'garchitects-otp-pepper';
     return crypto.createHash('sha256').update(String(otp) + ':' + pepper).digest('hex');
 }
 

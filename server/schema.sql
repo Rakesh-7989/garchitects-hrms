@@ -1,5 +1,5 @@
 -- ============================================
--- GENSAR HRMS - Supabase (PostgreSQL) Schema
+-- G-Architects HRMS - Supabase (PostgreSQL) Schema
 -- Inspired by Keka HR
 -- Run this in the Supabase SQL editor (or `npm run db:init`)
 -- ============================================
@@ -364,7 +364,7 @@ CREATE INDEX IF NOT EXISTS idx_push_subscriptions_employee ON push_subscriptions
 
 -- Company branding used on the payslip header (name + address).
 INSERT INTO companies (name, address, phone, email, website) VALUES
-('GENSAR IT SOLUTIONS PVT. LTD.', 'Manjeera Trinity Corporate, 4th Floor, #402, KPHB, Kukatpally, Hyderabad – 500072, Telangana, India', '+91 40 4855 6600', 'hr@gensaritsolutions.com', 'www.gensarhrms.in')
+('G Architects', 'Plot no. 84, Flat no. 302, Sri Nikethan, near Balaji Temple, Siddhi Vinayak Nagar, Balaji Hills, Khanammet, Hyderabad – 500081, Telangana, India', '+91 63740 48059', 'garchitects99@gmail.com', 'www.garchitects.in')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO leave_types (name, days_per_year, description, gender_eligibility) VALUES
@@ -375,9 +375,9 @@ INSERT INTO leave_types (name, days_per_year, description, gender_eligibility) V
 ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO company_settings (setting_key, setting_value, description) VALUES
-('company_name', 'Gensar IT Solutions', 'Company name'),
-('office_start_time', '09:30', 'Office start time'),
-('office_end_time', '18:30', 'Office end time'),
+('company_name', 'G Architects', 'Company name'),
+('office_start_time', '09:00', 'Office start time'),
+('office_end_time', '19:00', 'Office end time'),
 ('late_grace_period', '15', 'Grace period in minutes'),
 ('currency', 'INR', 'Default currency'),
 ('timezone', 'Asia/Kolkata', 'Default timezone')
@@ -420,8 +420,8 @@ SELECT v.title, v.content, v.priority,
        (SELECT id FROM employees WHERE role = 'admin' AND status = 'active' ORDER BY id LIMIT 1),
        v.target_audience
 FROM (VALUES
-    ('Welcome to Gensar HRMS', 'We are excited to announce the launch of our new Human Resource Management System. Please explore the features and provide your feedback.', 'high', 'all'),
-    ('Office Timings Update', 'Effective immediately, office timings are 9:30 AM to 6:30 PM with a 15-minute grace period.', 'normal', 'all'),
+    ('Welcome to G-Architects HRMS', 'We are excited to announce the launch of our new Human Resource Management System. Please explore the features and provide your feedback.', 'high', 'all'),
+    ('Office Timings Update', 'Effective immediately, office timings are 9:00 AM to 7:00 PM with a 15-minute grace period.', 'normal', 'all'),
     ('Team Building Event', 'Join us for a team building event this Friday at 4:00 PM in the conference room.', 'low', 'all')
 ) AS v(title, content, priority, target_audience)
 WHERE NOT EXISTS (SELECT 1 FROM announcements);
@@ -511,7 +511,7 @@ UPDATE employees SET basic_salary = salary
 WHERE (basic_salary IS NULL OR basic_salary = 0) AND salary IS NOT NULL AND salary > 0;
 
 -- Fill the payslip header company address for existing rows (idempotent).
-UPDATE companies SET address = 'Manjeera Trinity Corporate, 4th Floor, #402, KPHB, Kukatpally, Hyderabad – 500072, Telangana, India'
+UPDATE companies SET address = 'Plot no. 84, Flat no. 302, Sri Nikethan, near Balaji Temple, Siddhi Vinayak Nagar, Balaji Hills, Khanammet, Hyderabad – 500081, Telangana, India'
 WHERE address IS NULL OR address = '';
 
 -- ============================================
@@ -647,7 +647,7 @@ CREATE INDEX IF NOT EXISTS idx_announcements_expires_at ON announcements(expires
 -- ============================================================
 CREATE TABLE IF NOT EXISTS projects (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL UNIQUE,
     customer VARCHAR(255),
     client VARCHAR(255),
     description TEXT,

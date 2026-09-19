@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gensar-hrms-v3';
+const CACHE_NAME = 'garchitects-hrms-v3';
 const SHELL_URLS = [
   '/',
   '/login',
@@ -69,7 +69,7 @@ self.addEventListener('message', (event) => {
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch(e) { data = { body: event.data ? event.data.text() : '' }; }
-  const title = data.title || 'Gensar HRMS';
+  const title = data.title || 'G-Architects HRMS';
   const options = {
     body: data.body || '',
     icon: '/assets/images/icon-192.png',

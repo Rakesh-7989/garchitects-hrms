@@ -1,7 +1,7 @@
 {
-  "name": "gensar-hrms",
+  "name": "garchitects-hrms",
   "version": "1.0.0",
-  "description": "Gensar HRMS - Human Resource Management System inspired by Keka HR",
+  "description": "G-Architects HRMS - Human Resource Management System inspired by Keka HR",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
@@ -14,7 +14,7 @@
     "human-resource",
     "management-system"
   ],
-  "author": "Gensar IT Solutions",
+  "author": "G Architects",
   "license": "MIT",
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

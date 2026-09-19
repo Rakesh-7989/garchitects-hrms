@@ -461,7 +461,7 @@ async function getCompanyData() {
     settings.rows.forEach(s => { map[s.setting_key] = s.setting_value; });
     const c = comp.rows[0] || {};
     return {
-        name: c.name || map.company_name || 'Gensar IT Solutions',
+        name: c.name || map.company_name || 'G Architects',
         logo: c.logo || null,
         address: c.address || '',
         phone: c.phone || '',
@@ -500,13 +500,13 @@ async function fetchPayslipWithProfile(id, userId, isPrivileged) {
 // footer with notes + signature. Single A4 page.
 async function renderPayslipPdf(p, company) {
     // Resolve logo path before entering the synchronous PDF generation
-    const logo = (company && company.logo) || '/assets/images/gensar_logo.png';
+    const logo = (company && company.logo) || '/assets/images/garchitects_logo.png';
     let resolvedLogoPath = null;
     try {
         if (/^https?:\/\//i.test(logo)) {
             resolvedLogoPath = await downloadLogoToTemp(logo);
         } else {
-            // logo is always a web-relative path (e.g. /assets/images/gensar_logo.png).
+            // logo is always a web-relative path (e.g. /assets/images/garchitects_logo.png).
             // Try every plausible static root: package-relative (works when the
             // function is traced with its assets) and process.cwd()/public
             // (works on Vercel where the repo root is the working directory).
@@ -658,16 +658,16 @@ async function renderPayslipPdf(p, company) {
             const infoX = divX + 1 * S + 5 * S + 15 * S; // line + margin-right 5 + gap 15
             const infoW = badgeX - infoX;
             // Company block comes from the DB (companies/company_settings) with
-            // the Gensar defaults only as a fallback, so settings edits reflect
+            // the garchitects defaults only as a fallback, so settings edits reflect
             // on payslips without code changes.
-            const coName = (company && company.name) || 'GENSAR IT SOLUTIONS PVT. LTD.';
-            const coAddress = String((company && company.address) || 'Manjeera Trinity Corporate, 4th Floor, #402, KPHB, Kukatpally,\nHyderabad, 500072, Telangana, India');
+            const coName = (company && company.name) || 'G Architects';
+            const coAddress = String((company && company.address) || 'Plot no. 84, Flat no. 302, Sri Nikethan, near Balaji Temple,\nSiddhi Vinayak Nagar, Balaji Hills, Khanammet, Hyderabad, 500081, Telangana, India');
             const addressSegs = coAddress.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
             const contactLines = [];
-            // Contact lines are mandatory on the payslip - same Gensar
+            // Contact lines are mandatory on the payslip - same garchitects
             // fallbacks as the browser preview (buildPayslipHTML).
-            contactLines.push('E-Mail: ' + ((company && company.email) || 'hr@gensarit.com'));
-            contactLines.push('Ph No: ' + ((company && company.phone) || '+91 9121912138'));
+            contactLines.push('E-Mail: ' + ((company && company.email) || 'garchitects99@gmail.com'));
+            contactLines.push('Ph No: ' + ((company && company.phone) || '+91 63740 48059'));
 
             // Estimate the text-column height first so the whole column can be
             // vertically centered in the 95px group (flex align-items:center).

@@ -1,7 +1,7 @@
 {
-  "name": "Gensar HRMS",
-  "short_name": "Gensar HRMS",
-  "description": "Gensar Human Resource Management System",
+  "name": "G-Architects HRMS",
+  "short_name": "G-Architects HRMS",
+  "description": "G-Architects Human Resource Management System",
   "id": "/",
   "start_url": "/",
   "scope": "/",

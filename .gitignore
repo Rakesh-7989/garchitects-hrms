@@ -33,3 +33,6 @@ session-history.json
 
 .vercel
 .env*
+
+# Runtime pid file written by the local launcher script
+*.pid

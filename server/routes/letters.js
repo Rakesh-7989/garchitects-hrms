@@ -22,7 +22,7 @@ async function getCompanyData() {
     settings.rows.forEach(s => { map[s.setting_key] = s.setting_value; });
     const c = comp.rows[0] || {};
     return {
-        name: c.name || map.company_name || 'Gensar IT Solutions',
+        name: c.name || map.company_name || 'G Architects',
         address: c.address || '',
         phone: c.phone || '',
         email: c.email || map.hr_email || '',
@@ -66,7 +66,7 @@ function renderLetterPdf(company, employee, letter) {
 
         // Ref / date
         doc.font('Helvetica').fontSize(10).fillColor('#374151');
-        doc.text('Ref: GENSAR/' + letter.refNo, { continued: false });
+        doc.text('Ref: garchitects/' + letter.refNo, { continued: false });
         doc.text('Date: ' + fmtDate(new Date()));
         doc.moveDown(1);
 

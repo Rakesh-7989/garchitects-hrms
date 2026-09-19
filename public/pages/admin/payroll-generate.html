@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Generate Payslip - Gensar HRMS</title>
+    <title>Generate Payslip - G-Architects HRMS</title>
     <link rel="icon" type="image/png" href="../../assets/images/fav-icon.png">
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#4F46E5">
@@ -18,7 +18,7 @@
 <body class="admin-app">
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <div class="sidebar-logo"><i class="fas fa-building" style="color:var(--primary-light);font-size:1.5rem;"></i><span style="font-size:1rem;font-weight:700;">Gensar HRMS</span></div>
+            <div class="sidebar-logo"><i class="fas fa-building" style="color:var(--primary-light);font-size:1.5rem;"></i><span style="font-size:1rem;font-weight:700;">G-Architects HRMS</span></div>
         </div>
         <nav class="sidebar-nav">
             <div class="nav-section-title">Main</div>
@@ -279,7 +279,7 @@
             const d = await apiCall('/settings/company');
             if (d && d.success && d.company) {
                 company = {
-                    name: d.company.name || 'Gensar IT Solutions',
+                    name: d.company.name || 'G Architects',
                     logo: d.company.logo || null,
                     address: d.company.address || '',
                     phone: d.company.phone || '',
@@ -490,7 +490,7 @@
                 income_tax: v.income_tax, other_deduction: v.other_deduction,
                 employer_pf: v.employer_pf, employer_esi: v.employer_esi, employer_contribution: v.employer_contribution,
                 gross_salary: t.gross, total_deductions: t.totalDeductions, net_salary: t.net,
-                company: company || { name: 'Gensar IT Solutions' }
+                company: company || { name: 'G Architects' }
             };
         }
 

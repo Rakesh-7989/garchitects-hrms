@@ -2,7 +2,7 @@
   "generated_at": "2026-09-01T10:00:00+05:30",
   "timezone": "Asia/Kolkata",
   "repo": "https://github.com/ramakrishna49/Gensar_HRMS.git",
-  "summary": "Gensar HRMS full analysis - bugs fixed 1 by 1, responsive + PWA + announcement expiry implemented",
+  "summary": "G-Architects HRMS full analysis - bugs fixed 1 by 1, responsive + PWA + announcement expiry implemented",
   "fixes": [
     { "id": "C1", "severity": "High", "file": "server/routes/payroll.js:117", "issue": "netPayable subtracted employerTotal (employer PF/ESI deducted from employee)", "fix": "netPayable = actualPayableGross (no employer deduction)", "status": "fixed" },
     { "id": "C2", "severity": "High", "file": "server/services/email.js:153,197", "issue": "OTP logged in plaintext to console ([DEV] and fallback)", "fix": "Removed console.log OTP lines", "status": "fixed" },
