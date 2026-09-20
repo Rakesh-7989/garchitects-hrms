@@ -44,6 +44,7 @@ our project — the same check the founder's identical pipeline passes.
   exercise the GitHub-Secret token at all, so it is not representative.
 
 ### 2.4 The one authoritative living reference is the founder's repo
+
 - The founder's CI passes with the same byte-identical pin.
   That means the founder's secrets resolve to a working token+org+project triple
   on Vercel's side. The values themselves are masked in GitHub UI and cannot be
