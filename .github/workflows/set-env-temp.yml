@@ -10,7 +10,7 @@ jobs:
   set-env:
     runs-on: ubuntu-latest
     steps:
-      - name: Upsert env vars via Vercel API
+      - name: Diagnose token scope + upsert env vars
         shell: bash
         env:
           VTOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -22,34 +22,16 @@ jobs:
           SB_KEY: ${{ secrets.HRMS_SUPABASE_SERVICE_KEY }}
         run: |
           set -euo pipefail
-          code() { curl -s -o /dev/null -w "%{http_code}" "$@"; }
-          echo "=== TOKEN VALIDITY ==="
-          echo "GET /v2/user (no team):        $(code -H \"Authorization: Bearer $VTOKEN\" https://api.vercel.com/v2/user)"
-          echo "GET /v9/projects/$PROJECT (teamId q): $(code -H \"Authorization: Bearer $VTOKEN\" \"https://api.vercel.com/v9/projects/$PROJECT?teamId=$TEAMID\")"
-          echo "GET /v9/projects/$PROJECT/env (teamId q): $(code -H \"Authorization: Bearer $VTOKEN\" \"https://api.vercel.com/v9/projects/$PROJECT/env?teamId=$TEAMID\")"
-          echo "GET /v9/projects/$PROJECT/env (x-vercel-team h): $(code -H \"Authorization: Bearer $VTOKEN\" -H \"x-vercel-team: $TEAMID\" \"https://api.vercel.com/v9/projects/$PROJECT/env\")"
-          BASE="https://api.vercel.com/v9/projects/$PROJECT/env?teamId=$TEAMID"
-          upsert() {
-            local key="$1"; local value="$2"
-            local list
-            list=$(curl -fsS -H "Authorization: Bearer $VTOKEN" "$BASE")
-            local id
-            id=$(echo "$list" | jq -r --arg key "$key" '.envs[]? | select(.key==$key) | .id' | head -1)
-            if [ -n "$id" ]; then
-              curl -fsS -X PATCH "$BASE/$id" \
-                -H "Authorization: Bearer $VTOKEN" -H "Content-Type: application/json" \
-                -d "$(jq -n --arg key "$key" --arg value "$value" '{key:$key,value:$value,target:["production"]}')" \
-                > /dev/null && echo "UPDATED $key"
-            else
-              curl -fsS -X POST "$BASE" \
-                -H "Authorization: Bearer $VTOKEN" -H "Content-Type: application/json" \
-                -d "$(jq -n --arg key "$key" --arg value "$value" '{key:$key,value:$value,type:"encrypted",target:["production"]}')" \
-                > /dev/null && echo "CREATED $key"
-            fi
-          }
-          upsert "DATABASE_URL" "$DB_URL"
-          upsert "JWT_SECRET" "$JWT"
-          upsert "SUPABASE_URL" "$SB_URL"
-          upsert "SUPABASE_SERVICE_KEY" "$SB_KEY"
-          echo "--- final list (keys only) ---"
-          curl -fsS -H "Authorization: Bearer $VTOKEN" "$BASE" | jq -r '.envs[] | "\(.key) [\(.target|join(","))]"
+          AUTH="Authorization: Bearer $VTOKEN"
+          JJ="Content-Type: application/json"
+          echo "=== WHOAMI ==="
+          curl -sS -H "$AUTH" https://api.vercel.com/v2/user | jq -c '{id:.user.id, name:.user.name, username:.user.username, email:.user.email}'
+          echo "=== TEAMS ==="
+          curl -sS -H "$AUTH" 'https://api.vercel.com/v2/teams' | jq -c '.teams[]? | {id, slug, name}'
+          echo "=== PROJECT (with teamId q) ==="
+          curl -sS -H "$AUTH" "https://api.vercel.com/v9/projects/$PROJECT?teamId=$TEAMID" | jq -c '{id, name, owner:(.owner.id // .owner)}' 2>/dev/null || echo "(no project json)"
+          echo "=== PROJECT (no team) ==="
+          curl -sS -H "$AUTH" "https://api.vercel.com/v9/projects/$PROJECT" | jq -c '{id, name, owner:(.owner.id // .owner)}' 2>/dev/null || echo "(no project json)"
+          echo "=== TRY LIST PROJECTS (no team) ==="
+          curl -sS -H "$AUTH" 'https://api.vercel.com/v9/projects?limit=100' | jq -c '.projects[]? | {id, name, owner:(.owner.id // .owner)}' 2>/dev/null | head -40 || echo "(list failed)"
+          exit 0
