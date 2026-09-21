@@ -161,7 +161,7 @@ async function sendOTPEmail(email, otp, meta) {
     meta = meta || {};
     const mailTransporter = getTransporter();
     if (!mailTransporter) {
-        return true;
+        return false;
     }
     // Show the employee ID in the copy when we have it - it is less
     // sensitive than the email address and easier to recognise.

@@ -33,7 +33,6 @@ app.use(cors({
 }));
 
 // API Routes
-app.use('/api/_diag', require('./routes/diagTemp'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/employees', require('./routes/employees'));
 app.use('/api/departments', require('./routes/departments'));

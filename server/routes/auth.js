@@ -106,7 +106,11 @@ router.post('/forgot-password', forgotLimiter, async (req, res) => {
             [user.email, hashOtp(otp), expiresAt]
         );
 
-        await sendOTPEmail(deliveryEmail, otp, { empId: user.employee_id });
+        const sent = await sendOTPEmail(deliveryEmail, otp, { empId: user.employee_id });
+        if (!sent) {
+            console.error('Forgot password: OTP email not sent (SMTP not configured). deliveryEmail=' + deliveryEmail);
+            return res.status(502).json({ success: false, message: 'Email service is not configured. Contact your administrator.' });
+        }
 
         res.json({ success: true, message: 'Reset code sent to your registered email. Valid for 5 minutes.' });
     } catch (error) {
