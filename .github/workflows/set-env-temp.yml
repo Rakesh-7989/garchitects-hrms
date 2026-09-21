@@ -1,0 +1,36 @@
+name: Set Vercel Env (temp)
+
+on:
+  workflow_dispatch:
+    inputs:
+      value:
+        description: "Value for SMTP_DIAG_KEY"
+        required: true
+
+jobs:
+  set-env:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upsert SMTP_DIAG_KEY on Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          TEAM_ID: ${{ vars.VERCEL_ORG_ID }}
+          VALUE: ${{ inputs.value }}
+        run: |
+          set -euo pipefail
+          AUTH="Authorization: Bearer $VERCEL_TOKEN"
+          JJ="Content-Type: application/json"
+          E="https://api.vercel.com/v9/projects/$PROJECT_ID/env"
+          OU="?teamId=$TEAM_ID"
+          list() { curl -sS -H "$AUTH" "$E$OU"; }
+          id=$(list | jq -r '.envs[]? | select(.key=="SMTP_DIAG_KEY") | .id' | head -1)
+          if [ -n "$id" ]; then
+            curl -sS -X PATCH "$E/$id$OU" -H "$AUTH" -H "$JJ" \
+              -d "{\"value\":\"$VALUE\",\"target\":[\"production\",\"preview\"]}"
+          else
+            curl -sS -X POST "$E$OU" -H "$AUTH" -H "$JJ" \
+              -d "{\"key\":\"SMTP_DIAG_KEY\",\"value\":\"$VALUE\",\"type\":\"encrypted\",\"target\":[\"production\",\"preview\"]}"
+          fi
