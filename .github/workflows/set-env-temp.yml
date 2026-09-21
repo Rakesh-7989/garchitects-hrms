@@ -10,48 +10,29 @@ jobs:
   set-env:
     runs-on: ubuntu-latest
     steps:
-      - name: Upsert Vercel env vars (correct values)
+      - uses: actions/checkout@v4
+      - name: Set env vars via Vercel CLI
         shell: bash
         env:
           VTOKEN: ${{ secrets.VERCEL_TOKEN }}
-          PROJECT: ${{ secrets.VERCEL_PROJECT_ID }}
-          TEAMID: team_Qd2Yf5z3r5asmq3HeHxCSie1
           DB_URL: ${{ secrets.HRMS_DATABASE_URL }}
           JWT: ${{ secrets.HRMS_JWT_SECRET }}
           SB_URL: ${{ secrets.HRMS_SUPABASE_URL }}
           SB_KEY: ${{ secrets.HRMS_SUPABASE_SERVICE_KEY }}
+          SCOPING: team_Qd2Yf5z3r5asmq3HeHxCSie1
         run: |
           set -euo pipefail
-          AUTH="Authorization: Bearer $VTOKEN"
-          JJ="Content-Type: application/json"
-          B="https://api.vercel.com/v9/projects/$PROJECT/env?teamId=$TEAMID"
-          switch() {
+          V="npx --yes vercel@latest"
+          setkey() {
             local key="$1"; local value="$2"
-            local list
-            list=$(curl -sS -H "$AUTH" "$B")
-            local id
-            id=$(echo "$list" | jq -r --arg key "$key" '.envs[]? | select(.key==$key) | .id' | head -1)
-            if [ -n "$id" ]; then
-              local code
-              code=$(curl -sS -o /dev/null -w '%{http_code}' -X PATCH "$B/$id" -H "$AUTH" -H "$JJ" \
-                -d "$(jq -n --arg key "$key" --arg value "$value" '{key:$key,value:$value,target:["production","preview"]}')")
-              echo "PATCH $key => $code"
-            else
-              local code
-              code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$B" -H "$AUTH" -H "$JJ" \
-                -d "$(jq -n --arg key "$key" --arg value "$value" '{key:$key,value:$value,type:"encrypted",target:["production","preview"]}')")
-              echo "POST $key => $code"
-            fi
+            echo "--- $key ---"
+            $V env rm "$key" production preview --yes --token "$VTOKEN" --scope "$SCOPING" 2>/dev/null || true
+            printf '%s' "$value" | $V env add "$key" production preview --token "$VTOKEN" --scope "$SCOPING" --yes
+            echo "  (set OK)"
           }
-          switch "DATABASE_URL" "$DB_URL"
-          switch "JWT_SECRET" "$JWT"
-          switch "SUPABASE_URL" "$SB_URL"
-          switch "SUPABASE_SERVICE_KEY" "$SB_KEY"
-          echo "=== cleanup leftover probe key ==="
-          PID=$(curl -sS -H "$AUTH" "$B" | jq -r '.envs[]? | select(.key=="__PROBE_KEY__") | .id' | head -1)
-          if [ -n "$PID" ]; then
-            code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$B/$PID" -H "$AUTH")
-            echo "DELETE probe => $code"
-          fi
-          echo "=== final keys+targets ==="
-          curl -sS -H "$AUTH" "$B" | jq -r '.envs[] | "\(.key) [\(.target|join(","))] type=\(.type) vis=\(.visibility // "-")"'
+          setkey "DATABASE_URL" "$DB_URL"
+          setkey "JWT_SECRET" "$JWT"
+          setkey "SUPABASE_URL" "$SB_URL"
+          setkey "SUPABASE_SERVICE_KEY" "$SB_KEY"
+          echo "=== final env ls ==="
+          $V env ls --token "$VTOKEN" --scope "$SCOPING" 2>&1 | head -40
