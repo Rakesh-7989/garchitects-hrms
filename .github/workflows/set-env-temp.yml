@@ -22,6 +22,12 @@ jobs:
           SB_KEY: ${{ secrets.HRMS_SUPABASE_SERVICE_KEY }}
         run: |
           set -euo pipefail
+          code() { curl -s -o /dev/null -w "%{http_code}" "$@"; }
+          echo "=== TOKEN VALIDITY ==="
+          echo "GET /v2/user (no team):        $(code -H \"Authorization: Bearer $VTOKEN\" https://api.vercel.com/v2/user)"
+          echo "GET /v9/projects/$PROJECT (teamId q): $(code -H \"Authorization: Bearer $VTOKEN\" \"https://api.vercel.com/v9/projects/$PROJECT?teamId=$TEAMID\")"
+          echo "GET /v9/projects/$PROJECT/env (teamId q): $(code -H \"Authorization: Bearer $VTOKEN\" \"https://api.vercel.com/v9/projects/$PROJECT/env?teamId=$TEAMID\")"
+          echo "GET /v9/projects/$PROJECT/env (x-vercel-team h): $(code -H \"Authorization: Bearer $VTOKEN\" -H \"x-vercel-team: $TEAMID\" \"https://api.vercel.com/v9/projects/$PROJECT/env\")"
           BASE="https://api.vercel.com/v9/projects/$PROJECT/env?teamId=$TEAMID"
           upsert() {
             local key="$1"; local value="$2"
