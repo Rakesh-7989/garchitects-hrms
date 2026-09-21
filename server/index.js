@@ -227,7 +227,7 @@ async function runMigrations() {
     try {
         await query(`CREATE TABLE IF NOT EXISTS projects (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
+            name VARCHAR(255) NOT NULL UNIQUE,
             customer VARCHAR(255),
             client VARCHAR(255),
             description TEXT,
