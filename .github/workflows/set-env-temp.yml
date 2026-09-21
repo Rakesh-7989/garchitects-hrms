@@ -10,7 +10,7 @@ jobs:
   set-env:
     runs-on: ubuntu-latest
     steps:
-      - name: Diagnose token scope + upsert env vars
+      - name: Test env endpoint access then upsert
         shell: bash
         env:
           VTOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -24,14 +24,14 @@ jobs:
           set -euo pipefail
           AUTH="Authorization: Bearer $VTOKEN"
           JJ="Content-Type: application/json"
-          echo "=== WHOAMI ==="
-          curl -sS -H "$AUTH" https://api.vercel.com/v2/user | jq -c '{id:.user.id, name:.user.name, username:.user.username, email:.user.email}'
-          echo "=== TEAMS ==="
-          curl -sS -H "$AUTH" 'https://api.vercel.com/v2/teams' | jq -c '.teams[]? | {id, slug, name}'
-          echo "=== PROJECT (with teamId q) ==="
-          curl -sS -H "$AUTH" "https://api.vercel.com/v9/projects/$PROJECT?teamId=$TEAMID" | jq -c '{id, name, owner:(.owner.id // .owner)}' 2>/dev/null || echo "(no project json)"
-          echo "=== PROJECT (no team) ==="
-          curl -sS -H "$AUTH" "https://api.vercel.com/v9/projects/$PROJECT" | jq -c '{id, name, owner:(.owner.id // .owner)}' 2>/dev/null || echo "(no project json)"
-          echo "=== TRY LIST PROJECTS (no team) ==="
-          curl -sS -H "$AUTH" 'https://api.vercel.com/v9/projects?limit=100' | jq -c '.projects[]? | {id, name, owner:(.owner.id // .owner)}' 2>/dev/null | head -40 || echo "(list failed)"
+          Q="https://api.vercel.com/v9/projects/$PROJECT/env?teamId=$TEAMID"
+          echo "=== GET env (status + short body) ==="
+          curl -sS -w '\nHTTP=%{http_code}\n' -H "$AUTH" "$Q" | tail -20
+          echo "=== POST a probe key env (status) ==="
+          curl -sS -w '\nHTTP=%{http_code}\n' -X POST "$Q" -H "$AUTH" -H "$JJ" \
+            -d '{"key":"__PROBE_KEY__","value":"probe","type":"encrypted","target":["production"]}' > probe-body.txt || true
+          cat probe-body.txt | head -15
+          echo "=== CLEANUP probe key ==="
+          PID=$(curl -sS -H "$AUTH" "$Q" | jq -r '.envs[]? | select(.key=="__PROBE_KEY__") | .id')
+          if [ -n "$PID" ]; then curl -sS -w 'HTTP=%{http_code}\n' -X DELETE "$Q/$PID" -H "$AUTH"; fi
           exit 0
