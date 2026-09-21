@@ -16,8 +16,8 @@ jobs:
       - name: Upsert SMTP_DIAG_KEY on Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
-          TEAM_ID: ${{ vars.VERCEL_ORG_ID }}
+          PROJECT_ID: "prj_oBetb56xW3BJtFhQLw2dQL2gzfw4"
+          TEAM_ID: "team_Qd2Yf5z3r5asmq3HeHxCSie1"
           VALUE: ${{ inputs.value }}
         run: |
           set -euo pipefail
