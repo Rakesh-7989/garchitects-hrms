@@ -1,0 +1,27 @@
+name: Diag Vercel REST Deploy (temp)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-rest:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Try REST API deployment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PROJECT_ID: prj_oBetb56xW3BJtFhQLw2dQL2gzfw4
+          TEAM_ID: team_Qd2Yf5z3r5asmq3HeHxCSie1
+        run: |
+          set -euo pipefail
+          AUTH="Authorization: Bearer $VERCEL_TOKEN"
+          echo "=== POST /v13/deployments (project-linked, target=production) ==="
+          curl -sS -X POST "https://api.vercel.com/v13/deployments?teamId=$TEAM_ID" \
+            -H "$AUTH" -H "Content-Type: application/json" \
+            -d "{\"project\":\"$PROJECT_ID\",\"target\":\"production\"}" | head -c 800
+          echo ""
+          echo "=== POST /v13/deployments (gitSource github ref=master) ==="
+          curl -sS -X POST "https://api.vercel.com/v13/deployments?teamId=$TEAM_ID" \
+            -H "$AUTH" -H "Content-Type: application/json" \
+            -d '{"project":"garchitects-hrms","target":"production","gitSource":{"type":"github","repo":"Rakesh-7989/garchitects-hrms","ref":"master"}}' | head -c 800
+          echo ""
