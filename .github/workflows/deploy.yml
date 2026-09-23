@@ -29,8 +29,11 @@ jobs:
       uses: amondnet/vercel-action@v25
       with:
         vercel-token: ${{ secrets.VERCEL_TOKEN }}
-        vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-        vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+        # org/project IDs hardcoded from .vercel/project.json (public identifiers).
+        # The temp env-set workflow proved these values work with this token;
+        # secrets.VERCEL_ORG_ID / VERCEL_PROJECT_ID were unreliable (garbled on set).
+        vercel-org-id: team_Qd2Yf5z3r5asmq3HeHxCSie1
+        vercel-project-id: prj_oBetb56xW3BJtFhQLw2dQL2gzfw4
         vercel-version: 41.7.8
         vercel-args: '--prod'
         github-token: ${{ secrets.GITHUB_TOKEN }}
