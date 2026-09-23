@@ -26,15 +26,13 @@ jobs:
       run: npm install
 
     - name: Deploy to Vercel
-      uses: amondnet/vercel-action@v25
-      with:
-        vercel-token: ${{ secrets.VERCEL_TOKEN }}
+      env:
         # org/project IDs hardcoded from .vercel/project.json (public identifiers).
-        # The temp env-set workflow proved these values work with this token;
-        # secrets.VERCEL_ORG_ID / VERCEL_PROJECT_ID were unreliable (garbled on set).
-        vercel-org-id: team_Qd2Yf5z3r5asmq3HeHxCSie1
-        vercel-project-id: prj_oBetb56xW3BJtFhQLw2dQL2gzfw4
-        vercel-version: 41.7.8
-        vercel-args: '--prod'
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        github-comment: true
+        # Proven working: the temp env-set workflow used exactly these values
+        # against the Vercel REST API and succeeded, so the token has access.
+        # (secrets.VERCEL_ORG_ID / VERCEL_PROJECT_ID were unreliable - garbled on set.)
+        VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        VERCEL_ORG_ID: team_Qd2Yf5z3r5asmq3HeHxCSie1
+        VERCEL_PROJECT_ID: prj_oBetb56xW3BJtFhQLw2dQL2gzfw4
+        VERCEL_SCOPE: team_Qd2Yf5z3r5asmq3HeHxCSie1
+      run: npx vercel@41.7.8 deploy --prod --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE"
