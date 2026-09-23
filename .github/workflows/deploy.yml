@@ -11,7 +11,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -25,14 +25,33 @@ jobs:
     - name: Install dependencies
       run: npm install
 
-    - name: Deploy to Vercel
+    - name: Deploy to Vercel (REST API)
       env:
         # org/project IDs hardcoded from .vercel/project.json (public identifiers).
         # Proven working: the temp env-set workflow used exactly these values
         # against the Vercel REST API and succeeded, so the token has access.
         # (secrets.VERCEL_ORG_ID / VERCEL_PROJECT_ID were unreliable - garbled on set.)
+        #
+        # Why REST instead of `vercel` CLI:
+        # The VERCEL_TOKEN secret is project-scoped - it can read/write the
+        # project API (projects/env endpoints return 200) but cannot resolve
+        # its own user (/v2/user returns 404 "User not found"). The vercel CLI
+        # (both the amondnet/vercel-action and a direct `npx vercel deploy -t`)
+        # always loads the user first, so it fails with "Could not retrieve
+        # Project Settings" / "Not able to load user". POST /v13/deployments
+        # works because it only needs project access + gitSource repoId.
         VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        VERCEL_ORG_ID: team_Qd2Yf5z3r5asmq3HeHxCSie1
-        VERCEL_PROJECT_ID: prj_oBetb56xW3BJtFhQLw2dQL2gzfw4
-        VERCEL_SCOPE: team_Qd2Yf5z3r5asmq3HeHxCSie1
-      run: npx vercel@41.7.8 deploy --prod --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE"
+        TEAM_ID: team_Qd2Yf5z3r5asmq3HeHxCSie1
+      run: |
+        set -euo pipefail
+        curl -sS -X POST "https://api.vercel.com/v13/deployments?teamId=$TEAM_ID" \
+          -H "Authorization: Bearer $VERCEL_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d '{"name":"garchitects-hrms","target":"production","gitSource":{"type":"github","repoId":1377136928,"ref":"master","sha":"'"$GITHUB_SHA"'"}}' \
+          | tee /tmp/deploy-resp.json
+        DEPLOY_ID=$(jq -r '.id' /tmp/deploy-resp.json)
+        if [ -z "$DEPLOY_ID" ] || [ "$DEPLOY_ID" = "null" ]; then
+          echo "Deployment failed - no deployment id in response"
+          exit 1
+        fi
+        echo "Deployment created: $DEPLOY_ID"
