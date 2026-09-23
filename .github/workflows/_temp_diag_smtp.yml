@@ -1,0 +1,37 @@
+name: temp-diag-smtp
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Fetch SMTP env from Vercel and run transport diagnostic
+      env:
+        VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        TEAM_ID: team_Qd2Yf5z3r5asmq3HeHxCSie1
+        PROJECT_ID: prj_oBetb56xW3BJtFhQLw2dQL2gzfw4
+      run: |
+        set -euo pipefail
+        ENVS=$(curl -sS "https://api.vercel.com/v9/projects/$PROJECT_ID/env?teamId=$TEAM_ID" \
+          -H "Authorization: Bearer $VERCEL_TOKEN" | jq '.envs[] | {key, value, type}')
+        for K in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS SMTP_FROM NODE_ENV; do
+          V=$(echo "$ENVS" | jq -r --arg k "$K" 'select(.key==$k) | .value')
+          printf '%s=%s\n' "$K" "$V" >> $GITHUB_ENV
+        done
+        node server/scripts/_diag_smtp.js
