@@ -1,0 +1,28 @@
+name: Diag Vercel Token (temp)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Probe Vercel API endpoints with the deploy token
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PROJECT_ID: prj_oBetb56xW3BJtFhQLw2dQL2gzfw4
+          TEAM_ID: team_Qd2Yf5z3r5asmq3HeHxCSie1
+        run: |
+          set -euo pipefail
+          AUTH="Authorization: Bearer $VERCEL_TOKEN"
+          echo "=== /v2/user ==="
+          curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -H "$AUTH" "https://api.vercel.com/v2/user" || true
+          echo "=== /v9/projects/{id}?teamId= ==="
+          curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -H "$AUTH" "https://api.vercel.com/v9/projects/$PROJECT_ID?teamId=$TEAM_ID" || true
+          echo "=== /v9/projects/{id}/settings?teamId= ==="
+          curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -H "$AUTH" "https://api.vercel.com/v9/projects/$PROJECT_ID/settings?teamId=$TEAM_ID" || true
+          echo "=== /v9/projects/{id}/env?teamId= ==="
+          curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -H "$AUTH" "https://api.vercel.com/v9/projects/$PROJECT_ID/env?teamId=$TEAM_ID" || true
+          echo "=== raw /v2/user body (first 200 chars) ==="
+          curl -sS -H "$AUTH" "https://api.vercel.com/v2/user" | head -c 200 || true
+          echo ""
