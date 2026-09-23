@@ -1,0 +1,42 @@
+name: temp-cleanup-env
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Remove stale SMTP_DIAG_KEY env var from Vercel project
+      env:
+        VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        TEAM_ID: team_Qd2Yf5z3r5asmq3HeHxCSie1
+        PROJECT_ID: prj_oBetb56xW3BJtFhQLw2dQL2gzfw4
+      run: |
+        set -euo pipefail
+        # Find the env var ID for SMTP_DIAG_KEY
+        ENV_ID=$(curl -sS "https://api.vercel.com/v9/projects/$PROJECT_ID/env?teamId=$TEAM_ID" \
+          -H "Authorization: Bearer $VERCEL_TOKEN" \
+          | jq -r '.envs[] | select(.key=="SMTP_DIAG_KEY") | .id' | head -1)
+        if [ -z "$ENV_ID" ] || [ "$ENV_ID" = "null" ]; then
+          echo "SMTP_DIAG_KEY not found - nothing to remove"
+          exit 0
+        fi
+        CODE=$(curl -sS -o /tmp/del.json -w "%{http_code}" -X DELETE \
+          "https://api.vercel.com/v9/projects/$PROJECT_ID/env/$ENV_ID?teamId=$TEAM_ID" \
+          -H "Authorization: Bearer $VERCEL_TOKEN")
+        echo "DELETE status: $CODE"
+        cat /tmp/del.json
+        echo ""
+        # Verify it's gone
+        LEFT=$(curl -sS "https://api.vercel.com/v9/projects/$PROJECT_ID/env?teamId=$TEAM_ID" \
+          -H "Authorization: Bearer $VERCEL_TOKEN" | jq -r '.envs[] | select(.key=="SMTP_DIAG_KEY") | .key')
+        if [ -z "$LEFT" ]; then
+          echo "VERIFIED: SMTP_DIAG_KEY removed"
+        else
+          echo "STILL PRESENT: $LEFT"
+          exit 1
+        fi
