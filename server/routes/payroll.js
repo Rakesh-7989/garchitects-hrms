@@ -12,6 +12,7 @@ const { istDateString } = require('../utils/date');
 const { sendPayslipEmail } = require('../services/email');
 const { logAudit } = require('../utils/audit');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
+const { getWorkWeekConfig } = require('../utils/workWeek');
 
 const PP_MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -205,6 +206,7 @@ async function getProfileSalaryValues(employeeId, values) {
 // paid (incl. approved WFH), approved leave, or LOP - so the
 // working = present + leave + LOP identity always holds.
 async function computeAttendanceSummary(employeeId, month, year) {
+    const wcfg = await getWorkWeekConfig();
     const empRes = await query('SELECT joining_date, status as employee_status, status_reason, last_working_day FROM employees WHERE id = $1', [employeeId]);
     if (empRes.rows.length === 0) return null;
     const empStatus = empRes.rows[0];
@@ -270,7 +272,7 @@ async function computeAttendanceSummary(employeeId, month, year) {
         while (c < cEnd) {
             const ds = istDateString(c);
             if (holidaySet.has(ds)) sandwichDays.add('H' + ds);
-            else { const dow = new Date(ds + 'T00:00:00').getDay(); if (dow === 0 || dow === 6) sandwichDays.add(ds); }
+            else { const dow = new Date(ds + 'T00:00:00').getDay(); if (dow === wcfg.weekoffDay) sandwichDays.add(ds); }
             c.setUTCDate(c.getUTCDate() + 1);
         }
     }
@@ -293,7 +295,7 @@ async function computeAttendanceSummary(employeeId, month, year) {
 
         totalDays++;
         const isHol = holidaySet.has(ds);
-        const isWo = !isHol && (dow === 0 || dow === 6);
+        const isWo = !isHol && (dow === wcfg.weekoffDay);
         const isSandwich = isHol ? sandwichDays.has('H' + ds) : (isWo && sandwichDays.has(ds));
         if (ds <= todayStr && isSandwich) {
             // Sandwich rule: this non-working day falls inside a leave span -
@@ -358,7 +360,7 @@ async function computeAttendanceSummary(employeeId, month, year) {
         while (istDateString(c) <= istDateString(cEnd)) {
             const ds = istDateString(c);
             if (holidaySet.has(ds)) creditedHols++;
-            else { const dw = new Date(ds + 'T00:00:00').getDay(); if (dw === 0 || dw === 6) creditedWOs++; }
+            else { const dw = new Date(ds + 'T00:00:00').getDay(); if (dw === wcfg.weekoffDay) creditedWOs++; }
             c.setUTCDate(c.getUTCDate() + 1);
         }
     }
@@ -368,11 +370,12 @@ async function computeAttendanceSummary(employeeId, month, year) {
     const presentDays = Math.min(totalDays, Math.floor(paidRaw) + creditedWOs + creditedHols);
 
     // ---- Leave quota vs LOP ----
-    // Every employee earns ONE paid leave per month. Approved leaves up to
+    // Every employee earns the configured number of paid leaves per month
+    // (company_settings.monthly_leave_quota, default 1). Approved leaves up to
     // that quota stay "Leave Days" (no salary impact); anything beyond it,
     // plus every genuine absence, becomes LOP and alone drives the salary
     // cut. Identity: Total - Present = Leave(quota) + LOP.
-    const MONTHLY_LEAVE_QUOTA = 1;
+    const MONTHLY_LEAVE_QUOTA = wcfg.monthlyLeaveQuota;
     const quotaCovered = Math.min(leaveDays, MONTHLY_LEAVE_QUOTA);
     // Identity-based LOP on the FULL elapsed calendar:
     //   Never showed up at all -> the WHOLE elapsed period is LOP (net pay
@@ -396,7 +399,7 @@ async function computeAttendanceSummary(employeeId, month, year) {
             while (istDateString(c) <= istDateString(cE)) {
                 const ds2 = istDateString(c);
                 const dw2 = new Date(ds2 + 'T00:00:00').getDay();
-                if (!holidaySet.has(ds2) && dw2 !== 0 && dw2 !== 6) elapsedWorkDays++;
+                if (!holidaySet.has(ds2) && dw2 !== wcfg.weekoffDay) elapsedWorkDays++;
                 c.setUTCDate(c.getUTCDate() + 1);
             }
         }
@@ -429,7 +432,7 @@ async function computeAttendanceSummary(employeeId, month, year) {
                     const ds = c.toISOString().substring(0, 10);
                     if (ds >= effStart && ds <= end && ds <= todayStr && !seen.has(ds)) {
                         const dw = c.getUTCDay();
-                        if (dw !== 0 && dw !== 6 && !holidaySet.has(ds)) { n++; seen.add(ds); }
+                        if (dw !== wcfg.weekoffDay && !holidaySet.has(ds)) { n++; seen.add(ds); }
                     }
                     c.setUTCDate(c.getUTCDate() + 1);
                 }

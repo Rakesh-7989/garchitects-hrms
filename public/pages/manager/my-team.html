@@ -190,6 +190,7 @@
     <script src="../../js/auth.js"></script>
     <script src="../../js/dashboard.js"></script>
     <script src="../../js/tickets.js"></script>
+    <script src="../../js/workWeek.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             if (!checkAuth()) throw new Error('Not authenticated');
@@ -559,7 +560,7 @@
             for (let d = 1; d <= daysInMonth; d++) {
                 const dt = new Date(year, month - 1, d);
                 const dow = dt.getDay();
-                const isWE = dow === 0 || dow === 6;
+                const isWE = window.workWeek ? window.workWeek.isWeekOff(dt) : (dow === 0 || dow === 6);
                 html += '<th style="text-align:center;min-width:36px;' + (isWE ? 'background:var(--bg-light);' : '') + '">' + d + '</th>';
             }
             html += '<th style="white-space:nowrap;">P/L/HD/Lv</th><th style="text-align:center;">Total</th></tr></thead><tbody>';
@@ -596,7 +597,7 @@
                             }
                             else if (rec.status === 'absent') {
                                 const dow = new Date(year, month - 1, d).getDay();
-                                if (dow === 0 || dow === 6) { cell = 'WO'; bg = 'background:var(--bg-light);'; w++; }
+                                if (window.workWeek ? window.workWeek.isWeekOff(new Date(year, month - 1, d)) : (dow === 0 || dow === 6)) { cell = 'WO'; bg = 'background:var(--bg-light);'; w++; }
                                 else { cell = 'A'; bg = 'background:#FEE2E2;color:#991B1B;'; a++; }
                             }
                             else { cell = rec.status.charAt(0).toUpperCase(); }
@@ -605,7 +606,7 @@
                             else { cell = 'A'; bg = 'background:#FEE2E2;color:#991B1B;'; a++; }
                         } else {
                             const dow = new Date(year, month - 1, d).getDay();
-                            if (dow === 0 || dow === 6) { cell = 'WO'; bg = 'background:var(--bg-light);'; w++; }
+                            if (window.workWeek ? window.workWeek.isWeekOff(new Date(year, month - 1, d)) : (dow === 0 || dow === 6)) { cell = 'WO'; bg = 'background:var(--bg-light);'; w++; }
                             else { cell = 'A'; bg = 'background:#FEE2E2;color:#991B1B;'; a++; }
                         }
                         html += '<td style="text-align:center;' + bg + '">' + cell + '</td>';

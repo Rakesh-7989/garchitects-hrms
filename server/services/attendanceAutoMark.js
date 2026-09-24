@@ -1,13 +1,14 @@
 const { query } = require('../config/database');
 const { istDateString, istTimeString } = require('../utils/date');
+const { getWorkWeekConfig } = require('../utils/workWeek');
 
 const OFFICE_END_TIME = '18:30:00';
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
-function isWeekend(dateStr) {
+function isWeekend(dateStr, weekoffDay = 0) {
     const d = new Date(dateStr + 'T00:00:00');
     const day = d.getDay();
-    return day === 0 || day === 6;
+    return day === weekoffDay;
 }
 
 async function getOfficeEndTime() {
@@ -74,6 +75,12 @@ async function runAutoMark() {
     // Self-heal first: holidays declared late must never keep stale absents.
     await clearHolidayAbsents().catch(() => {});
 
+    const wcfg = await getWorkWeekConfig();
+    const isOffDay = (dateStr) => {
+        const dd = new Date(dateStr + 'T00:00:00');
+        return dd.getDay() === wcfg.weekoffDay;
+    };
+
     let total = 0;
     let processedDates = [];
 
@@ -84,7 +91,7 @@ async function runAutoMark() {
         const dateStr = istDateString(d);
 
         if (dateStr > todayStr) continue;
-        if (isWeekend(dateStr)) continue;
+        if (isOffDay(dateStr)) continue;
 
         // Current day only counts once office hours are over.
         if (dateStr === todayStr && !(await isPastCutoff(now))) continue;

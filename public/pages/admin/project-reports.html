@@ -187,6 +187,7 @@
 
     <script src="../../js/auth.js"></script>
     <script src="../../js/dashboard.js"></script>
+    <script src="../../js/workWeek.js"></script>
     <script>
         // State
         let currentView = 'daily';
@@ -406,7 +407,7 @@
 
                 if (view === 'daily') {
                     const d = new Date(currentDate);
-                    const isSun = d.getDay() === 0;
+                    const isSun = window.workWeek ? window.workWeek.isWeekOff(d) : d.getDay() === 0;
                     html += `<th class="${isSun ? 'sunday-col-header' : ''}" style="min-width:100px;">${formatShortDate(d)}<br><span style="font-weight:400;font-size:0.65rem;">${DAY_NAMES[d.getDay()]}</span></th>`;
                     html += `<th>STATUS</th>`;
                 } else if (view === 'weekly') {
@@ -414,7 +415,7 @@
                     for (let i = 0; i < 7; i++) {
                         const d = new Date(weekStart);
                         d.setDate(d.getDate() + i);
-                        const isSun = d.getDay() === 0;
+                        const isSun = window.workWeek ? window.workWeek.isWeekOff(d) : d.getDay() === 0;
                         html += `<th class="${isSun ? 'sunday-col-header' : ''}" style="min-width:70px;">${DAY_NAMES[d.getDay()]}<br><span style="font-weight:400;font-size:0.65rem;">${formatShortDate(d)}</span></th>`;
                     }
                     html += `<th>TOTAL</th><th>STATUS</th>`;
@@ -422,7 +423,7 @@
                     const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
                     for (let d = 1; d <= daysInMonth; d++) {
                         const dateObj = new Date(currentYear, currentMonth - 1, d);
-                        const isSun = dateObj.getDay() === 0;
+                        const isSun = window.workWeek ? window.workWeek.isWeekOff(dateObj) : dateObj.getDay() === 0;
                         html += `<th class="${isSun ? 'sunday-col-header' : ''}" style="min-width:50px;font-size:0.65rem;">${String(d).padStart(2, '0')}<br>${DAY_NAMES[dateObj.getDay()]}</th>`;
                     }
                     html += `<th>TOTAL</th><th>STATUS</th>`;
@@ -444,7 +445,7 @@
 
                     if (view === 'daily') {
                         const d = new Date(currentDate);
-                        const isSun = d.getDay() === 0;
+                        const isSun = window.workWeek ? window.workWeek.isWeekOff(d) : d.getDay() === 0;
                         const val = emp.actualCounts.today || 0;
                         empTotal = val;
                         html += `<td class="${isSun ? 'sunday-col' : ''}" style="font-weight:600;">${isSun ? '—' : (val > 0 ? val : '—')}</td>`;
@@ -456,7 +457,7 @@
                             const d = new Date(weekStart);
                             d.setDate(d.getDate() + i);
                             const dayKey = formatDateStr(d);
-                            const isSun = d.getDay() === 0;
+                            const isSun = window.workWeek ? window.workWeek.isWeekOff(d) : d.getDay() === 0;
                             const val = emp.actualCounts[dayKey] || 0;
                             empTotal += val;
                             if (!teamActualByDay[dayKey]) teamActualByDay[dayKey] = 0;
@@ -471,7 +472,7 @@
                         for (let d = 1; d <= daysInMonth; d++) {
                             const dayKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                             const dateObj = new Date(currentYear, currentMonth - 1, d);
-                            const isSun = dateObj.getDay() === 0;
+                            const isSun = window.workWeek ? window.workWeek.isWeekOff(dateObj) : dateObj.getDay() === 0;
                             const val = emp.actualCounts[dayKey] || 0;
                             empTotal += val;
                             if (!teamActualByDay[dayKey]) teamActualByDay[dayKey] = 0;
@@ -493,7 +494,7 @@
 
                 if (view === 'daily') {
                     const d = new Date(currentDate);
-                    const isSun = d.getDay() === 0;
+                    const isSun = window.workWeek ? window.workWeek.isWeekOff(d) : d.getDay() === 0;
                     html += `<td class="${isSun ? 'sunday-col' : ''}" style="font-weight:700;">${isSun ? '—' : (setTotalActual || 0)}</td>`;
                     html += `<td></td>`;
                 } else if (view === 'weekly') {
@@ -502,7 +503,7 @@
                         const d = new Date(weekStart);
                         d.setDate(d.getDate() + i);
                         const dayKey = formatDateStr(d);
-                        const isSun = d.getDay() === 0;
+                        const isSun = window.workWeek ? window.workWeek.isWeekOff(d) : d.getDay() === 0;
                         html += `<td class="${isSun ? 'sunday-col' : ''}" style="font-weight:700;">${isSun ? '—' : (teamActualByDay[dayKey] || 0)}</td>`;
                     }
                     html += `<td style="font-weight:700;">${setTotalActual}</td>`;
@@ -512,7 +513,7 @@
                     for (let d = 1; d <= daysInMonth; d++) {
                         const dayKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                         const dateObj = new Date(currentYear, currentMonth - 1, d);
-                        const isSun = dateObj.getDay() === 0;
+                        const isSun = window.workWeek ? window.workWeek.isWeekOff(dateObj) : dateObj.getDay() === 0;
                         html += `<td class="${isSun ? 'sunday-col' : ''}" style="font-weight:700;font-size:0.75rem;">${isSun ? '—' : (teamActualByDay[dayKey] || 0)}</td>`;
                     }
                     html += `<td style="font-weight:700;">${setTotalActual}</td>`;

@@ -6,6 +6,7 @@ const { verifyToken, isAdmin, isManager } = require('../middleware/auth');
 const { istDateString, istTimeString, istMonth, istYear } = require('../utils/date');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
 const { logAudit } = require('../utils/audit');
+const { getWorkWeekConfig } = require('../utils/workWeek');
 
 router.post('/check-in', verifyToken, async (req, res) => {
     try {
@@ -465,6 +466,7 @@ router.get('/monthly', verifyToken, isManager, async (req, res) => {
         const month = parseInt(req.query.month) || istMonth();
         const year = parseInt(req.query.year) || istYear();
         const lastDay = new Date(year, month, 0).getDate();
+        const wcfg = await getWorkWeekConfig();
 
         const employees = await query(
             `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.department_id, d.name as department_name,
@@ -555,10 +557,11 @@ router.get('/monthly', verifyToken, isManager, async (req, res) => {
 
                 if (date > today) {
                     matrix[emp.id][d] = { status: 'upcoming', check_in: null, check_out: null };
-                } else if (dayOfWeek === 0 || dayOfWeek === 6) {
-                    // Week end. An EXPLICIT attendance record always wins (a real
-                    // check-in, or a weekend an admin marked absent). With no
-                    // record it shows the default Week Off, or a leave day.
+                } else if (dayOfWeek === wcfg.weekoffDay) {
+                    // Week off (the ONE configured weekly off day). An EXPLICIT
+                    // attendance record always wins (a real check-in, or a
+                    // weekoff an admin marked absent). With no record it shows
+                    // the default Week Off, or a leave day.
                     if (rec) {
                         matrix[emp.id][d] = rec;
                     } else if (leaveCls) {
@@ -614,6 +617,7 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
         const lastDay = new Date(year, month, 0).getDate();
         const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
         const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        const wcfg = await getWorkWeekConfig();
 
         const employeesRes = await query(
             `SELECT e.id, e.employee_id, e.first_name, e.last_name, d.name AS department_name
@@ -672,8 +676,7 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
                 if (st === 'present') { tally.present++; continue; }
                 if (st === 'late') { tally.late++; continue; }
                 if (st === 'half-day') { tally.half_day++; continue; }
-                if (dow === 0) { tally.weekoff++; continue; }
-                if (dow === 6 && !st) { tally.weekoff++; continue; }
+                if (dow === wcfg.weekoffDay) { tally.weekoff++; continue; }
                 if ((leavesByEmp[emp.id] || []).some(l => inRange(l, d))) { tally.leave++; continue; }
                 if ((wfhByEmp[emp.id] || []).some(w => inRange(w, d))) { tally.wfh++; continue; }
                 if (!st) { tally.absent++; continue; }

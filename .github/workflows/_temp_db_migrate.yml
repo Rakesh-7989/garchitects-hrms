@@ -1,0 +1,27 @@
+name: temp-db-migrate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Run schema migration (DDL only)
+      env:
+        DATABASE_URL: ${{ secrets.HRMS_DATABASE_URL }}
+      run: node server/scripts/migrate.js

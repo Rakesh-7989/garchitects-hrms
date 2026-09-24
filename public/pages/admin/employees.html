@@ -158,7 +158,7 @@
                         <div class="form-group"><label>Designation</label><select class="form-control" name="designation_id" id="designationSelect"><option value="">Select Designation</option></select></div>
                         <div class="form-group"><label>Role</label><select class="form-control" name="role" id="addRole"><option value="employee">Employee</option><option value="team_lead">Team Lead</option><option value="manager">Manager</option><option value="hr">HR</option><option value="admin">Admin</option></select></div>
                         <div class="form-group"><label>Reporting Person</label><select class="form-control" name="reporting_manager_id" id="reportingManagerSelect"><option value="">Select Reporting Person</option></select>
-                            <small style="color:var(--text-secondary);">Chain: Employee &rarr; Team Lead &rarr; Manager &rarr; Admin; HR reports to a Manager. Admin is top. Set the immediate supervisor.</small></div>
+                            <small style="color:var(--text-secondary);">Chain: Employee &rarr; Team Lead &rarr; Manager &rarr; Admin; HR reports to a Manager. Admin is top. Set the immediate supervisor. Every new employee is ALSO auto-assigned to the Admin.</small></div>
                         <div class="form-group"><label>Joining Date *</label><input type="date" class="form-control" name="joining_date" required></div>
                         <div class="form-group"><label>Total Compensation</label><input type="number" class="form-control" name="salary"></div>
                         <div class="form-group"><label>UAN Number</label><input type="text" class="form-control" name="uan_number" maxlength="12" pattern="[0-9]{12}" title="UAN must be exactly 12 digits" placeholder="e.g. 123456789012"></div>
@@ -565,7 +565,7 @@
                     <td>${escapeHtml(emp.phone || '-')}</td>
                     <td>${escapeHtml(emp.department_name || '-')}</td>
                     <td>${escapeHtml(emp.designation_name || '-')}${emp.designation_level ? '<br><span class="badge badge-secondary" style="font-size:0.62rem;">Level ' + escapeHtml(String(emp.designation_level)) + '</span>' : ''}</td>
-                    <td>${emp.reporting_manager_name ? '<span style="font-size:0.85rem;">' + escapeHtml(emp.reporting_manager_name) + '</span><br><span class="badge badge-secondary" style="font-size:0.62rem;">' + escapeHtml(emp.reporting_manager_employee_id || '') + '</span>' : '<span class="badge badge-secondary" style="font-size:0.7rem;">Not Assigned</span>'}</td>
+                    <td>${emp.reporting_manager_name ? '<span style="font-size:0.85rem;">' + escapeHtml(emp.reporting_manager_name) + '</span><br><span class="badge badge-secondary" style="font-size:0.62rem;">' + escapeHtml(emp.reporting_manager_employee_id || '') + '</span>' : '<span class="badge badge-secondary" style="font-size:0.7rem;">Not Assigned</span>'}${emp.secondary_reporting_manager_name ? '<br><span style="font-size:0.75rem;color:var(--text-secondary);">+ ' + escapeHtml(emp.secondary_reporting_manager_name) + '</span>' : ''}</td>
                     <td><span class="badge badge-${emp.role==='admin'?'danger':emp.role==='hr'?'warning':emp.role==='manager'?'info':emp.role==='team_lead'?'primary':'secondary'}">${escapeHtml(emp.role)}</span></td>
                     <td><span class="badge badge-${getStatusBadge(emp.status)}" title="${escapeHtml(holdTitle)}">${escapeHtml(emp.status)}${emp.status_reason ? '*' : ''}</span></td>
                     <td>

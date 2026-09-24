@@ -3,6 +3,7 @@ const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse, hasColumn } = require('../utils/schemaRepair');
+const { getWorkWeekConfig } = require('../utils/workWeek');
 
 // Self-healing query wrapper: heals missing projects-module tables per request.
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
@@ -87,7 +88,7 @@ router.post('/:projectId', verifyToken, isAdmin, async (req, res) => {
             return res.status(404).json({ success: false, message: 'Project not found' });
         }
     
-        const workingDays = calculateWorkingDays(start_date, end_date);
+        const workingDays = await calculateWorkingDays(start_date, end_date);
     
         const result = await q(
             `INSERT INTO project_sets (project_id, name, start_date, end_date, total_target, working_days, status) 
@@ -128,9 +129,11 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 /**
- * Helper function: Calculate working days between two dates (excluding Sundays)
+ * Helper function: Calculate working days between two dates (excluding the
+ * configured weekly off day)
  */
-function calculateWorkingDays(startDate, endDate) {
+async function calculateWorkingDays(startDate, endDate) {
+    const wcfg = await getWorkWeekConfig();
     const start = new Date(startDate);
     const end = new Date(endDate);
     
@@ -140,7 +143,7 @@ function calculateWorkingDays(startDate, endDate) {
     while (current <= end) {
         // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
         const day = current.getDay();
-        if (day !== 0) { // Exclude Sunday
+        if (day !== wcfg.weekoffDay) { // Exclude the weekly off day
             workingDays++;
         }
         current.setDate(current.getDate() + 1);

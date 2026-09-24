@@ -151,6 +151,7 @@
     <script src="../../js/auth.js"></script>
     <script src="../../js/dashboard.js"></script>
     <script src="../../js/tickets.js"></script>
+    <script src="../../js/workWeek.js"></script>
     <script>
         const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
         const shortDayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -285,7 +286,7 @@
                 if (st === 'half-day') { counts['half-day']++; continue; }
                 if (holidayMap[key]) { counts.holiday++; continue; }
                 const dow = new Date(year, month - 1, dd).getDay();
-                if (dow === 0 || dow === 6) { counts.weekoff++; continue; }
+                if (window.workWeek ? window.workWeek.isWeekOff(new Date(year, month - 1, dd)) : (dow === 0 || dow === 6)) { counts.weekoff++; continue; }
                 if (leaveClass[key]) {
                     // Approved leave: paid for the monthly quota, LOP beyond it.
                     if (leaveClass[key] === 'paid') { /* counts.leave already tallied */ }
@@ -431,7 +432,7 @@
                     // Holidays must win over weekends: a Sunday holiday should
                     // show its name, not "Week Off".
                     cls = 'cal-holiday'; tag = holidayDates[dateStr]; counts.holiday++;
-                } else if (dayOfWeek === 0 || dayOfWeek === 6) {
+                } else if (window.workWeek ? window.workWeek.isWeekOff(date) : (dayOfWeek === 0 || dayOfWeek === 6)) {
                     cls = 'cal-weekoff'; tag = 'Week Off'; counts.weekoff++;
                 } else if (leaveClass[dateStr]) {
                     // Approved leave with no attendance row yet - never absent.

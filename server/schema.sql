@@ -776,3 +776,25 @@ INSERT INTO project_sets (project_id, name, start_date, end_date, total_target)
 SELECT p.id, 'Batch_1', '2026-09-03', '2026-09-03', 500
 FROM projects p WHERE p.name = 'KYC'
 ON CONFLICT DO NOTHING;
+
+-- ============================================================
+-- SECONDARY REPORTING MANAGER + WORK-WEEK POLICY
+-- ============================================================
+-- Every employee is auto-assigned to the main admin in addition to their
+-- team lead so the admin can also see/approve their leave/WFH requests.
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS secondary_reporting_manager_id INT REFERENCES employees(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_employees_secondary_rm ON employees(secondary_reporting_manager_id);
+
+-- Backfill: existing non-admin employees get the primary admin as their
+-- secondary reporting manager (idempotent - only fills NULLs).
+UPDATE employees SET secondary_reporting_manager_id = (
+    SELECT id FROM employees WHERE role = 'admin' AND status = 'active' ORDER BY id LIMIT 1
+)
+WHERE role != 'admin' AND secondary_reporting_manager_id IS NULL;
+
+-- Work-week policy defaults (single weekly off day, admin-selectable).
+INSERT INTO company_settings (setting_key, setting_value, description) VALUES
+('weekoff_day', '0', 'Weekly off day (0=Sunday .. 6=Saturday); the ONLY weekly off day'),
+('weekly_working_days', '6', 'Expected working days per week'),
+('monthly_leave_quota', '1', 'Paid leave days an employee earns per month')
+ON CONFLICT (setting_key) DO NOTHING;

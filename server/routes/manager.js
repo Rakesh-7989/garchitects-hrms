@@ -4,6 +4,8 @@ const { query } = require('../config/database');
 const { verifyToken, isManager } = require('../middleware/auth');
 const { istDateString } = require('../utils/date');
 const { sendToUser } = require('../services/push');
+const { getWorkWeekConfig } = require('../utils/workWeek');
+const { runWithSchemaRepair } = require('../utils/schemaRepair');
 
 // @route   GET /api/manager/team
 // @desc    Get current user's direct reports (TL) or all employees (HR/Manager)
@@ -25,17 +27,18 @@ router.get('/team', verifyToken, isManager, async (req, res) => {
                 ORDER BY e.first_name`
             );
         } else {
-            // Team Lead: direct reports only
-            result = await query(
+            // Team Lead: direct reports only (admin: also everyone auto-assigned
+            // to them as secondary reporting manager)
+            result = await runWithSchemaRepair(() => query(
                 `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.email, e.role, e.status,
                 d.name as department_name, des.name as designation_name
                 FROM employees e
                 LEFT JOIN departments d ON e.department_id = d.id
                 LEFT JOIN designations des ON e.designation_id = des.id
-                WHERE e.reporting_manager_id = $1 AND e.status = 'active'
+                WHERE (e.reporting_manager_id = $1 OR e.secondary_reporting_manager_id = $1) AND e.status = 'active'
                 ORDER BY e.first_name`,
                 [req.user.id]
-            );
+            ));
         }
         res.json({ success: true, team: result.rows });
     } catch (error) {
@@ -77,8 +80,9 @@ router.get('/today', verifyToken, isManager, async (req, res) => {
                 [today]
             );
         } else {
-            // Team Lead: direct reports only
-            rows = await query(
+            // Team Lead: direct reports only (admin: also everyone auto-assigned
+            // to them as secondary reporting manager)
+            rows = await runWithSchemaRepair(() => query(
                 `SELECT e.id, e.employee_id, e.first_name, e.last_name, des.name as designation_name,
                     a.check_in::text AS check_in,
                     a.check_out::text AS check_out,
@@ -95,10 +99,10 @@ router.get('/today', verifyToken, isManager, async (req, res) => {
                 FROM employees e
                 LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = $2::date
                 LEFT JOIN designations des ON e.designation_id = des.id
-                WHERE e.reporting_manager_id = $1 AND e.status = 'active'
+                WHERE (e.reporting_manager_id = $1 OR e.secondary_reporting_manager_id = $1) AND e.status = 'active'
                 ORDER BY des.name NULLS LAST, e.first_name`,
                 [req.user.id, today]
-            );
+            ));
         }
 
         const members = rows.rows.map(r => {
@@ -131,7 +135,7 @@ router.get('/today', verifyToken, isManager, async (req, res) => {
 // @access  Private (Manager+)
 router.get('/leaves', verifyToken, isManager, async (req, res) => {
     try {
-        const result = await query(
+        const result = await runWithSchemaRepair(() => query(
             `SELECT la.*, lt.name as leave_type_name,
             e.first_name || ' ' || e.last_name as employee_name, e.employee_id as emp_id,
             d.name as department_name
@@ -139,10 +143,11 @@ router.get('/leaves', verifyToken, isManager, async (req, res) => {
             LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
             JOIN employees e ON la.employee_id = e.id
             LEFT JOIN departments d ON e.department_id = d.id
-            WHERE la.status = 'pending' AND (la.reporting_manager_id = $1 OR la.manager_id = $1 OR la.hr_id = $1)
+            WHERE la.status = 'pending' AND (la.reporting_manager_id = $1 OR la.manager_id = $1 OR la.hr_id = $1
+                OR la.employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $1))
             ORDER BY la.created_at DESC`,
             [req.user.id]
-        );
+        ));
         res.json({ success: true, leaves: result.rows });
     } catch (error) {
         console.error('Manager leaves error:', error);
@@ -155,17 +160,18 @@ router.get('/leaves', verifyToken, isManager, async (req, res) => {
 // @access  Private (Manager+)
 router.get('/wfh', verifyToken, isManager, async (req, res) => {
     try {
-        const result = await query(
+        const result = await runWithSchemaRepair(() => query(
             `SELECT wr.*,
             e.first_name || ' ' || e.last_name as employee_name, e.employee_id as emp_id,
             d.name as department_name
             FROM wfh_requests wr
             JOIN employees e ON wr.employee_id = e.id
             LEFT JOIN departments d ON e.department_id = d.id
-            WHERE wr.status = 'pending' AND (wr.reporting_manager_id = $1 OR wr.manager_id = $1 OR wr.hr_id = $1)
+            WHERE wr.status = 'pending' AND (wr.reporting_manager_id = $1 OR wr.manager_id = $1 OR wr.hr_id = $1
+                OR wr.employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $1))
             ORDER BY wr.created_at DESC`,
             [req.user.id]
-        );
+        ));
         res.json({ success: true, wfhRequests: result.rows });
     } catch (error) {
         console.error('Manager WFH error:', error);
@@ -204,10 +210,11 @@ router.put('/leaves/:id', verifyToken, isManager, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid status' });
         }
 
-        const appRes = await query(
-            `SELECT * FROM leave_applications WHERE id = $1 AND (reporting_manager_id = $2 OR manager_id = $2 OR hr_id = $2) AND status = 'pending'`,
+        const appRes = await runWithSchemaRepair(() => query(
+            `SELECT * FROM leave_applications WHERE id = $1 AND (reporting_manager_id = $2 OR manager_id = $2 OR hr_id = $2
+                OR employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $2)) AND status = 'pending'`,
             [req.params.id, req.user.id]
-        );
+        ));
         if (appRes.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Leave request not found or already decided' });
         }
@@ -223,6 +230,7 @@ router.put('/leaves/:id', verifyToken, isManager, async (req, res) => {
         if (status === 'approved') {
             const start = new Date(leaveApp.start_date);
             const end = new Date(leaveApp.end_date);
+            const wcfg = await getWorkWeekConfig();
 
             const holidayRows = await query(
                 `SELECT to_char(date, 'YYYY-MM-DD') as d FROM holidays WHERE date BETWEEN $1 AND $2`,
@@ -232,7 +240,7 @@ router.put('/leaves/:id', verifyToken, isManager, async (req, res) => {
 
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
                 const dow = d.getDay();
-                if (dow === 0 || dow === 6) continue;
+                if (dow === wcfg.weekoffDay) continue;
                 const dateStr = istDateString(d);
                 if (holidays.has(dateStr)) continue;
                 const existing = await query(
@@ -276,10 +284,11 @@ router.put('/wfh/:id', verifyToken, isManager, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid status' });
         }
 
-        const appRes = await query(
-            `SELECT * FROM wfh_requests WHERE id = $1 AND (reporting_manager_id = $2 OR manager_id = $2 OR hr_id = $2) AND status = 'pending'`,
+        const appRes = await runWithSchemaRepair(() => query(
+            `SELECT * FROM wfh_requests WHERE id = $1 AND (reporting_manager_id = $2 OR manager_id = $2 OR hr_id = $2
+                OR employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $2)) AND status = 'pending'`,
             [req.params.id, req.user.id]
-        );
+        ));
         if (appRes.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'WFH request not found or already decided' });
         }
@@ -326,7 +335,7 @@ router.get('/leaves/history', verifyToken, isManager, async (req, res) => {
                 ORDER BY la.created_at DESC LIMIT 100`
             );
         } else {
-            result = await query(
+            result = await runWithSchemaRepair(() => query(
                 `SELECT la.*, lt.name as leave_type_name,
                 e.first_name || ' ' || e.last_name as employee_name, e.employee_id as emp_id,
                 ab.first_name || ' ' || ab.last_name as approved_by_name
@@ -335,9 +344,10 @@ router.get('/leaves/history', verifyToken, isManager, async (req, res) => {
                 JOIN employees e ON la.employee_id = e.id
                 LEFT JOIN employees ab ON la.approved_by = ab.id
                 WHERE la.reporting_manager_id = $1 OR la.manager_id = $1 OR la.hr_id = $1
+                OR la.employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $1)
                 ORDER BY la.created_at DESC LIMIT 100`,
                 [req.user.id]
-            );
+            ));
         }
         res.json({ success: true, leaves: result.rows });
     } catch (error) {
@@ -364,7 +374,7 @@ router.get('/wfh/history', verifyToken, isManager, async (req, res) => {
                 ORDER BY wr.created_at DESC LIMIT 100`
             );
         } else {
-            result = await query(
+            result = await runWithSchemaRepair(() => query(
                 `SELECT wr.*,
                 e.first_name || ' ' || e.last_name as employee_name, e.employee_id as emp_id,
                 ab.first_name || ' ' || ab.last_name as approved_by_name
@@ -372,9 +382,10 @@ router.get('/wfh/history', verifyToken, isManager, async (req, res) => {
                 JOIN employees e ON wr.employee_id = e.id
                 LEFT JOIN employees ab ON wr.approved_by = ab.id
                 WHERE wr.reporting_manager_id = $1 OR wr.manager_id = $1 OR wr.hr_id = $1
+                OR wr.employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $1)
                 ORDER BY wr.created_at DESC LIMIT 100`,
                 [req.user.id]
-            );
+            ));
         }
         res.json({ success: true, wfhRequests: result.rows });
     } catch (error) {

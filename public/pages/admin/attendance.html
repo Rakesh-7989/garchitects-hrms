@@ -248,6 +248,7 @@
 
     <script src="../../js/auth.js"></script>
     <script src="../../js/dashboard.js"></script>
+    <script src="../../js/workWeek.js"></script>
     <script>
         if (!requireAdmin()) throw new Error('Not authenticated');
 
@@ -349,7 +350,7 @@
             for (let d = 1; d <= days; d++) {
                 const date = new Date(year, month - 1, d);
                 const dayName = date.toLocaleDateString('en', { weekday: 'short' });
-                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                const isWeekend = window.workWeek ? window.workWeek.isWeekOff(date) : (date.getDay() === 0 || date.getDay() === 6);
                 const isFuture = date > today;
                 html += '<th style="' + (isWeekend || isFuture ? 'color:var(--text-tertiary);' : '') + '" title="' + dayName + ' ' + d + '">' + d + '<br><span style="font-size:0.55rem;font-weight:400;">' + dayName + '</span></th>';
             }

@@ -46,6 +46,9 @@ const EMPLOYEE_ALTER_COLUMNS = {
     pf_number: 'TEXT',
     esi_number: 'TEXT',
     reporting_manager_id: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+    // Secondary reporting manager (auto-assigned to the main admin). Added so a
+    // new employee assigned to a team lead is ALWAYS also under the admin.
+    secondary_reporting_manager_id: 'INT REFERENCES employees(id) ON DELETE SET NULL',
     // Added by the session-revocation release; verifyToken selects it on every
     // request, so a missing column must be healed before anything else works.
     must_change_password: 'INTEGER DEFAULT 0',

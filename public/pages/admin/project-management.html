@@ -279,6 +279,7 @@
     </div>
 
     <script src="../../js/auth.js"></script>
+    <script src="../../js/workWeek.js"></script>
     <script>
         async function apiCall(endpoint, method = 'GET', body = null) {
             const token = localStorage.getItem('token');
@@ -852,7 +853,7 @@
             const end = new Date(endDate + 'T00:00:00');
             let count = 0;
             for (let cur = new Date(start); cur <= end; cur.setDate(cur.getDate() + 1)) {
-                if (cur.getDay() !== 0) count++;
+                if (window.workWeek ? !window.workWeek.isWeekOff(cur) : cur.getDay() !== 0) count++;
             }
             return count;
         }

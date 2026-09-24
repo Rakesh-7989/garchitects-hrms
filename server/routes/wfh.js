@@ -4,19 +4,21 @@ const { query } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { istDateString } = require('../utils/date');
 const { sendToUser } = require('../services/push');
+const { getWorkWeekConfig } = require('../utils/workWeek');
+const { runWithSchemaRepair } = require('../utils/schemaRepair');
 
-function isWeekend(dateStr) {
+function isWeekend(dateStr, weekoffDay = 0) {
     const d = new Date(dateStr);
     const day = d.getDay();
-    return day === 0 || day === 6;
+    return day === weekoffDay;
 }
 
-function calcBusinessDays(start, end, holidays = new Set()) {
+function calcBusinessDays(start, end, holidays = new Set(), weekoffDay = 0) {
     let count = 0;
     const s = new Date(start);
     const e = new Date(end);
     for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
-        if (d.getDay() === 0 || d.getDay() === 6) continue;
+        if (d.getDay() === weekoffDay) continue;
         const ds = istDateString(d);
         if (holidays.has(ds)) continue;
         count++;
@@ -32,26 +34,32 @@ router.post('/apply', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Start and end dates are required' });
         }
 
+        const wcfg = await getWorkWeekConfig();
+
         if (new Date(end_date) < new Date(start_date)) {
             return res.status(400).json({ success: false, message: 'End date must be after start date' });
         }
 
-        if (isWeekend(start_date)) {
-            return res.status(400).json({ success: false, message: 'Start date cannot be a weekend' });
+        if (isWeekend(start_date, wcfg.weekoffDay)) {
+            return res.status(400).json({ success: false, message: 'Start date cannot be a week off' });
         }
 
-        const empRes = await query(
-            'SELECT role, reporting_manager_id FROM employees WHERE id = $1', [req.user.id]
-        );
+        const empRes = await runWithSchemaRepair(() => query(
+            'SELECT role, reporting_manager_id, secondary_reporting_manager_id FROM employees WHERE id = $1', [req.user.id]
+        ));
         const emp = empRes.rows[0];
         if (!emp) {
             return res.status(404).json({ success: false, message: 'Employee not found' });
         }
         const needsManager = emp.role === 'employee' || emp.role === 'manager' || emp.role === 'team_lead' || emp.role === 'hr';
-        if (needsManager && !emp.reporting_manager_id) {
+        // Every new employee is auto-assigned to the admin as their secondary
+        // reporting manager, so applying for WFH is never blocked when only
+        // the team lead is missing.
+        const primaryApprover = emp.reporting_manager_id || emp.secondary_reporting_manager_id || null;
+        if (needsManager && !primaryApprover) {
             return res.status(400).json({ success: false, message: 'No reporting manager assigned. Contact your administrator.' });
         }
-        const reporting_manager_id = needsManager ? emp.reporting_manager_id : null;
+        const reporting_manager_id = needsManager ? primaryApprover : null;
 
         // Get manager and HR for multi-approver routing
         const approverRes = await query(
@@ -76,7 +84,7 @@ router.post('/apply', verifyToken, async (req, res) => {
 
         const holRows = await query(`SELECT to_char(date, 'YYYY-MM-DD') as d FROM holidays WHERE date BETWEEN $1 AND $2 AND is_active = 1`, [start_date, end_date]);
         const holidays = new Set((holRows.rows || []).map(r => r.d));
-        const totalDays = calcBusinessDays(start_date, end_date, holidays);
+        const totalDays = calcBusinessDays(start_date, end_date, holidays, wcfg.weekoffDay);
 
         const result = await query(
             `INSERT INTO wfh_requests (employee_id, reporting_manager_id, manager_id, hr_id, start_date, end_date, total_days, reason)
@@ -270,6 +278,7 @@ router.put('/approve/:id', verifyToken, isAdmin, async (req, res) => {
 
         if (status === 'approved') {
             const app = wfhApp.rows[0];
+            const wcfg = await getWorkWeekConfig();
             const holidayRows = await query(
                 `SELECT to_char(date, 'YYYY-MM-DD') as d FROM holidays WHERE date BETWEEN $1 AND $2`,
                 [app.start_date, app.end_date]
@@ -277,7 +286,7 @@ router.put('/approve/:id', verifyToken, isAdmin, async (req, res) => {
             const holidays = new Set((holidayRows.rows || []).map(r => r.d));
 
             for (let d = new Date(app.start_date); d <= new Date(app.end_date); d.setDate(d.getDate() + 1)) {
-                if (d.getDay() === 0 || d.getDay() === 6) continue;
+                if (d.getDay() === wcfg.weekoffDay) continue;
                 const dateStr = istDateString(d);
                 if (holidays.has(dateStr)) continue;
                 const existing = await query(

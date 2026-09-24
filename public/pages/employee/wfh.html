@@ -126,6 +126,7 @@
     <script src="../../js/auth.js"></script>
     <script src="../../js/dashboard.js"></script>
     <script src="../../js/tickets.js"></script>
+    <script src="../../js/workWeek.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             if (!checkAuth()) throw new Error('Not authenticated');
@@ -142,7 +143,10 @@
                 const u = data.user;
                 needsRM = u.role === 'employee' || u.role === 'manager' || u.role === 'team_lead' || u.role === 'hr';
                 reportingManagerName = u.reporting_manager_name || null;
-                if (needsRM && !u.reporting_manager_id) {
+                // The admin is auto-assigned as every employee's SECONDARY
+                // reporting manager, so applications are only blocked when
+                // neither a primary nor secondary approver exists.
+                if (needsRM && !u.reporting_manager_id && !u.secondary_reporting_manager_id) {
                     const warn = document.getElementById('rmWarning');
                     if (warn) warn.style.display = 'block';
                     const btn = document.getElementById('applyBtn');
@@ -199,21 +203,23 @@
                 return;
             }
 
-            const weekendStart = start.getDay() === 0 || start.getDay() === 6;
+            const weekendStart = window.workWeek ? window.workWeek.isWeekOff(start) : (start.getDay() === 0 || start.getDay() === 6);
 
-            let businessDays = 0;
-            const current = new Date(start);
-            while (current <= end) {
-                if (current.getDay() !== 0 && current.getDay() !== 6) businessDays++;
-                current.setDate(current.getDate() + 1);
+            let businessDays = window.workWeek ? window.workWeek.businessDaysBetween(start, end) : 0;
+            if (!window.workWeek) {
+                const current = new Date(start);
+                while (current <= end) {
+                    if (current.getDay() !== 0 && current.getDay() !== 6) businessDays++;
+                    current.setDate(current.getDate() + 1);
+                }
             }
 
             const totalDays = Math.ceil((end - start) / (1000*60*60*24)) + 1;
             infoBox.style.display = 'flex';
             // Compose the weekend warning into the summary instead of setting it
             // first and overwriting it below (the warning was never visible).
-            infoText.textContent = (weekendStart ? 'Warning: Start date falls on a weekend. ' : '') +
-                totalDays + ' calendar day' + (totalDays > 1 ? 's' : '') + ' (' + businessDays + ' business day' + (businessDays > 1 ? 's' : '') + ', excluding weekends)';
+            infoText.textContent = (weekendStart ? 'Warning: Start date falls on the weekly off day. ' : '') +
+                totalDays + ' calendar day' + (totalDays > 1 ? 's' : '') + ' (' + businessDays + ' business day' + (businessDays > 1 ? 's' : '') + ', excluding the weekly off day)';
             infoBox.style.background = weekendStart ? 'var(--accent-light)' : 'var(--primary-50)';
             infoBox.style.color = weekendStart ? 'var(--accent)' : 'var(--primary-dark)';
         }

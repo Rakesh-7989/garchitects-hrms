@@ -121,6 +121,24 @@
                                 <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
                             </select>
                         </div>
+                        <div style="border-top:1px solid var(--border);margin:18px 0 14px;"></div>
+                        <h4 style="font-weight:600;margin-bottom:12px;">Work Week &amp; Leave Policy</h4>
+                        <div class="form-group"><label>Weekly Week Off Day</label>
+                            <select class="form-control" id="weekoffDay">
+                                <option value="0">Sunday</option>
+                                <option value="1">Monday</option>
+                                <option value="2">Tuesday</option>
+                                <option value="3">Wednesday</option>
+                                <option value="4">Thursday</option>
+                                <option value="5">Friday</option>
+                                <option value="6">Saturday</option>
+                            </select>
+                            <small style="color:var(--text-secondary);">The ONLY weekly off day (auto-absent &amp; leave day counting follow this).</small>
+                        </div>
+                        <div class="grid grid-2">
+                            <div class="form-group"><label>Weekly Working Days</label><input type="number" class="form-control" id="weeklyWorkingDays" value="6" min="1" max="7"></div>
+                            <div class="form-group"><label>Monthly Leave Quota</label><input type="number" class="form-control" id="monthlyLeaveQuota" value="1" min="0"></div>
+                        </div>
                         <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Timings</button>
                     </form>
                 </div>
@@ -276,6 +294,9 @@
                     document.getElementById('endTime').value = d.settings.office_end_time || '18:30';
                     document.getElementById('gracePeriod').value = d.settings.late_grace_period || '15';
                     document.getElementById('timezone').value = d.settings.timezone || 'Asia/Kolkata';
+                    document.getElementById('weekoffDay').value = d.settings.weekoff_day || '0';
+                    document.getElementById('weeklyWorkingDays').value = d.settings.weekly_working_days || '6';
+                    document.getElementById('monthlyLeaveQuota').value = d.settings.monthly_leave_quota || '1';
                 }
             } else {
                 showToast('Failed to load settings', 'error');
@@ -303,10 +324,13 @@
                 start_time: document.getElementById('startTime').value,
                 end_time: document.getElementById('endTime').value,
                 grace_period: document.getElementById('gracePeriod').value,
-                timezone: document.getElementById('timezone').value
+                timezone: document.getElementById('timezone').value,
+                weekoff_day: document.getElementById('weekoffDay').value,
+                weekly_working_days: document.getElementById('weeklyWorkingDays').value,
+                monthly_leave_quota: document.getElementById('monthlyLeaveQuota').value
             };
             const r = await apiCall('/settings/timing', 'PUT', data);
-            if (r && r.success) showToast('Office timings saved successfully!', 'success');
+            if (r && r.success) showToast('Office timings & work week saved successfully!', 'success');
             else showToast(r?.message || 'Error saving timings', 'error');
         }
 

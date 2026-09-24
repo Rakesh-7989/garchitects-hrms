@@ -57,11 +57,13 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         const { search, department, designation, status, page = 1, limit = 10 } = req.query;
         let sqlQuery = `
             SELECT e.*, d.name as department_name, des.name as designation_name, des.level as designation_level,
-            rm.first_name || ' ' || rm.last_name as reporting_manager_name, rm.employee_id as reporting_manager_employee_id
+            rm.first_name || ' ' || rm.last_name as reporting_manager_name, rm.employee_id as reporting_manager_employee_id,
+            srm.first_name || ' ' || srm.last_name as secondary_reporting_manager_name, srm.employee_id as secondary_reporting_manager_employee_id
             FROM employees e 
             LEFT JOIN departments d ON e.department_id = d.id 
             LEFT JOIN designations des ON e.designation_id = des.id 
             LEFT JOIN employees rm ON e.reporting_manager_id = rm.id
+            LEFT JOIN employees srm ON e.secondary_reporting_manager_id = srm.id
             WHERE 1=1 AND e.id != ${MAIN_ADMIN_ID}
         `;
         const params = [];
@@ -96,10 +98,10 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         }
         
         // Count total
-        const countResult = await query(
+        const countResult = await runWithSchemaRepair(() => query(
             sqlQuery.replace(/SELECT[\s\S]*?FROM employees/, 'SELECT COUNT(*) as count FROM employees'),
             params
-        );
+        ));
         const total = parseInt(countResult.rows[0].count);
         
         // Pagination
@@ -107,7 +109,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         sqlQuery += ` ORDER BY e.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         params.push(limit, offset);
         
-        const result = await query(sqlQuery, params);
+        const result = await runWithSchemaRepair(() => query(sqlQuery, params));
         
         // Remove password_hash from results
         const employees = result.rows.map(emp => {
@@ -447,16 +449,18 @@ router.get('/:id', verifyToken, async (req, res) => {
             }
         }
 
-        const result = await query(
+        const result = await runWithSchemaRepair(() => query(
             `SELECT e.*, d.name as department_name, des.name as designation_name, des.level as designation_level,
-            rm.first_name || ' ' || rm.last_name as reporting_manager_name, rm.employee_id as reporting_manager_employee_id
+            rm.first_name || ' ' || rm.last_name as reporting_manager_name, rm.employee_id as reporting_manager_employee_id,
+            srm.first_name || ' ' || srm.last_name as secondary_reporting_manager_name, srm.employee_id as secondary_reporting_manager_employee_id
             FROM employees e 
             LEFT JOIN departments d ON e.department_id = d.id 
             LEFT JOIN designations des ON e.designation_id = des.id 
             LEFT JOIN employees rm ON e.reporting_manager_id = rm.id
+            LEFT JOIN employees srm ON e.secondary_reporting_manager_id = srm.id
             WHERE e.id = $1`,
             [targetId]
-        );
+        ));
         
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Employee not found' });
@@ -562,13 +566,14 @@ async function createEmployeeRecord(body, req) {
          bank_name, bank_branch, bank_account, bank_ifsc, reporting_manager_id,
          basic_salary, hra, conveyance, medical, special_allowance, other_allowance,
          pf, esi, professional_tax, income_tax, loan_deduction, advance_salary, other_deduction,
-         incentive, bonus, extra_work, employer_pf, employer_esi, employer_contribution) 
+         incentive, bonus, extra_work, employer_pf, employer_esi, employer_contribution,
+         secondary_reporting_manager_id) 
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 1,
          $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
          $28, $29, $30, $31,
          $32, $33, $34, $35, $36, $37,
          $38, $39, $40, $41, $42, $43, $44,
-         $45, $46, $47, $48, $49, $50) 
+         $45, $46, $47, $48, $49, $50, $51) 
         RETURNING id, employee_id, first_name, last_name, email, personal_email, role, status`,
         [
             employee_id, first_name, last_name, email, phone, password_hash,
@@ -585,7 +590,10 @@ async function createEmployeeRecord(body, req) {
             cleanNum(pf) ?? 0, cleanNum(esi) ?? 0, cleanNum(professional_tax) ?? 0, cleanNum(income_tax) ?? 0,
             cleanNum(loan_deduction) ?? 0, cleanNum(advance_salary) ?? 0, cleanNum(other_deduction) ?? 0,
             cleanNum(incentive) ?? 0, cleanNum(bonus) ?? 0, cleanNum(extra_work) ?? 0,
-            cleanNum(employer_pf) ?? 0, cleanNum(employer_esi) ?? 0, cleanNum(employer_contribution) ?? 0
+            cleanNum(employer_pf) ?? 0, cleanNum(employer_esi) ?? 0, cleanNum(employer_contribution) ?? 0,
+            // New employees are auto-assigned to the main admin in addition to
+            // their team lead so the admin always sees/approves their requests.
+            cleanNum(reporting_manager_id) ? MAIN_ADMIN_ID : null
         ]
     ));
 
