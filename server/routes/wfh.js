@@ -6,6 +6,7 @@ const { istDateString } = require('../utils/date');
 const { sendToUser } = require('../services/push');
 const { getWorkWeekConfig } = require('../utils/workWeek');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { resolveApproverRouting } = require('../utils/approvalRouting');
 
 function isWeekend(dateStr, weekoffDay = 0) {
     const d = new Date(dateStr);
@@ -44,31 +45,19 @@ router.post('/apply', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Start date cannot be a week off' });
         }
 
-        const empRes = await runWithSchemaRepair(() => query(
-            'SELECT role, reporting_manager_id, secondary_reporting_manager_id FROM employees WHERE id = $1', [req.user.id]
-        ));
-        const emp = empRes.rows[0];
-        if (!emp) {
+        // Shared approver routing (same source of truth as leave/tickets):
+        // the employee's team lead, or the admin as their secondary when no
+        // lead exists - every non-admin employee is auto-assigned to the admin.
+        const routing = await resolveApproverRouting(req.user.id);
+        if (!routing) {
             return res.status(404).json({ success: false, message: 'Employee not found' });
         }
-        const needsManager = emp.role === 'employee' || emp.role === 'manager' || emp.role === 'team_lead' || emp.role === 'hr';
-        // Every new employee is auto-assigned to the admin as their secondary
-        // reporting manager, so applying for WFH is never blocked when only
-        // the team lead is missing.
-        const primaryApprover = emp.reporting_manager_id || emp.secondary_reporting_manager_id || null;
-        if (needsManager && !primaryApprover) {
+        if (routing.needsManager && !routing.primaryApprover) {
             return res.status(400).json({ success: false, message: 'No reporting manager assigned. Contact your administrator.' });
         }
-        const reporting_manager_id = needsManager ? primaryApprover : null;
-
-        // Get manager and HR for multi-approver routing
-        const approverRes = await query(
-            `SELECT 
-                (SELECT id FROM employees WHERE role = 'manager' AND status = 'active' LIMIT 1) as manager_id,
-                (SELECT id FROM employees WHERE role = 'hr' AND status = 'active' LIMIT 1) as hr_id`
-        );
-        const managerId = approverRes.rows[0]?.manager_id || null;
-        const hrId = approverRes.rows[0]?.hr_id || null;
+        const reporting_manager_id = routing.reporting_manager_id;
+        const managerId = routing.manager_id;
+        const hrId = routing.hr_id;
 
         // Overlap check: no approved/pending leave or WFH on same dates
         const overlapLeave = await query(

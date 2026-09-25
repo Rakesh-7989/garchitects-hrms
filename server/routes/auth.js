@@ -372,11 +372,13 @@ router.get('/me', verifyToken, async (req, res) => {
     try {
         const result = await query(
             `SELECT e.*, d.name as department_name, des.name as designation_name, des.level as designation_level,
-            rm.first_name || ' ' || rm.last_name as reporting_manager_name, rm.employee_id as reporting_manager_employee_id
+            rm.first_name || ' ' || rm.last_name as reporting_manager_name, rm.employee_id as reporting_manager_employee_id,
+            srm.first_name || ' ' || srm.last_name as secondary_reporting_manager_name, srm.employee_id as secondary_reporting_manager_employee_id
             FROM employees e 
             LEFT JOIN departments d ON e.department_id = d.id 
             LEFT JOIN designations des ON e.designation_id = des.id 
             LEFT JOIN employees rm ON e.reporting_manager_id = rm.id
+            LEFT JOIN employees srm ON e.secondary_reporting_manager_id = srm.id
             WHERE e.id = $1`,
             [req.user.id]
         );

@@ -10,7 +10,11 @@ const { runWithSchemaRepair } = require('../utils/schemaRepair');
 router.get('/counts', verifyToken, isManager, async (req, res) => {
     try {
         const isAdminRole = req.user.role === 'admin';
-        const scopeClause = isAdminRole ? '' : ' AND reporting_manager_id = $1';
+        // Admin sees everything. A manager/team-lead sees requests routed
+        // directly to them OR raised by employees for whom they are the
+        // secondary reporting manager (every non-admin employee auto-reports
+        // to the admin, so the admin's scope always covers all employees).
+        const scopeClause = isAdminRole ? '' : ` AND (reporting_manager_id = $1 OR employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $1))`;
         const scopeParams = isAdminRole ? [] : [req.user.id];
 
         // A count failing must not break the whole bell - fall back to 0 for
@@ -39,7 +43,7 @@ router.get('/counts', verifyToken, isManager, async (req, res) => {
                 : q(
                     `SELECT COUNT(*) as count FROM attendance_regularizations r
                     JOIN employees e ON e.id = r.employee_id
-                    WHERE r.status = 'pending' AND e.reporting_manager_id = $1`,
+                    WHERE r.status = 'pending' AND (e.reporting_manager_id = $1 OR e.secondary_reporting_manager_id = $1)`,
                     [req.user.id]
                 )
         ]);
@@ -128,7 +132,7 @@ router.get('/requests', verifyToken, isManager, async (req, res) => {
             wfhUrl = '/manager/my-team';
             ticketUrl = '/manager/my-team';
             regsQuery = {
-                text: REG_SELECT + ' AND e.reporting_manager_id = $1 ORDER BY r.created_at DESC LIMIT 8',
+                text: REG_SELECT + ' AND (e.reporting_manager_id = $1 OR e.secondary_reporting_manager_id = $1) ORDER BY r.created_at DESC LIMIT 8',
                 values: [req.user.id]
             };
             leavesQuery = {
@@ -138,7 +142,7 @@ router.get('/requests', verifyToken, isManager, async (req, res) => {
                 FROM leave_applications la
                 LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
                 JOIN employees e ON la.employee_id = e.id
-                WHERE la.status = 'pending' AND la.reporting_manager_id = $1
+                WHERE la.status = 'pending' AND (la.reporting_manager_id = $1 OR la.employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $1))
                 ORDER BY la.created_at DESC LIMIT 8`,
                 values: [req.user.id]
             };
@@ -147,7 +151,7 @@ router.get('/requests', verifyToken, isManager, async (req, res) => {
                 e.first_name || ' ' || e.last_name as employee_name, e.employee_id as emp_id
                 FROM wfh_requests wr
                 JOIN employees e ON wr.employee_id = e.id
-                WHERE wr.status = 'pending' AND wr.reporting_manager_id = $1
+                WHERE wr.status = 'pending' AND (wr.reporting_manager_id = $1 OR wr.employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $1))
                 ORDER BY wr.created_at DESC LIMIT 8`,
                 values: [req.user.id]
             };
@@ -156,7 +160,7 @@ router.get('/requests', verifyToken, isManager, async (req, res) => {
                 e.first_name || ' ' || e.last_name as employee_name, e.employee_id as emp_id
                 FROM support_tickets st
                 JOIN employees e ON st.employee_id = e.id
-                WHERE st.status IN ('open', 'in_progress') AND st.reporting_manager_id = $1
+                WHERE st.status IN ('open', 'in_progress') AND (st.reporting_manager_id = $1 OR st.employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $1))
                 ORDER BY st.created_at DESC LIMIT 8`,
                 values: [req.user.id]
             };

@@ -3,6 +3,7 @@ const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { sendToUser } = require('../services/push');
+const { resolveApproverRouting } = require('../utils/approvalRouting');
 
 router.post('/', verifyToken, async (req, res) => {
     try {
@@ -19,19 +20,16 @@ router.post('/', verifyToken, async (req, res) => {
         const validPriorities = ['low', 'medium', 'high'];
         const prio = validPriorities.includes(priority) ? priority : 'medium';
 
-        const empRes = await query(
-            'SELECT reporting_manager_id FROM employees WHERE id = $1', [req.user.id]
-        );
-        const reporting_manager_id = empRes.rows[0]?.reporting_manager_id || null;
-
-        // Get manager and HR for multi-approver routing
-        const approverRes = await query(
-            `SELECT 
-                (SELECT id FROM employees WHERE role = 'manager' AND status = 'active' LIMIT 1) as manager_id,
-                (SELECT id FROM employees WHERE role = 'hr' AND status = 'active' LIMIT 1) as hr_id`
-        );
-        const managerId = approverRes.rows[0]?.manager_id || null;
-        const hrId = approverRes.rows[0]?.hr_id || null;
+        // Shared approver routing: the employee's team lead (or the admin as
+        // secondary when no lead), plus first active manager and HR. Every
+        // request is routed through the same source of truth as leave/WFH.
+        const routing = await resolveApproverRouting(req.user.id);
+        if (!routing) {
+            return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
+        const reporting_manager_id = routing.reporting_manager_id;
+        const managerId = routing.manager_id;
+        const hrId = routing.hr_id;
 
         const result = await query(
             `INSERT INTO support_tickets (employee_id, reporting_manager_id, manager_id, hr_id, category, subject, description, priority)

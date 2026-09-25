@@ -189,7 +189,8 @@ router.get('/tickets', verifyToken, isManager, async (req, res) => {
             e.first_name || ' ' || e.last_name as employee_name, e.employee_id as emp_id
             FROM support_tickets st
             JOIN employees e ON st.employee_id = e.id
-            WHERE st.status IN ('open', 'in_progress') AND (st.reporting_manager_id = $1 OR st.manager_id = $1 OR st.hr_id = $1)
+            WHERE st.status IN ('open', 'in_progress') AND (st.reporting_manager_id = $1 OR st.manager_id = $1 OR st.hr_id = $1
+                OR st.employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $1))
             ORDER BY st.created_at DESC`,
             [req.user.id]
         );
@@ -459,6 +460,7 @@ router.get('/tickets/history', verifyToken, isManager, async (req, res) => {
                 JOIN employees e ON st.employee_id = e.id
                 LEFT JOIN employees e2 ON st.responded_by = e2.id
                 WHERE st.reporting_manager_id = $1 OR st.manager_id = $1 OR st.hr_id = $1
+                    OR st.employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $1)
                 ORDER BY st.created_at DESC LIMIT 100`,
                 [req.user.id]
             );
@@ -541,7 +543,8 @@ router.put('/tickets/:id', verifyToken, isManager, async (req, res) => {
         }
 
         const appRes = await query(
-            `SELECT * FROM support_tickets WHERE id = $1 AND (reporting_manager_id = $2 OR manager_id = $2 OR hr_id = $2) AND status IN ('open', 'in_progress')`,
+            `SELECT * FROM support_tickets WHERE id = $1 AND (reporting_manager_id = $2 OR manager_id = $2 OR hr_id = $2
+                OR employee_id IN (SELECT id FROM employees WHERE secondary_reporting_manager_id = $2)) AND status IN ('open', 'in_progress')`,
             [req.params.id, req.user.id]
         );
         if (appRes.rows.length === 0) {

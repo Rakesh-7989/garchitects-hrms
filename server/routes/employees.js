@@ -591,9 +591,12 @@ async function createEmployeeRecord(body, req) {
             cleanNum(loan_deduction) ?? 0, cleanNum(advance_salary) ?? 0, cleanNum(other_deduction) ?? 0,
             cleanNum(incentive) ?? 0, cleanNum(bonus) ?? 0, cleanNum(extra_work) ?? 0,
             cleanNum(employer_pf) ?? 0, cleanNum(employer_esi) ?? 0, cleanNum(employer_contribution) ?? 0,
-            // New employees are auto-assigned to the main admin in addition to
-            // their team lead so the admin always sees/approves their requests.
-            cleanNum(reporting_manager_id) ? MAIN_ADMIN_ID : null
+            // EVERY non-admin employee - any designation, any department, any
+            // role, with or without a team lead - is auto-assigned to the main
+            // admin as their secondary reporting manager. The admin must see
+            // and be able to act on everything, so the secondary is the
+            // always-on safety net (primary = their own team lead where set).
+            (role || 'employee') === 'admin' ? null : MAIN_ADMIN_ID
         ]
     ));
 
@@ -868,6 +871,16 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Employee not found' });
         }
+
+        // Keep the always-on secondary reporting manager in sync with the role:
+        // every non-admin employee (any designation/department) auto-reports to
+        // the main admin; someone promoted to admin stops being a secondary.
+        const effRole = result.rows[0].role;
+        const newSecondary = effRole === 'admin' ? null : MAIN_ADMIN_ID;
+        await query(
+            'UPDATE employees SET secondary_reporting_manager_id = $1 WHERE id = $2',
+            [newSecondary, req.params.id]
+        );
 
         logAudit({
             actorId: req.user.id,
