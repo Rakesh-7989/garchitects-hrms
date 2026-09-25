@@ -638,24 +638,35 @@ async function renderPayslipPdf(p, company) {
             let y = PAD_TOP;
 
             // ---- Header: logo | divider | company info + PAYSLIP badge ----
-            // Flex row: logo(175) --gap15--> divider(margin 0 5px, 1px wide,
-            // 95px tall) --gap15--> text column; badge 150px on the right.
+            // Flex row: logo (130×72 contain cap) --gap15--> divider
+            // (margin 0 5px, 1px wide, 95px tall) --gap15--> text column;
+            // badge 150px on the right. The divider sits immediately after the
+            // ACTUAL rendered logo box (not the cap), same as the preview.
             const badgeW = 150 * S;
             const badgeX = ML + CW - badgeW;
-            const logoW = 175 * S;
+            // Mirror the browser preview contain-box exactly (max-width 130px,
+            // max-height 72px, aspect preserved) so PDF and preview match.
+            const LOGO_CAP_W = 130 * S;
+            const LOGO_CAP_H = 72 * S;
             const GROUP_H = 95 * S; // divider height drives the group height
 
-            // Logo vertically centered in the group (align-items:center), with
-            // its real aspect ratio preserved.
+            // Logo vertically centered in the group (align-items:center), at
+            // its real aspect ratio, scaled to fit inside the 130×72 box.
+            let logoBoxW = 0;
             if (resolvedLogoPath) {
                 try {
                     const img = doc.openImage(resolvedLogoPath);
-                    const lh = Math.min(GROUP_H, logoW * img.height / img.width);
-                    doc.image(img, ML, y + (GROUP_H - lh) / 2, { width: logoW, height: lh });
+                    const scale = Math.min(LOGO_CAP_W / img.width, LOGO_CAP_H / img.height);
+                    if (scale > 0) {
+                        const lw = img.width * scale;
+                        const lh = img.height * scale;
+                        logoBoxW = lw;
+                        doc.image(img, ML, y + (GROUP_H - lh) / 2, { width: lw, height: lh });
+                    }
                 } catch (e) { /* logo is optional */ }
             }
 
-            const divX = ML + logoW + 15 * S + 5 * S; // gap 15 + margin-left 5
+            const divX = ML + logoBoxW + 15 * S + 5 * S; // gap 15 + margin-left 5
             doc.rect(divX, y, 1 * S, GROUP_H).fill(PURPLE);
 
             const infoX = divX + 1 * S + 5 * S + 15 * S; // line + margin-right 5 + gap 15

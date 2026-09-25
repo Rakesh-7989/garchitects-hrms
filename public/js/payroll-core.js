@@ -99,7 +99,10 @@ function ppCompute(v) {
  const attendanceValid = (presentDays + leaveDays + lopDays) <= workingDays + 0.001;
     const actualPayableGross = gross - totalDeductions + bonus;
     const totalDeductionsWithEmployer = totalDeductions + employerTotal;
-    const netPayable = actualPayableGross - employerTotal;
+    // Employer contributions (D) are an employer cost shown separately on the
+    // payslip - they are NEVER deducted from the employee's net pay. This must
+    // match the server-side computeTotals exactly (preview == generated PDF).
+    const netPayable = actualPayableGross;
     const perDaySalary = workingDays > 0 ? netPayable / workingDays : 0;
     const lopDeduction = perDaySalary * lopDays;
     const net = netPayable - lopDeduction;
@@ -204,8 +207,11 @@ function buildPayslipHTML(p) {
                 rows.map((r) => '<tr><td>' + r[0] + '</td><td class="text-right">' + r[1] + '</td></tr>').join('') +
                 '<tr class="total-row"><td>' + totalLabel + '</td><td class="text-right">' + ppNumFmt(totalValue) + '</td></tr>' +
             '</tbody></table>';
+    // Logo sits in a fixed contain-box (max 130×72px, aspect preserved) so a
+    // tall brand mark never blows the header up. Mirrors the server PDF
+    // renderer exactly (renderPayslipPdf uses the same 130×72 caps).
     const logoHtml = (company.logo || '/assets/images/garchitects_logo.png')
-        ? '<img src="' + ppEsc(company.logo || '/assets/images/garchitects_logo.png') + '" alt="G-Architects Logo" style="width:175px;height:auto;object-fit:contain;flex-shrink:0;" onerror="this.style.display=\'none\';">'
+        ? '<img src="' + ppEsc(company.logo || '/assets/images/garchitects_logo.png') + '" alt="G-Architects Logo" style="max-width:130px;max-height:72px;width:auto;height:auto;object-fit:contain;flex-shrink:0;" onerror="this.style.display=\'none\';">'
         : '<i class="fas fa-building" style="font-size:26px;color:#7c6ca8;"></i>';
     // Company block from DB data with garchitects defaults as fallback, so settings
     // edits reflect on payslips without code changes.
