@@ -1,8 +1,8 @@
 const { query } = require('../config/database');
 
 // Whether a given table actually has a column. Routes that reference optional
-// columns (e.g. project_sets.deleted_at on a legacy DB created before soft
-// delete) can gate the reference on this so the query never 500s with 42703.
+// columns on a legacy database can gate the reference on this so the query
+// never 500s with 42703.
 async function hasColumn(table, column) {
     try {
         const result = await query(
@@ -83,17 +83,6 @@ const PROJECT_ALTER_COLUMNS = {
 const ANNOUNCEMENTS_ALTER_COLUMNS = {
     expires_at: 'TIMESTAMP',
     target_audience: "VARCHAR(50) DEFAULT 'all'"
-};
-
-// project_sets columns that a half-initialized live database may be missing
-// (e.g. the table was created by an older schema without working_days/status).
-const PROJECT_SETS_ALTER_COLUMNS = {
-    status: "VARCHAR(20) DEFAULT 'active'",
-    working_days: 'INT DEFAULT 0',
-    total_target: 'INT NOT NULL DEFAULT 0',
-    created_at: 'TIMESTAMP DEFAULT NOW()',
-    updated_at: 'TIMESTAMP DEFAULT NOW()',
-    deleted_at: 'TIMESTAMP'
 };
 
 // Tables added in later releases. A live database that predates them fails with
@@ -178,7 +167,7 @@ const ENSURE_TABLE_DDL = {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_process_tasks_process ON process_tasks(process_id)`
     ],
-    // Projects module release (projects, sets, daily counts). A live database
+    // Projects module release (projects + assigned employees). A live database
     // that predates it fails with 42P01 ("relation does not exist") on every
     // project operation - including project creation - unless the DDL below
     // runs first. Fully idempotent and additive; existing rows are untouched.
@@ -241,41 +230,6 @@ const ENSURE_TABLE_DDL = {
         `CREATE INDEX IF NOT EXISTS idx_project_daily_updates_project_date ON project_daily_updates(project_id, update_date DESC)`,
         `CREATE INDEX IF NOT EXISTS idx_project_daily_updates_employee_date ON project_daily_updates(employee_id, update_date DESC)`
     ],
-    project_sets: [
-        `CREATE TABLE IF NOT EXISTS project_sets (
-            id SERIAL PRIMARY KEY,
-            project_id INT REFERENCES projects(id) ON DELETE CASCADE,
-            name VARCHAR(255) NOT NULL,
-            start_date DATE NOT NULL,
-            end_date DATE NOT NULL,
-            total_target INT NOT NULL DEFAULT 0,
-            working_days INT DEFAULT 0,
-            status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'completed', 'paused')),
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            deleted_at TIMESTAMP
-        )`,
-        `CREATE INDEX IF NOT EXISTS idx_project_sets_project ON project_sets(project_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_project_sets_status ON project_sets(status)`
-    ],
-    daily_work_counts: [
-        `CREATE TABLE IF NOT EXISTS daily_work_counts (
-            id SERIAL PRIMARY KEY,
-            project_id INT REFERENCES projects(id) ON DELETE CASCADE,
-            set_id INT REFERENCES project_sets(id) ON DELETE CASCADE,
-            employee_id INT REFERENCES employees(id) ON DELETE CASCADE,
-            work_date DATE NOT NULL,
-            daily_count INT NOT NULL DEFAULT 0,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(project_id, set_id, employee_id, work_date)
-        )`,
-        `CREATE INDEX IF NOT EXISTS idx_daily_work_counts_project ON daily_work_counts(project_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_daily_work_counts_set ON daily_work_counts(set_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_daily_work_counts_employee ON daily_work_counts(employee_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_daily_work_counts_date ON daily_work_counts(work_date)`,
-        `CREATE INDEX IF NOT EXISTS idx_daily_work_counts_unique ON daily_work_counts(project_id, set_id, employee_id, work_date)`
-    ],
     employee_status_history: [
         `CREATE TABLE IF NOT EXISTS employee_status_history (
             id SERIAL PRIMARY KEY,
@@ -326,13 +280,6 @@ async function ensureProjectColumn(column) {
     return true;
 }
 
-async function ensureProjectSetColumn(column) {
-    const ddl = PROJECT_SETS_ALTER_COLUMNS[column];
-    if (!ddl) return false;
-    await query(`ALTER TABLE project_sets ADD COLUMN IF NOT EXISTS "${column}" ${ddl}`);
-    return true;
-}
-
 async function ensureAnnouncementsColumn(column) {
     const ddl = ANNOUNCEMENTS_ALTER_COLUMNS[column];
     if (!ddl) return false;
@@ -340,16 +287,10 @@ async function ensureAnnouncementsColumn(column) {
     return true;
 }
 
-// Columns the project-sets listing / employee views depend on beyond the three
-// main tables. If a live DB predates the projects module these can be missing.
+// Columns the project module views depend on beyond the three main tables
+// (projects, project_employees, project_documents, project_daily_updates). If
+// a live DB predates the module these can be missing.
 const PROJECT_MODULE_ALTER_COLUMNS = {
-    'daily_work_counts': {
-        set_id: 'INT REFERENCES project_sets(id) ON DELETE CASCADE',
-        project_id: 'INT REFERENCES projects(id) ON DELETE CASCADE',
-        employee_id: 'INT REFERENCES employees(id) ON DELETE CASCADE',
-        work_date: 'DATE',
-        daily_count: 'INT NOT NULL DEFAULT 0',
-    },
     'project_employees': {
         status: 'VARCHAR(20) DEFAULT \'active\'',
     },
@@ -400,7 +341,6 @@ async function ensureTable(table) {
 async function runWithSchemaRepair(fn) {
     const maxAttempts = Object.keys(EMPLOYEE_ALTER_COLUMNS).length
         + Object.keys(PROJECT_ALTER_COLUMNS).length
-        + Object.keys(PROJECT_SETS_ALTER_COLUMNS).length
         + Object.keys(ANNOUNCEMENTS_ALTER_COLUMNS).length
         + Object.keys(ENSURE_TABLE_DDL).length + 2;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -415,12 +355,10 @@ async function runWithSchemaRepair(fn) {
                     // Try the specific table first
                     if (table === 'projects' || table === 'p') {
                         healed = miss.column && await ensureProjectColumn(miss.column);
-                    } else if (table === 'project_sets' || table === 'ps') {
-                        healed = miss.column && await ensureProjectSetColumn(miss.column);
-                    } else if (table === 'daily_work_counts' || table === 'dwc' || table === 'project_employees' || table === 'pe'
+                    } else if (table === 'project_employees' || table === 'pe'
                             || table === 'project_documents' || table === 'pdoc' || table === 'project_daily_updates' || table === 'pdu') {
                         const resolved = {
-                            dwc: 'daily_work_counts', pe: 'project_employees',
+                            pe: 'project_employees',
                             pdoc: 'project_documents', pdu: 'project_daily_updates'
                         }[table] || table;
                         healed = miss.column && await ensureProjectModuleColumn(resolved, miss.column);
@@ -432,8 +370,6 @@ async function runWithSchemaRepair(fn) {
                     // If specific table didn't heal, try all known tables
                     if (!healed && miss.column) {
                         healed = await ensureProjectColumn(miss.column)
-                            || await ensureProjectSetColumn(miss.column)
-                            || await ensureProjectModuleColumn('daily_work_counts', miss.column)
                             || await ensureProjectModuleColumn('project_employees', miss.column)
                             || await ensureProjectModuleColumn('project_documents', miss.column)
                             || await ensureProjectModuleColumn('project_daily_updates', miss.column)
@@ -485,4 +421,4 @@ function pgErrorResponse(error) {
     return { status: 500, message: 'Server error' };
 }
 
-module.exports = { runWithSchemaRepair, ensureEmployeeColumn, ensureProjectColumn, ensureProjectSetColumn, ensureProjectModuleColumn, ensureAnnouncementsColumn, ensureTable, hasColumn, pgErrorResponse, missingColumnInfo };
+module.exports = { runWithSchemaRepair, ensureEmployeeColumn, ensureProjectColumn, ensureProjectModuleColumn, ensureAnnouncementsColumn, ensureTable, hasColumn, pgErrorResponse, missingColumnInfo };

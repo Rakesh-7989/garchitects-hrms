@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query, getClient } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
-const { runWithSchemaRepair, pgErrorResponse, hasColumn } = require('../utils/schemaRepair');
+const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
 
 // Self-healing query wrapper: if a legacy database is missing the projects
@@ -66,46 +66,13 @@ router.get('/my', verifyToken, async (req, res) => {
 });
 
 /**
- * GET /api/projects/my/:projectId/sets
- * Get sets for a project the employee is assigned to (no admin role required)
- */
-router.get('/my/:projectId/sets', verifyToken, async (req, res) => {
-    try {
-        const empCheck = await q(
-            `SELECT id FROM project_employees WHERE project_id = $1 AND employee_id = $2`,
-            [req.params.projectId, req.user.id]
-        );
-        if (empCheck.rows.length === 0) {
-            return res.status(403).json({ success: false, message: 'You are not assigned to this project' });
-        }
-
-        const hasDeletedAt = await hasColumn('project_sets', 'deleted_at');
-        const result = await q(
-            `SELECT ps.id, ps.name, ps.start_date, ps.end_date, ps.total_target, ps.status, ps.working_days,
-              (SELECT COUNT(*) FROM project_employees pe2 WHERE pe2.project_id = $1) as project_employee_count
-             FROM project_sets ps
-             WHERE ps.project_id = $1 ${hasDeletedAt ? 'AND ps.deleted_at IS NULL' : ''} AND ps.status = 'active'
-             ORDER BY ps.name`,
-            [req.params.projectId]
-        );
-        res.json({ success: true, sets: result.rows });
-    } catch (error) {
-        console.error('Error fetching project sets:', error);
-        const r = pgErrorResponse(error);
-        res.status(r.status).json({ success: false, message: (error && error.message) || r.message });
-    }
-});
-
-/**
  * GET /api/projects
  * Get all projects
  */
 router.get('/', verifyToken, isAdmin, async (req, res) => {
     try {
-        const hasDeletedAt = await hasColumn('project_sets', 'deleted_at');
         const result = await q(
             `SELECT ${PROJECT_SELECT_COLS},
-             (SELECT COUNT(*) FROM project_sets s WHERE s.project_id = p.id ${hasDeletedAt ? 'AND s.deleted_at IS NULL' : ''}) as sets_count,
              (SELECT COUNT(*) FROM project_employees pe WHERE pe.project_id = p.id) as employees_count
              FROM projects p
              ORDER BY p.name`
@@ -127,17 +94,13 @@ router.get('/stats', verifyToken, isAdmin, async (req, res) => {
         const result = await q(
             `SELECT
              (SELECT COUNT(*) FROM projects) as projects,
-             (SELECT COUNT(*) FROM project_sets) as sets,
-             (SELECT COUNT(DISTINCT employee_id) FROM project_employees) as assigned_employees,
-             (SELECT COUNT(*) FROM daily_work_counts) as submissions`
+             (SELECT COUNT(DISTINCT employee_id) FROM project_employees) as assigned_employees`
         );
         res.json({
             success: true,
             stats: {
                 projects: parseInt(result.rows[0].projects, 10) || 0,
-                sets: parseInt(result.rows[0].sets, 10) || 0,
-                assigned_employees: parseInt(result.rows[0].assigned_employees, 10) || 0,
-                submissions: parseInt(result.rows[0].submissions, 10) || 0
+                assigned_employees: parseInt(result.rows[0].assigned_employees, 10) || 0
             }
         });
     } catch (error) {
@@ -176,7 +139,6 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
         );
         const created = result.rows[0];
         created.employees_count = 0;
-        created.sets_count = 0;
         logAudit({
             actorId: req.user.id, action: 'project.create', entityType: 'project',
             entityId: created.id, details: { name: created.name, client: created.client || null, status: created.status },
@@ -278,14 +240,13 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
             return res.status(404).json({ success: false, message: 'Project not found' });
         }
 
-        // Delete descendants atomically (daily counts, sets, assignments) so the
-        // project can be removed even when it has associated sets - and so a
-        // legacy DB without FK CASCADE is handled too. Hard delete is
+        // Delete descendants atomically (daily updates, documents, assignments)
+        // so the project can be removed even when it has associated records -
+        // and so a legacy DB without FK CASCADE is handled too. Hard delete is
         // intentional here: the admin UI warns it is permanent (no undo).
         await client.query('BEGIN');
-        await client.query(`DELETE FROM daily_work_counts WHERE project_id = $1`, [projectId]);
         await client.query(`DELETE FROM project_daily_updates WHERE project_id = $1`, [projectId]);
-        await client.query(`DELETE FROM project_sets WHERE project_id = $1`, [projectId]);
+        await client.query(`DELETE FROM project_documents WHERE project_id = $1`, [projectId]);
         await client.query(`DELETE FROM project_employees WHERE project_id = $1`, [projectId]);
         const result = await client.query(
             `DELETE FROM projects WHERE id = $1 RETURNING id, name`,
@@ -399,7 +360,7 @@ router.post('/:projectId/employees', verifyToken, isAdmin, async (req, res) => {
  */
 router.delete('/:projectId/employees/:employeeId', verifyToken, isAdmin, async (req, res) => {
     try {
-        // Do NOT delete historical daily work count data
+        // Do NOT delete historical daily update data
         const result = await q(
             `DELETE FROM project_employees WHERE project_id = $1 AND employee_id = $2 RETURNING employee_id`,
             [req.params.projectId, req.params.employeeId]

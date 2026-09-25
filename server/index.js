@@ -57,8 +57,6 @@ app.use('/api/manager', require('./routes/manager'));
 app.use('/api/push', require('./routes/push'));
 app.use('/api/cron', require('./routes/cron'));
 app.use('/api/projects', require('./routes/projects'));
-app.use('/api/project-sets', require('./routes/project-sets'));
-app.use('/api/daily-work-counts', require('./routes/daily-work-counts'));
 app.use('/api/project-reports', require('./routes/project-reports'));
 app.use('/api/project-updates', require('./routes/project-updates'));
 app.use('/api/project-documents', require('./routes/project-documents'));
@@ -203,12 +201,6 @@ async function runMigrations() {
         console.log('[Migration] Multi-approver columns ensured.');
     } catch (e) { console.warn('[Migration] Multi-approver columns skipped:', e.message); }
 
-    try {
-        await query(`ALTER TABLE project_sets ADD COLUMN IF NOT EXISTS working_days INT DEFAULT 0`);
-        await query(`ALTER TABLE project_sets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
-        console.log('[Migration] project_sets.working_days/deleted_at columns ensured.');
-    } catch (e) { console.warn('[Migration] working_days column skipped:', e.message); }
-
     // Announcements auto-expiry column – added after the original schema.
     // Without this, every GET /api/announcements 500s with 42703.
     try {
@@ -217,7 +209,7 @@ async function runMigrations() {
     } catch (e) { console.warn('[Migration] announcements.expires_at skipped:', e.message); }
 
     // Projects module tables. Databases initialized before the projects module
-    // exists fail every /api/projects create/set/assign call with 42P01 unless
+    // exists fail every /api/projects create/assign call with 42P01 unless
     // the tables are ensured here (idempotent) or lazily healed per-request.
     try {
         await query(`CREATE TABLE IF NOT EXISTS projects (
@@ -243,36 +235,6 @@ async function runMigrations() {
             status VARCHAR(20) DEFAULT 'active',
             UNIQUE(project_id, employee_id)
         )`);
-        await query(`CREATE TABLE IF NOT EXISTS project_sets (
-            id SERIAL PRIMARY KEY,
-            project_id INT REFERENCES projects(id) ON DELETE CASCADE,
-            name VARCHAR(255) NOT NULL,
-            start_date DATE NOT NULL,
-            end_date DATE NOT NULL,
-            total_target INT NOT NULL DEFAULT 0,
-            working_days INT DEFAULT 0,
-            status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'completed', 'paused')),
-            deleted_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW()
-        )`);
-        await query(`CREATE TABLE IF NOT EXISTS daily_work_counts (
-            id SERIAL PRIMARY KEY,
-            project_id INT REFERENCES projects(id) ON DELETE CASCADE,
-            set_id INT REFERENCES project_sets(id) ON DELETE CASCADE,
-            employee_id INT REFERENCES employees(id) ON DELETE CASCADE,
-            work_date DATE NOT NULL,
-            daily_count INT NOT NULL DEFAULT 0,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(project_id, set_id, employee_id, work_date)
-        )`);
-        // Pre-existing tables created before the projects module added these
-        // columns won't get them from CREATE TABLE IF NOT EXISTS, so add them
-        // explicitly (idempotent) to avoid 42703 on the sets/count queries.
-        await query(`ALTER TABLE daily_work_counts ADD COLUMN IF NOT EXISTS set_id INT REFERENCES project_sets(id) ON DELETE CASCADE`);
-        await query(`ALTER TABLE daily_work_counts ADD COLUMN IF NOT EXISTS daily_count INT NOT NULL DEFAULT 0`);
-        await query(`ALTER TABLE project_sets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
         console.log('[Migration] Projects module tables ensured.');
     } catch (e) { console.warn('[Migration] Projects module tables skipped:', e.message); }
 
@@ -320,6 +282,10 @@ async function runMigrations() {
         await query(`DROP TABLE IF EXISTS dpr_activities`);
         await query(`DROP TABLE IF EXISTS project_daily_reports`);
         await query(`DROP TABLE IF EXISTS project_invoices`);
+        // Sets/working-days removal: daily_work_counts references project_sets,
+        // so the dependent table must be dropped first.
+        await query(`DROP TABLE IF EXISTS daily_work_counts`);
+        await query(`DROP TABLE IF EXISTS project_sets`);
         await query(`ALTER TABLE projects DROP COLUMN IF EXISTS contract_value`);
         await query(`ALTER TABLE projects DROP COLUMN IF EXISTS phase`);
         await query(`CREATE TABLE IF NOT EXISTS project_daily_updates (

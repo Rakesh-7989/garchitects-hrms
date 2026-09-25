@@ -36,7 +36,7 @@
             <a href="/admin/payroll" class="nav-item"><i class="fas fa-indian-rupee-sign"></i><span class="nav-text">Payroll</span></a>
             <div class="nav-section-title">Projects</div>
             <a href="/admin/project-management" class="nav-item active"><i class="fas fa-project-diagram"></i><span class="nav-text">Projects</span></a>
-            <a href="/admin/project-reports" class="nav-item"><i class="fas fa-chart-line"></i><span class="nav-text">Project Reports</span></a>
+            
             <div class="nav-section-title">Support</div>
             <a href="/admin/tickets" class="nav-item"><i class="fas fa-ticket-alt"></i><span class="nav-text">Queries</span></a>
             <div class="nav-section-title">Communication</div>
@@ -76,7 +76,7 @@
         <div class="page-body">
             <div class="mb-3">
                 <h1 style="font-size:1.75rem;font-weight:700;">Project Management</h1>
-                <p style="color:var(--text-secondary);">Manage projects, sets, and employee assignments</p>
+                <p style="color:var(--text-secondary);">Manage projects, daily updates, documents and employee assignments</p>
             </div>
 
             <div class="mb-3" style="display:flex;gap:12px;align-items:center;">
@@ -234,116 +234,6 @@
                     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
                         <button type="button" class="btn btn-secondary" onclick="closeModal('editProjectModal')">Cancel</button>
                         <button type="submit" class="btn btn-primary" id="editProjectBtn">Save Changes</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal" id="createSetModal">
-        <div class="modal-content" style="max-width:520px;">
-            <div class="modal-header">
-                <h2>Create Set</h2>
-                <button onclick="closeModal('createSetModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="createSetForm" onsubmit="createSet(event)">
-                    <input type="hidden" name="projectId" id="setProjectId">
-                    <div class="form-group">
-                        <label>Set Name *</label>
-                        <input type="text" class="form-control" name="name" required placeholder="Enter set name">
-                    </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Start Date *</label>
-                            <input type="date" class="form-control" name="start_date" required oninput="updateCreateSetPreview()">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>End Date *</label>
-                            <input type="date" class="form-control" name="end_date" required oninput="updateCreateSetPreview()">
-                        </div>
-                    </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Total Target *</label>
-                            <input type="number" class="form-control" name="total_target" min="0" placeholder="0" required oninput="updateCreateSetPreview()">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Assigned Employees</label>
-                            <div style="padding:10px 12px;background:var(--bg-light);border:1px solid var(--border);border-radius:var(--radius);font-weight:600;font-size:0.85rem;" id="createSetTeamSize">-</div>
-                        </div>
-                    </div>
-                    <div id="createSetPreview" style="display:none;background:var(--primary-50);border:1px solid var(--primary-200, transparent);border-radius:var(--radius);padding:12px;margin-top:8px;">
-                        <div style="font-size:0.72rem;color:var(--text-tertiary);margin-bottom:8px;font-weight:600;">TARGET SPLIT</div>
-                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">
-                            <div>
-                                <div style="font-size:0.72rem;color:var(--text-tertiary);">Working Days</div>
-                                <div style="font-size:1rem;font-weight:700;" id="createSetWorkingDays">0</div>
-                            </div>
-                            <div>
-                                <div style="font-size:0.72rem;color:var(--text-tertiary);">Per Employee</div>
-                                <div style="font-size:1rem;font-weight:700;" id="createSetPerHead">0</div>
-                            </div>
-                            <div>
-                                <div style="font-size:0.72rem;color:var(--text-tertiary);">Per Day Per Employee</div>
-                                <div style="font-size:1rem;font-weight:700;" id="createSetPerDay">0</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('createSetModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="createSetBtn">Create Set</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal" id="editSetModal">
-        <div class="modal-content" style="max-width:520px;">
-            <div class="modal-header">
-                <h2>Edit Set</h2>
-                <button onclick="closeModal('editSetModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="editSetForm" onsubmit="updateSet(event)">
-                    <input type="hidden" name="setId" id="editSetId">
-                    <input type="hidden" name="projectId" id="editSetProjectId">
-                    <div class="form-group">
-                        <label>Set Name *</label>
-                        <input type="text" class="form-control" name="name" required placeholder="Enter set name">
-                    </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Start Date *</label>
-                            <input type="date" class="form-control" name="start_date" required oninput="updateEditSetPreview()">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>End Date *</label>
-                            <input type="date" class="form-control" name="end_date" required oninput="updateEditSetPreview()">
-                        </div>
-                    </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Total Target *</label>
-                            <input type="number" class="form-control" name="total_target" min="0" placeholder="0" required oninput="updateEditSetPreview()">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Status</label>
-                            <select class="form-control" name="status">
-                                <option value="active">Active</option>
-                                <option value="paused">Paused</option>
-                                <option value="completed">Completed</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div id="editSetPreview" style="display:none;background:var(--primary-50);border:1px solid var(--primary-200, transparent);border-radius:var(--radius);padding:12px;margin-top:8px;">
-                        <div style="font-size:0.72rem;color:var(--text-tertiary);margin-bottom:8px;font-weight:600;">TARGET SPLIT (RECOMPUTED ON SAVE)</div>
-                        <div style="font-size:0.8rem;color:var(--text-secondary);" id="editSetPreviewText">-</div>
-                    </div>
-                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('editSetModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="editSetBtn">Save Changes</button>
                     </div>
                 </form>
             </div>
@@ -508,8 +398,6 @@
     </div>
 
     <script src="../../js/auth.js"></script>
-    <script src="../../js/workWeek.js"></script>
-    <script src="../../js/project-math.js"></script>
     <script>
         async function apiCall(endpoint, method = 'GET', body = null) {
             const token = localStorage.getItem('token');
@@ -709,10 +597,6 @@
                 // so live data always shows (no stale/collapsed UI after a re-render).
                 setTimeout(() => {
                     projects.forEach(p => {
-                        if (expandedSections[`${p.id}-sets`]) {
-                            const s = document.getElementById(`expand-sets-${p.id}`);
-                            if (s) { s.style.display = 'block'; loadSets(p.id); }
-                        }
                         if (expandedSections[`${p.id}-updates`]) {
                             const up = document.getElementById(`expand-updates-${p.id}`);
                             if (up) { up.style.display = 'block'; loadUpdates(p.id); }
@@ -770,15 +654,8 @@
                                 <i class="fas fa-users" style="color:var(--primary);width:16px;text-align:center;"></i>
                                 <strong style="color:var(--text-primary);font-size:1.05rem;">${countOf(p.employees_count)}</strong> Employees Assigned
                             </span>
-                            <span style="display:inline-flex;align-items:center;gap:7px;font-size:0.9rem;color:var(--text-secondary);">
-                                <i class="fas fa-layer-group" style="color:var(--primary);width:16px;text-align:center;"></i>
-                                <strong style="color:var(--text-primary);font-size:1.05rem;">${countOf(p.sets_count)}</strong> Sets
-                            </span>
                         </div>
                         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
-                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'sets')">
-                                <i class="fas fa-layer-group"></i> Sets
-                            </button>
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'updates')">
                                 <i class="fas fa-calendar-day"></i> Daily Updates
                             </button>
@@ -788,16 +665,10 @@
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'employees')">
                                 <i class="fas fa-users"></i> Employees
                             </button>
-                            <button class="btn btn-primary btn-sm" onclick="openCreateSetModal(${p.id})">
-                                <i class="fas fa-plus"></i> Add Set
-                            </button>
                             <button class="btn btn-primary btn-sm" onclick="openAssignEmployeesModal(${p.id})">
                                 <i class="fas fa-user-plus"></i> Assign
                             </button>
                         </div>
-                    </div>
-                    <div id="expand-sets-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
-                        <div id="sets-content-${p.id}"></div>
                     </div>
                     <div id="expand-updates-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="updates-content-${p.id}"></div>
@@ -822,8 +693,8 @@
             return isNaN(n) ? 0 : n;
         }
 
-        // Live-update a project card's employee/set counts and in-place DOM without
-        // a full list re-render, so changes reflect immediately after assign/create.
+        // Live-update a project card's employee count and in-place DOM without
+        // a full list re-render, so changes reflect immediately after assign.
         async function refreshProjectCount(projectId) {
             const p = allProjects.find(x => String(x.id) === String(projectId));
             if (!p) return;
@@ -833,13 +704,10 @@
                     const fresh = (d.projects || d.data || []).find(x => String(x.id) === String(projectId));
                     if (fresh) {
                         p.employees_count = fresh.employees_count;
-                        p.sets_count = fresh.sets_count;
                         const card = document.getElementById(`project-card-${projectId}`);
                         if (card) {
-                            const em = card.querySelectorAll('span strong')[0];
-                            const st = card.querySelectorAll('span strong')[1];
+                            const em = card.querySelector('span strong');
                             if (em) em.textContent = countOf(fresh.employees_count);
-                            if (st) st.textContent = countOf(fresh.sets_count);
                         }
                     }
                 }
@@ -890,109 +758,9 @@
             }
             section.style.display = 'block';
             expandedSections[key] = true;
-            if (type === 'sets') await loadSets(projectId);
-            else if (type === 'documents') await loadDocuments(projectId);
+            if (type === 'documents') await loadDocuments(projectId);
             else if (type === 'updates') await loadUpdates(projectId);
             else await loadEmployeesForProject(projectId);
-        }
-
-        async function loadSets(projectId) {
-            const container = document.getElementById(`sets-content-${projectId}`);
-            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
-            const data = await apiCall(`/project-sets/${projectId}`);
-            if (!data || !data.success) {
-                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">No sets found.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
-                return;
-            }
-            const sets = data.sets || data.data || data || [];
-            if (!Array.isArray(sets) || !sets.length) {
-                container.innerHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;">No sets found.</p>';
-                return;
-            }
-            container.innerHTML = `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                    <h4 style="font-size:0.9rem;font-weight:600;">Total Sets (${sets.length})</h4>
-                </div>
-                <div style="display:flex;flex-direction:column;gap:6px;">
-                    ${sets.map(s => {
-                        const teamSize = parseInt(s.team_size, 10) || 0;
-                        const target = parseInt(s.total_target, 10) || 0;
-                        const submitted = parseInt(s.submission_count, 10) || 0;
-                        const workingDays = parseInt(s.working_days, 10) || 0;
-                        const perHead = teamSize > 0 ? target / teamSize : target;
-                        const perDayPerHead = teamSize > 0 ? (workingDays > 0 ? perHead / workingDays : perHead) : (workingDays > 0 ? target / workingDays : target);
-                        return `
-                        <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-card);">
-                            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;cursor:pointer;" onclick="toggleSetDetail(${s.id})" title="Click for details">
-                                <div style="min-width:0;flex:1;">
-                                    <span style="font-weight:500;font-size:0.85rem;">${esc(s.name)}</span>
-                                    ${s.start_date ? `<span style="color:var(--text-tertiary);font-size:0.78rem;margin-left:8px;">${formatDate(s.start_date)}${s.end_date ? ' - ' + formatDate(s.end_date) : ''}</span>` : ''}
-                                </div>
-                                <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:8px;">
-                                    <span style="color:var(--text-tertiary);font-size:0.78rem;">${teamSize} employees</span>
-                                    ${statusBadge && s.status ? statusBadge(s.status) : ''}
-                                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toggleSetDetail(${s.id})" title="Details"><i class="fas fa-chevron-down" style="font-size:0.7rem;"></i></button>
-                                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();openEditSetModal(${s.id}, ${projectId})" title="Edit Set"><i class="fas fa-pencil-alt" style="font-size:0.7rem;"></i></button>
-                                    <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteSet(${s.id}, ${projectId})" title="Delete"><i class="fas fa-trash" style="font-size:0.7rem;"></i></button>
-                                </div>
-                            </div>
-                            <div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 10px;">
-                                <span style="font-size:0.76rem;padding:3px 8px;border-radius:20px;background:var(--bg-card);border:1px solid var(--border);"><strong>${target}</strong> total files</span>
-                                <span style="font-size:0.76rem;padding:3px 8px;border-radius:20px;background:var(--bg-card);border:1px solid var(--border);"><strong>${submitted}</strong> submitted</span>
-                                <span style="font-size:0.76rem;padding:3px 8px;border-radius:20px;background:var(--primary-50);color:var(--primary-dark);border:1px solid var(--primary-200, transparent);"><strong>${fmt(perHead)}</strong> per employee</span>
-                                <span style="font-size:0.76rem;padding:3px 8px;border-radius:20px;background:var(--primary-50);color:var(--primary-dark);border:1px solid var(--primary-200, transparent);"><strong>${fmt(perDayPerHead)}</strong> per day/employee</span>
-                            </div>
-                            <div id="set-detail-${s.id}" style="display:none;border-top:1px solid var(--border);padding:12px;background:var(--bg-light);">
-                                <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
-                                    <span style="font-size:0.85rem;font-weight:600;color:var(--text-secondary);">${esc(s.name)}</span>
-                                    ${statusBadge && s.status ? statusBadge(s.status) : ''}
-                                </div>
-                                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;">
-                                    <div style="padding:8px;background:var(--bg-card);border-radius:var(--radius);">
-                                        <div style="font-size:0.72rem;color:var(--text-tertiary);">DATE RANGE</div>
-                                        <div style="font-size:0.8rem;font-weight:600;">${formatDate(s.start_date)}<br>${s.end_date ? 'to ' + formatDate(s.end_date) : ''}</div>
-                                    </div>
-                                    <div style="padding:8px;background:var(--bg-card);border-radius:var(--radius);">
-                                        <div style="font-size:0.72rem;color:var(--text-tertiary);">WORKING DAYS</div>
-                                        <div style="font-size:0.8rem;font-weight:600;">${workingDays}</div>
-                                    </div>
-                                    <div style="padding:8px;background:var(--bg-card);border-radius:var(--radius);">
-                                        <div style="font-size:0.72rem;color:var(--text-tertiary);">TEAM SIZE</div>
-                                        <div style="font-size:0.8rem;font-weight:600;">${teamSize}</div>
-                                    </div>
-                                    <div style="padding:8px;background:var(--bg-card);border-radius:var(--radius);">
-                                        <div style="font-size:0.72rem;color:var(--text-tertiary);">TOTAL TARGET</div>
-                                        <div style="font-size:0.8rem;font-weight:600;">${target} files</div>
-                                    </div>
-                                    <div style="padding:8px;background:var(--bg-card);border-radius:var(--radius);">
-                                        <div style="font-size:0.72rem;color:var(--text-tertiary);">SUBMITTED</div>
-                                        <div style="font-size:0.8rem;font-weight:600;">${submitted} files</div>
-                                    </div>
-                                    <div style="padding:8px;background:var(--bg-card);border-radius:var(--radius);">
-                                        <div style="font-size:0.72rem;color:var(--text-tertiary);">TARGET PER HEAD</div>
-                                        <div style="font-size:0.8rem;font-weight:600;">${fmt(perHead)} files</div>
-                                    </div>
-                                    <div style="padding:8px;background:var(--bg-card);border-radius:var(--radius);">
-                                        <div style="font-size:0.72rem;color:var(--text-tertiary);">PER DAY PER HEAD</div>
-                                        <div style="font-size:0.8rem;font-weight:600;">${fmt(perDayPerHead)} / day</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>`;
-                    }).join('')}
-                </div>
-            `;
-        }
-
-        function toggleSetDetail(setId) {
-            const el = document.getElementById(`set-detail-${setId}`);
-            if (el) el.style.display = el.style.display === 'block' ? 'none' : 'block';
-        }
-
-        function fmt(n) {
-            if (!isFinite(n)) return '0';
-            const r = Math.round(n * 100) / 100;
-            return Number.isInteger(r) ? String(r) : r.toFixed(2);
         }
 
         async function loadEmployeesForProject(projectId) {
@@ -1151,13 +919,6 @@
             'project.create': ['fa-folder-plus', 'created project'],
             'project.update': ['fa-pen', 'updated project'],
             'project.delete': ['fa-trash', 'deleted project'],
-            'project_set.create': ['fa-layer-group', 'created set'],
-            'project_set.update': ['fa-pen', 'updated set'],
-            'project_set.delete': ['fa-trash', 'deleted set'],
-            'project_set.restore': ['fa-undo', 'restored set'],
-            'project.daily_count.create': ['fa-plus-circle', 'logged daily count'],
-            'project.daily_count.update': ['fa-pen', 'updated daily count'],
-            'project.daily_count.delete': ['fa-trash', 'deleted daily count'],
             'document.upload': ['fa-upload', 'uploaded document'],
             'document.update': ['fa-pen', 'edited document'],
             'document.delete': ['fa-trash', 'deleted document'],
@@ -1295,7 +1056,7 @@
 
         // ===================== DELETE PROJECT =====================
         async function deleteProject(id) {
-            if (!(await confirmAction('Delete this project? All associated sets, daily work counts and employee assignments will also be deleted. This action cannot be undone.'))) return;
+            if (!(await confirmAction('Delete this project? All associated daily updates, documents and employee assignments will also be deleted. This action cannot be undone.'))) return;
             const data = await apiCall(`/projects/${id}`, 'DELETE');
             if (data && data.success) {
                 showToast('Project deleted successfully');
@@ -1303,229 +1064,6 @@
             } else {
                 showToast(data?.message || 'Failed to delete project', 'error');
             }
-        }
-
-        // ===================== CREATE SET =====================
-        function openCreateSetModal(projectId) {
-            const project = allProjects.find(p => String(p.id) === String(projectId));
-            const teamSize = parseInt((project && project.employees_count), 10) || 0;
-            document.getElementById('createSetTeamSize').textContent = teamSize + ' employees';
-            document.getElementById('createSetForm').reset();
-            document.getElementById('setProjectId').value = projectId;
-            updateCreateSetPreview();
-            openModal('createSetModal');
-        }
-
-        // Holiday dates ('YYYY-MM-DD') loaded once so the set preview's
-        // working-days count matches the server's authoritative
-        // projectMath.workingDays (weekly off day + company holidays).
-        let holidayDates = [];
-
-        function workingDaysBetween(startDate, endDate) {
-            if (window.projectMath) {
-                return window.projectMath.workingDaysBetween(startDate, endDate, holidayDates);
-            }
-            // Fallback: weekly off day only (pre-projectMath safety net).
-            if (!startDate || !endDate || endDate < startDate) return 0;
-            let count = 0;
-            const start = new Date(startDate + 'T00:00:00');
-            const end = new Date(endDate + 'T00:00:00');
-            for (let cur = new Date(start); cur <= end; cur.setDate(cur.getDate() + 1)) {
-                if (window.workWeek ? !window.workWeek.isWeekOff(cur) : cur.getDay() !== 0) count++;
-            }
-            return count;
-        }
-
-        async function loadHolidays() {
-            try {
-                const d = await apiCall('/holidays');
-                const list = (d && (d.holidays || d.data)) || [];
-                if (Array.isArray(list)) {
-                    holidayDates = list
-                        .map(h => h && h.date ? String(h.date).slice(0, 10) : null)
-                        .filter(Boolean);
-                }
-            } catch (_) {
-                holidayDates = [];
-            }
-        }
-
-        function updateCreateSetPreview() {
-            const form = document.getElementById('createSetForm');
-            const projectId = document.getElementById('setProjectId').value;
-            const project = allProjects.find(p => String(p.id) === String(projectId));
-            const teamSize = parseInt((project && project.employees_count), 10) || 0;
-            const target = parseFloat(form.total_target.value) || 0;
-            const wd = workingDaysBetween(form.start_date.value, form.end_date.value);
-            document.getElementById('createSetWorkingDays').textContent = wd;
-            const perHead = teamSize > 0 ? target / teamSize : target;
-            const perDay = (teamSize > 0 && wd > 0) ? perHead / wd : (wd > 0 ? target / wd : target);
-            document.getElementById('createSetPerHead').textContent = fmt(perHead);
-            document.getElementById('createSetPerDay').textContent = fmt(perDay);
-            document.getElementById('createSetPreview').style.display = 'block';
-        }
-
-        async function createSet(e) {
-            e.preventDefault();
-            const form = e.target;
-            const projectId = form.projectId.value;
-            const name = form.name.value.trim();
-            const startDate = form.start_date.value;
-            const endDate = form.end_date.value;
-            const targetValue = form.total_target.value;
-            if (!name) { showToast('Set name is required', 'warning'); return; }
-            if (!startDate || !endDate) { showToast('Start date and end date are required', 'warning'); return; }
-            if (endDate < startDate) { showToast('End date must be on or after the start date', 'warning'); return; }
-            if (targetValue === '' || Number(targetValue) < 0) { showToast('Total target is required (0 or more)', 'warning'); return; }
-            const btn = document.getElementById('createSetBtn');
-            btn.disabled = true;
-            btn.textContent = 'Creating...';
-            const body = {
-                name,
-                start_date: startDate,
-                end_date: endDate,
-                total_target: Number(targetValue)
-            };
-            const data = await apiCall(`/project-sets/${projectId}`, 'POST', body);
-            btn.disabled = false;
-            btn.textContent = 'Create Set';
-            if (data && data.success) {
-                showToast('Set created successfully');
-                closeModal('createSetModal');
-                // Refresh counts in-place, then show/reload the sets list live
-                await refreshProjectCount(projectId);
-                const section = document.getElementById(`expand-sets-${projectId}`);
-                if (section) {
-                    section.style.display = 'block';
-                    expandedSections[`${projectId}-sets`] = true;
-                }
-                await loadSets(projectId);
-                if (expandedSections[`${projectId}-employees`]) {
-                    loadEmployeesForProject(projectId);
-                }
-            } else {
-                showToast(data?.message || 'Failed to create set', 'error');
-            }
-        }
-
-        // ===================== EDIT SET =====================
-        function openEditSetModal(setId, projectId) {
-            apiCall(`/project-sets/single/${setId}`).then(d => {
-                const s = d && d.success ? d.set : null;
-                if (!s) { showToast((d && d.message) || 'Could not load set', 'error'); return; }
-                document.getElementById('editSetId').value = s.id;
-                document.getElementById('editSetProjectId').value = s.project_id || projectId;
-                document.getElementById('editSetForm').name.value = s.name || '';
-                document.getElementById('editSetForm').start_date.value = String(s.start_date || '').slice(0, 10);
-                document.getElementById('editSetForm').end_date.value = String(s.end_date || '').slice(0, 10);
-                document.getElementById('editSetForm').total_target.value = s.total_target != null ? s.total_target : '';
-                const st = document.getElementById('editSetForm').status;
-                st.value = (s.status && ['active', 'paused', 'completed'].includes(s.status)) ? s.status : 'active';
-                updateEditSetPreview();
-                openModal('editSetModal');
-            });
-        }
-
-        function updateEditSetPreview() {
-            const form = document.getElementById('editSetForm');
-            const wd = workingDaysBetween(form.start_date.value, form.end_date.value);
-            const target = parseFloat(form.total_target.value) || 0;
-            document.getElementById('editSetPreviewText').textContent =
-                `Working days: ${wd} (weekly off + holidays). Total target: ${fmt(target)} files. ` +
-                `The per-employee split is recomputed on save when dates or target change.`;
-            document.getElementById('editSetPreview').style.display = 'block';
-        }
-
-        async function updateSet(e) {
-            e.preventDefault();
-            const form = e.target;
-            const setId = form.setId.value;
-            const projectId = form.projectId.value;
-            const startDate = form.start_date.value;
-            const endDate = form.end_date.value;
-            const targetValue = form.total_target.value;
-            if (!form.name.value.trim()) { showToast('Set name is required', 'warning'); return; }
-            if (!startDate || !endDate) { showToast('Start date and end date are required', 'warning'); return; }
-            if (endDate < startDate) { showToast('End date must be on or after the start date', 'warning'); return; }
-            if (targetValue === '' || Number(targetValue) < 0) { showToast('Total target is required (0 or more)', 'warning'); return; }
-            const btn = document.getElementById('editSetBtn');
-            btn.disabled = true;
-            btn.textContent = 'Saving...';
-            const body = {
-                name: form.name.value.trim(),
-                start_date: startDate,
-                end_date: endDate,
-                total_target: Number(targetValue),
-                status: form.status.value
-            };
-            const data = await apiCall(`/project-sets/${setId}`, 'PUT', body);
-            btn.disabled = false;
-            btn.textContent = 'Save Changes';
-            if (data && data.success) {
-                showToast('Set updated successfully');
-                closeModal('editSetModal');
-                await refreshProjectCount(projectId);
-                await loadSets(projectId);
-            } else {
-                showToast(data?.message || 'Failed to update set', 'error');
-            }
-        }
-
-        // ===================== DELETE SET =====================
-        async function deleteSet(setId, projectId) {
-            if (!(await confirmAction('Delete this set? You can undo this action.'))) return;
-            const data = await apiCall(`/project-sets/${setId}`, 'DELETE');
-            if (data && data.success) {
-                await refreshProjectCount(projectId);
-                await loadSets(projectId);
-                showUndoToast('Set deleted', () => restoreSet(setId, projectId));
-            } else {
-                showToast(data?.message || 'Failed to delete set', 'error');
-            }
-        }
-
-        async function restoreSet(setId, projectId) {
-            const data = await apiCall(`/project-sets/${setId}/restore`, 'POST');
-            if (data && data.success) {
-                showToast('Set restored successfully');
-                await refreshProjectCount(projectId);
-                await loadSets(projectId);
-                const section = document.getElementById(`expand-sets-${projectId}`);
-                if (section) {
-                    section.style.display = 'block';
-                    expandedSections[`${projectId}-sets`] = true;
-                }
-            } else {
-                showToast(data?.message || 'Failed to restore set', 'error');
-            }
-        }
-
-        function showUndoToast(message, onUndo) {
-            let container = document.getElementById('toastContainer');
-            if (!container) {
-                container = document.createElement('div');
-                container.id = 'toastContainer';
-                container.className = 'toast-container';
-                document.body.appendChild(container);
-            }
-            const toast = document.createElement('div');
-            toast.className = 'toast toast-warning';
-            toast.innerHTML = `<i class="fas fa-trash"></i><span></span><button class="btn btn-sm btn-primary" style="margin-left:8px;padding:2px 10px;">Undo</button>`;
-            toast.querySelector('span').textContent = message;
-            const btn = toast.querySelector('button');
-            let undone = false;
-            btn.addEventListener('click', () => {
-                undone = true;
-                toast.remove();
-                onUndo();
-            });
-            container.appendChild(toast);
-            setTimeout(() => {
-                if (!undone) {
-                    toast.style.animation = 'toastSlideIn 0.3s ease reverse';
-                    setTimeout(() => toast.remove(), 300);
-                }
-            }, 6000);
         }
 
         // ===================== ASSIGN EMPLOYEES =====================
@@ -1672,9 +1210,6 @@
                 await refreshProjectCount(currentAssignProjectId);
                 if (expandedSections[`${currentAssignProjectId}-employees`]) {
                     loadEmployeesForProject(currentAssignProjectId);
-                }
-                if (expandedSections[`${currentAssignProjectId}-sets`]) {
-                    loadSets(currentAssignProjectId);
                 }
             } else {
                 showToast(data?.message || 'Failed to assign employees', 'error');
@@ -2066,7 +1601,6 @@
                     photoEl.innerHTML = `<div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--primary);color:white;font-size:0.8rem;font-weight:600;">${(user.first_name || user.last_name || 'U')[0].toUpperCase()}</div>`;
                 }
             }
-            loadHolidays();
             loadProjects();
         });
     </script>
