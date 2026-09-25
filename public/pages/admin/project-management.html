@@ -599,6 +599,124 @@
         </div>
     </div>
 
+    <div class="modal" id="documentsModal">
+        <div class="modal-content" style="max-width:560px;">
+            <div class="modal-header">
+                <h2 id="documentModalTitle">Upload Document</h2>
+                <button onclick="closeModal('documentsModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="documentForm" onsubmit="saveDocument(event)">
+                    <input type="hidden" id="documentEditId">
+                    <input type="hidden" id="documentProjectId">
+                    <div id="documentFileField" class="form-group">
+                        <label>File *</label>
+                        <input type="file" class="form-control" id="documentFileInput" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.dwg,.csv,.txt">
+                    </div>
+                    <div class="form-group">
+                        <label>Title *</label>
+                        <input type="text" class="form-control" id="documentTitle" placeholder="e.g. Structural drawing R-10 / Work order / NOC letter">
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Type</label>
+                            <select class="form-control" id="documentType">
+                                <option value="drawing">Drawing</option>
+                                <option value="contract">Contract / Work Order</option>
+                                <option value="approval">Approval / NOC</option>
+                                <option value="certificate">Certificate</option>
+                                <option value="letter">Letter</option>
+                                <option value="report">Report</option>
+                                <option value="photo">Photo</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <input type="text" class="form-control" id="documentDescription" placeholder="What this document covers">
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('documentsModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="documentSaveBtn">Upload</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="snagModal">
+        <div class="modal-content" style="max-width:560px;">
+            <div class="modal-header">
+                <h2 id="snagModalTitle">New Snag</h2>
+                <button onclick="closeModal('snagModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="snagForm" onsubmit="saveSnag(event)">
+                    <input type="hidden" id="snagEditId">
+                    <input type="hidden" id="snagProjectId">
+                    <div class="form-group">
+                        <label>Title *</label>
+                        <input type="text" class="form-control" id="snagTitle" placeholder="e.g. Water seepage at basement lift lobby">
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea class="form-control" id="snagDescription" rows="2" placeholder="Where, what, who noticed it"></textarea>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Category</label>
+                            <select class="form-control" id="snagCategory">
+                                <option value="quality">Quality</option>
+                                <option value="safety">Safety</option>
+                                <option value="design">Design</option>
+                                <option value="material">Material</option>
+                                <option value="workmanship">Workmanship</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Severity</label>
+                            <select class="form-control" id="snagSeverity">
+                                <option value="low">Low</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="high">High</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Assign To</label>
+                            <select class="form-control" id="snagAssignee"><option value="">— Unassigned —</option></select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Due Date</label>
+                            <input type="date" class="form-control" id="snagDueDate">
+                        </div>
+                    </div>
+                    <div class="form-group" id="snagStatusField" style="display:none;">
+                        <label>Status</label>
+                        <select class="form-control" id="snagStatus">
+                            <option value="open">Open</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="closed">Closed</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Note (what changed)</label>
+                        <input type="text" class="form-control" id="snagNote" placeholder="Optional note recorded to the activity log">
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('snagModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="snagSaveBtn">Save Snag</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="modal" id="assignEmployeesModal">
         <div class="modal-content" style="max-width:520px;">
             <div class="modal-header">
@@ -869,6 +987,18 @@
                             const mt = document.getElementById(`expand-materials-${p.id}`);
                             if (mt) { mt.style.display = 'block'; loadMaterials(p.id); }
                         }
+                        if (expandedSections[`${p.id}-documents`]) {
+                            const dc = document.getElementById(`expand-documents-${p.id}`);
+                            if (dc) { dc.style.display = 'block'; loadDocuments(p.id); }
+                        }
+                        if (expandedSections[`${p.id}-snags`]) {
+                            const sn = document.getElementById(`expand-snags-${p.id}`);
+                            if (sn) { sn.style.display = 'block'; loadSnags(p.id); }
+                        }
+                        if (expandedSections[`${p.id}-closeout`]) {
+                            const co = document.getElementById(`expand-closeout-${p.id}`);
+                            if (co) { co.style.display = 'block'; loadCloseout(p.id); }
+                        }
                         if (expandedSections[`${p.id}-employees`]) {
                             const e = document.getElementById(`expand-employees-${p.id}`);
                             if (e) { e.style.display = 'block'; loadEmployeesForProject(p.id); }
@@ -944,6 +1074,15 @@
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'materials')">
                                 <i class="fas fa-boxes"></i> Materials
                             </button>
+                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'documents')">
+                                <i class="fas fa-folder-open"></i> Documents
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'snags')">
+                                <i class="fas fa-exclamation-triangle"></i> Snags
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'closeout')">
+                                <i class="fas fa-clipboard-check"></i> Closeout
+                            </button>
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'employees')">
                                 <i class="fas fa-users"></i> Employees
                             </button>
@@ -969,6 +1108,15 @@
                     </div>
                     <div id="expand-materials-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="materials-content-${p.id}"></div>
+                    </div>
+                    <div id="expand-documents-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
+                        <div id="documents-content-${p.id}"></div>
+                    </div>
+                    <div id="expand-snags-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
+                        <div id="snags-content-${p.id}"></div>
+                    </div>
+                    <div id="expand-closeout-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
+                        <div id="closeout-content-${p.id}"></div>
                     </div>
                     <div id="expand-employees-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="employees-content-${p.id}"></div>
@@ -1060,6 +1208,9 @@
             else if (type === 'dpr') await loadDprs(projectId);
             else if (type === 'labour') await loadLabour(projectId);
             else if (type === 'materials') await loadMaterials(projectId);
+            else if (type === 'documents') await loadDocuments(projectId);
+            else if (type === 'snags') await loadSnags(projectId);
+            else if (type === 'closeout') await loadCloseout(projectId);
             else await loadEmployeesForProject(projectId);
         }
 
@@ -1456,7 +1607,20 @@
             'labour.delete': ['fa-trash', 'removed labour entry'],
             'material.create': ['fa-boxes', 'added material'],
             'material.update': ['fa-pen', 'edited material'],
-            'material.delete': ['fa-trash', 'removed material']
+            'material.delete': ['fa-trash', 'removed material'],
+            'document.upload': ['fa-upload', 'uploaded document'],
+            'document.update': ['fa-pen', 'edited document'],
+            'document.delete': ['fa-trash', 'deleted document'],
+            'snag.create': ['fa-exclamation-triangle', 'logged snag'],
+            'snag.update': ['fa-pen', 'updated snag'],
+            'snag.status': ['fa-sync', 'changed snag status'],
+            'snag.delete': ['fa-trash', 'deleted snag'],
+            'closeout.add': ['fa-list-check', 'added closeout item'],
+            'closeout.update': ['fa-pen', 'updated closeout item'],
+            'closeout.complete': ['fa-check', 'completed closeout item'],
+            'closeout.reopen': ['fa-undo', 'reopened closeout item'],
+            'closeout.remove': ['fa-trash', 'removed closeout item'],
+            'closeout.defaults': ['fa-list-check', 'loaded standard closeout checklist']
         };
 
         function activityMeta(action) {
@@ -2737,6 +2901,489 @@
                 await loadMaterials(projectId);
             } else {
                 showToast(data?.message || 'Failed to remove entry', 'error');
+            }
+        }
+
+        // ===================== PROJECT DOCUMENTS =====================
+        let documentsCache = {};
+
+        async function loadDocuments(projectId) {
+            const container = document.getElementById(`documents-content-${projectId}`);
+            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
+            const data = await apiCall(`/project-documents/${projectId}`);
+            if (!data || !data.success) {
+                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load documents.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
+                return;
+            }
+            const docs = data.documents || [];
+            documentsCache[projectId] = docs;
+            const header = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                    <h4 style="font-size:0.9rem;font-weight:600;">Documents (${docs.length})</h4>
+                    <button class="btn btn-primary btn-sm" onclick="openUploadDocumentModal(${projectId})">
+                        <i class="fas fa-upload"></i> Upload
+                    </button>
+                </div>`;
+            if (!docs.length) {
+                container.innerHTML = header + '<p style="color:var(--text-secondary);font-size:0.85rem;">No documents yet. Upload drawings, contracts, approvals and letters here.</p>';
+                return;
+            }
+            container.innerHTML = header + `
+                <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.84rem;min-width:700px;">
+                        <thead>
+                            <tr style="text-align:left;border-bottom:2px solid var(--border);">
+                                <th style="padding:8px 6px;">Title</th>
+                                <th style="padding:8px 6px;">Type</th>
+                                <th style="padding:8px 6px;">Uploaded</th>
+                                <th style="padding:8px 6px;">When</th>
+                                <th style="padding:8px 6px;text-align:right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${docs.map(d => documentRow(projectId, d)).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+        }
+
+        function documentRow(projectId, d) {
+            const desc = d.description ? `<div style="font-size:0.75rem;color:var(--text-tertiary);">${esc(d.description)}</div>` : '';
+            const hasFile = d.file_name ? `<button class="btn btn-secondary btn-sm" onclick="downloadProjectDocument(${projectId}, ${d.id})" title="Download"><i class="fas fa-download" style="font-size:0.7rem;"></i> Download</button>` : '';
+            return `
+                <tr style="border-bottom:1px solid var(--border);">
+                    <td style="padding:8px 6px;font-weight:600;">${esc(d.title)}${desc}</td>
+                    <td style="padding:8px 6px;white-space:nowrap;">${esc((d.doc_type || 'other').replace(/_/g, ' '))}</td>
+                    <td style="padding:8px 6px;white-space:nowrap;">${d.uploader_name ? esc(d.uploader_name) : '—'}</td>
+                    <td style="padding:8px 6px;white-space:nowrap;color:var(--text-tertiary);font-size:0.78rem;">${timeAgo(d.created_at)}</td>
+                    <td style="padding:8px 6px;text-align:right;white-space:nowrap;">
+                        <div style="display:inline-flex;gap:4px;">
+                            ${hasFile}
+                            <button class="btn btn-secondary btn-sm" onclick="openEditDocumentModal(${projectId}, ${d.id})" title="Edit details"><i class="fas fa-pen" style="font-size:0.7rem;"></i></button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteDocument(${projectId}, ${d.id})" title="Delete"><i class="fas fa-trash" style="font-size:0.7rem;"></i></button>
+                        </div>
+                    </td>
+                </tr>`;
+        }
+
+        function openUploadDocumentModal(projectId) {
+            const form = document.getElementById('documentForm');
+            form.reset();
+            document.getElementById('documentEditId').value = '';
+            document.getElementById('documentProjectId').value = projectId;
+            document.getElementById('documentModalTitle').textContent = 'Upload Document';
+            document.getElementById('documentSaveBtn').textContent = 'Upload';
+            document.getElementById('documentFileField').style.display = 'block';
+            document.getElementById('documentFileInput').required = true;
+            openModal('documentsModal');
+        }
+
+        function openEditDocumentModal(projectId, docId) {
+            const d = (documentsCache[projectId] || []).find(x => x.id === docId);
+            if (!d) { showToast('Could not load document details', 'error'); return; }
+            document.getElementById('documentForm').reset();
+            document.getElementById('documentEditId').value = d.id;
+            document.getElementById('documentProjectId').value = d.project_id;
+            document.getElementById('documentModalTitle').textContent = 'Edit — ' + d.title;
+            document.getElementById('documentSaveBtn').textContent = 'Save Details';
+            document.getElementById('documentFileField').style.display = 'none';
+            document.getElementById('documentFileInput').required = false;
+            document.getElementById('documentTitle').value = d.title || '';
+            document.getElementById('documentType').value = d.doc_type || 'other';
+            document.getElementById('documentDescription').value = d.description || '';
+            openModal('documentsModal');
+        }
+
+        async function saveDocument(e) {
+            e.preventDefault();
+            const editId = document.getElementById('documentEditId').value;
+            const projectId = document.getElementById('documentProjectId').value;
+            const title = document.getElementById('documentTitle').value.trim();
+            if (!title) { showToast('Document title is required', 'warning'); return; }
+            const docType = document.getElementById('documentType').value;
+            const description = document.getElementById('documentDescription').value.trim();
+            const btn = document.getElementById('documentSaveBtn');
+
+            if (editId) {
+                btn.disabled = true;
+                btn.textContent = 'Saving...';
+                const data = await apiCall(`/project-documents/${projectId}/${editId}`, 'PUT', { title, doc_type: docType, description });
+                btn.disabled = false;
+                btn.textContent = 'Save Details';
+                if (data && data.success) {
+                    showToast('Document details updated');
+                    closeModal('documentsModal');
+                    await loadDocuments(projectId);
+                } else {
+                    showToast(data?.message || 'Failed to update document', 'error');
+                }
+                return;
+            }
+
+            const fileInput = document.getElementById('documentFileInput');
+            if (!fileInput.files || !fileInput.files.length) { showToast('Select a file to upload', 'warning'); return; }
+            btn.disabled = true;
+            btn.textContent = 'Uploading...';
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('title', title);
+            formData.append('doc_type', docType);
+            formData.append('description', description);
+            const token = localStorage.getItem('token');
+            try {
+                const response = await fetch(`${API_URL}/project-documents/${projectId}/upload`, {
+                    method: 'POST',
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                    body: formData
+                });
+                let data = null;
+                const text = await response.text();
+                try { data = JSON.parse(text); } catch (err) { data = null; }
+                btn.disabled = false;
+                btn.textContent = 'Upload';
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    window.location.href = '/';
+                    return;
+                }
+                if (data && data.success) {
+                    showToast('Document uploaded');
+                    closeModal('documentsModal');
+                    await loadDocuments(projectId);
+                } else {
+                    showToast(data?.message || 'Upload failed', 'error');
+                }
+            } catch (err) {
+                btn.disabled = false;
+                btn.textContent = 'Upload';
+                showToast('Network error during upload', 'error');
+            }
+        }
+
+        async function downloadProjectDocument(projectId, docId) {
+            const token = localStorage.getItem('token');
+            try {
+                const response = await fetch(`${API_URL}/project-documents/${projectId}/${docId}/download`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                if (!response.ok) {
+                    showToast('Could not download file', 'error');
+                    return;
+                }
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const match = /filename\*=UTF-8''([^;]+)/.exec(disposition);
+                a.download = match ? decodeURIComponent(match[1]) : 'document';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 4000);
+            } catch (err) {
+                showToast('Download failed', 'error');
+            }
+        }
+
+        async function deleteDocument(projectId, docId) {
+            if (!(await confirmAction('Delete this document and its file? The activity log keeps a record.'))) return;
+            const data = await apiCall(`/project-documents/${projectId}/${docId}`, 'DELETE');
+            if (data && data.success) {
+                showToast('Document deleted');
+                await loadDocuments(projectId);
+            } else {
+                showToast(data?.message || 'Failed to delete document', 'error');
+            }
+        }
+
+        // ===================== PROJECT SNAGS =====================
+        let snagsCache = {};
+
+        async function fetchProjectEmployees(projectId) {
+            const data = await apiCall(`/projects/${projectId}/employees`);
+            if (!data || !data.success) return [];
+            const employees = data.employees || data.data || data || [];
+            return Array.isArray(employees) ? employees : [];
+        }
+
+        function snagStatusBadge(status) {
+            const map = { open: 'badge-danger', in_progress: 'badge-primary', resolved: 'badge-success', closed: 'badge-secondary' };
+            const label = String(status || 'open').replace(/_/g, ' ');
+            return `<span class="badge ${map[status] || 'badge-secondary'}">${label}</span>`;
+        }
+
+        function snagSeverityBadge(sev) {
+            const map = { low: 'badge-secondary', medium: 'badge-info', high: 'badge-warning', critical: 'badge-danger' };
+            const label = String(sev || 'medium').replace(/_/g, ' ');
+            return `<span class="badge ${map[sev] || 'badge-secondary'}">${label}</span>`;
+        }
+
+        async function loadSnags(projectId) {
+            const container = document.getElementById(`snags-content-${projectId}`);
+            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
+            const data = await apiCall(`/project-snags/${projectId}`);
+            if (!data || !data.success) {
+                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load snags.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
+                return;
+            }
+            const snags = data.snags || [];
+            snagsCache[projectId] = snags;
+            const header = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                    <h4 style="font-size:0.9rem;font-weight:600;">Snags & Issues (${snags.length}) <span class="badge badge-danger">${data.openCount || 0} open</span></h4>
+                    <button class="btn btn-primary btn-sm" onclick="openCreateSnagModal(${projectId})">
+                        <i class="fas fa-plus"></i> Log Snag
+                    </button>
+                </div>`;
+            if (!snags.length) {
+                container.innerHTML = header + '<p style="color:var(--text-secondary);font-size:0.85rem;">No snags logged. Quick actions on a card: resolve it, close it, reopen it.</p>';
+                return;
+            }
+            container.innerHTML = header + `<div style="display:flex;flex-direction:column;gap:8px;">${snags.map(s => snagRow(projectId, s)).join('')}</div>`;
+        }
+
+        function snagRow(projectId, s) {
+            const due = s.due_date ? `<span style="color:var(--text-tertiary);font-size:0.78rem;">Due ${String(s.due_date).slice(0, 10)}</span>` : '';
+            const assignee = s.assignee_name ? ` · ${esc(s.assignee_name)}` : '';
+            let actions = '';
+            if (s.status === 'open') {
+                actions = `<button class="btn btn-secondary btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'in_progress')"><i class="fas fa-play" style="font-size:0.7rem;"></i> Start</button>
+                           <button class="btn btn-success btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'resolved')"><i class="fas fa-check" style="font-size:0.7rem;"></i> Resolve</button>`;
+            } else if (s.status === 'in_progress') {
+                actions = `<button class="btn btn-success btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'resolved')"><i class="fas fa-check" style="font-size:0.7rem;"></i> Resolve</button>`;
+            } else if (s.status === 'resolved') {
+                actions = `<button class="btn btn-primary btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'closed')"><i class="fas fa-lock" style="font-size:0.7rem;"></i> Close</button>
+                           <button class="btn btn-secondary btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'open')"><i class="fas fa-undo" style="font-size:0.7rem;"></i> Reopen</button>`;
+            } else {
+                actions = `<button class="btn btn-secondary btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'open')"><i class="fas fa-undo" style="font-size:0.7rem;"></i> Reopen</button>`;
+            }
+            return `
+                <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:10px 14px;background:var(--bg-card,#fff);">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                                <strong style="font-size:0.88rem;">${esc(s.title)}</strong>
+                                ${snagStatusBadge(s.status)}
+                                ${snagSeverityBadge(s.severity)}
+                                <span class="badge badge-secondary">${esc(s.category || 'quality')}</span>
+                            </div>
+                            ${s.description ? `<div style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;line-height:1.5;">${esc(s.description)}</div>` : ''}
+                            <div style="font-size:0.76rem;color:var(--text-tertiary);margin-top:4px;">by ${esc(s.creator_name || '—')}${assignee} ${due}</div>
+                        </div>
+                        <div style="display:inline-flex;gap:4px;flex-wrap:wrap;flex-shrink:0;">
+                            ${actions}
+                            <button class="btn btn-secondary btn-sm" onclick="openEditSnagModal(${projectId}, ${s.id})" title="Edit"><i class="fas fa-pen" style="font-size:0.7rem;"></i></button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteSnag(${projectId}, ${s.id})" title="Delete"><i class="fas fa-trash" style="font-size:0.7rem;"></i></button>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        async function openCreateSnagModal(projectId) {
+            document.getElementById('snagForm').reset();
+            document.getElementById('snagEditId').value = '';
+            document.getElementById('snagProjectId').value = projectId;
+            document.getElementById('snagModalTitle').textContent = 'Log Snag';
+            document.getElementById('snagSaveBtn').textContent = 'Save Snag';
+            document.getElementById('snagStatusField').style.display = 'none';
+            await fillSnagAssigneeSelect(projectId);
+            document.getElementById('snagDueDate').value = '';
+            openModal('snagModal');
+        }
+
+        async function openEditSnagModal(projectId, snagId) {
+            const cached = (snagsCache[projectId] || []).find(s => s.id === snagId);
+            const s = cached || null;
+            if (!s) { showToast('Could not load snag details', 'error'); return; }
+            document.getElementById('snagForm').reset();
+            document.getElementById('snagEditId').value = s.id;
+            document.getElementById('snagProjectId').value = s.project_id;
+            document.getElementById('snagModalTitle').textContent = 'Edit — ' + s.title;
+            document.getElementById('snagSaveBtn').textContent = 'Save Snag';
+            document.getElementById('snagStatusField').style.display = 'block';
+            document.getElementById('snagTitle').value = s.title || '';
+            document.getElementById('snagDescription').value = s.description || '';
+            document.getElementById('snagCategory').value = s.category || 'quality';
+            document.getElementById('snagSeverity').value = s.severity || 'medium';
+            document.getElementById('snagStatus').value = s.status || 'open';
+            await fillSnagAssigneeSelect(projectId, s.assigned_to);
+            document.getElementById('snagDueDate').value = s.due_date ? String(s.due_date).slice(0, 10) : '';
+            document.getElementById('snagNote').value = '';
+            openModal('snagModal');
+        }
+
+        async function fillSnagAssigneeSelect(projectId, selectedId) {
+            const select = document.getElementById('snagAssignee');
+            select.innerHTML = '<option value="">— Unassigned —</option>';
+            const employees = await fetchProjectEmployees(projectId);
+            employees.forEach(emp => {
+                const id = emp.id != null ? emp.id : emp.employee_id;
+                const name = esc((emp.first_name || '') + ' ' + (emp.last_name || ''));
+                select.innerHTML += `<option value="${id}"${String(id) === String(selectedId) ? ' selected' : ''}>${name}</option>`;
+            });
+        }
+
+        async function saveSnag(e) {
+            e.preventDefault();
+            const editId = document.getElementById('snagEditId').value;
+            const projectId = document.getElementById('snagProjectId').value;
+            const title = document.getElementById('snagTitle').value.trim();
+            if (!title) { showToast('Snag title is required', 'warning'); return; }
+            const body = {
+                title,
+                description: document.getElementById('snagDescription').value.trim() || null,
+                category: document.getElementById('snagCategory').value,
+                severity: document.getElementById('snagSeverity').value,
+                assigned_to: document.getElementById('snagAssignee').value || null,
+                due_date: document.getElementById('snagDueDate').value || null,
+                note: document.getElementById('snagNote').value.trim() || null
+            };
+            if (editId) {
+                body.status = document.getElementById('snagStatus').value;
+                const data = await apiCall(`/project-snags/${projectId}/${editId}`, 'PUT', body);
+                if (data && data.success) {
+                    showToast('Snag updated');
+                    closeModal('snagModal');
+                    await loadSnags(projectId);
+                } else {
+                    showToast(data?.message || 'Failed to update snag', 'error');
+                }
+                return;
+            }
+            const data = await apiCall(`/project-snags/${projectId}`, 'POST', body);
+            if (data && data.success) {
+                showToast('Snag logged');
+                closeModal('snagModal');
+                await loadSnags(projectId);
+            } else {
+                showToast(data?.message || 'Failed to log snag', 'error');
+            }
+        }
+
+        async function setSnagStatus(projectId, snagId, status) {
+            const data = await apiCall(`/project-snags/${projectId}/${snagId}`, 'PUT', { status, note: null });
+            if (data && data.success) {
+                showToast('Snag status updated');
+                await loadSnags(projectId);
+            } else {
+                showToast(data?.message || 'Failed to update status', 'error');
+            }
+        }
+
+        async function deleteSnag(projectId, snagId) {
+            if (!(await confirmAction('Delete this snag? The activity log keeps a record.'))) return;
+            const data = await apiCall(`/project-snags/${projectId}/${snagId}`, 'DELETE');
+            if (data && data.success) {
+                showToast('Snag deleted');
+                await loadSnags(projectId);
+            } else {
+                showToast(data?.message || 'Failed to delete snag', 'error');
+            }
+        }
+
+        // ===================== PROJECT CLOSEOUT =====================
+        async function loadCloseout(projectId) {
+            const container = document.getElementById(`closeout-content-${projectId}`);
+            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
+            const data = await apiCall(`/project-closeout/${projectId}`);
+            if (!data || !data.success) {
+                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load closeout.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
+                return;
+            }
+            renderCloseout(projectId, container, data);
+        }
+
+        function renderCloseout(projectId, container, data) {
+            const items = data.items || [];
+            const s = data.summary || {};
+            const snags = s.snags || {};
+            const inv = s.invoices || {};
+            const ready = snags.open_count > 0 ? false : (s.total > 0 && s.percent >= 100);
+            const pct = s.percent || 0;
+
+            const chips = `
+                <span class="badge badge-secondary">DPRs: ${s.dpr_count || 0}</span>
+                <span class="badge ${snags.open_count > 0 ? 'badge-danger' : 'badge-success'}">Snags open: ${snags.open_count || 0} / ${snags.total || 0}</span>
+                <span class="badge badge-primary">Billed (net): ${fmtMoney(inv.net)}</span>
+                <span class="badge badge-success">Received: ${fmtMoney(inv.received)}</span>
+                <span class="badge badge-warning">Retention held: ${fmtMoney(inv.retention)}</span>
+                <span class="badge ${ready ? 'badge-success' : 'badge-secondary'}">${ready ? 'Ready for handover!' : 'In progress'}</span>`;
+
+            const rows = items.map(it => {
+                const cat = esc((it.category || 'handover').replace(/_/g, ' '));
+                const doneBy = it.completed_by_name ? ` <span style="color:var(--text-tertiary);font-size:0.72rem;">· ${esc(it.completed_by_name)}</span>` : '';
+                return `
+                    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed var(--border);">
+                        <input type="checkbox" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer;flex-shrink:0;" ${it.is_completed ? 'checked' : ''} onchange="toggleCloseoutItem(${projectId}, ${it.id}, this.checked)">
+                        <span style="flex:1;min-width:0;font-size:0.84rem;${it.is_completed ? 'text-decoration:line-through;color:var(--text-tertiary);' : ''}">${esc(it.item_name)}${doneBy}</span>
+                        <span class="badge badge-secondary" style="flex-shrink:0;">${cat}</span>
+                        <button class="btn btn-danger btn-sm" style="flex-shrink:0;" onclick="removeCloseoutItem(${projectId}, ${it.id})" title="Remove"><i class="fas fa-times" style="font-size:0.7rem;"></i></button>
+                    </div>`;
+            }).join('');
+
+            container.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                    <h4 style="font-size:0.9rem;font-weight:600;">Closeout Checklist (${s.completed || 0}/${s.total || 0})</h4>
+                    ${s.total > 0 ? '' : `<button class="btn btn-primary btn-sm" onclick="loadCloseoutDefaults(${projectId})"><i class="fas fa-list-check"></i> Load standard checklist</button>`}
+                </div>
+                <div style="margin-bottom:12px;">
+                    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:0.78rem;color:var(--text-secondary);">Handover readiness <strong>${pct}%</strong></div>
+                    <div style="height:8px;background:var(--border);border-radius:6px;overflow:hidden;">
+                        <div style="height:100%;width:${pct}%;background:${pct >= 100 ? 'var(--success,#16a34a)' : 'var(--primary,#4f46e5)'};border-radius:6px;transition:width 0.3s;"></div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">${chips}</div>
+                <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+                    <input type="text" class="form-control" id="closeoutNewItem-${projectId}" placeholder="Add handover item..." style="flex:1;min-width:200px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addCloseoutItem(${projectId});}">
+                    <button class="btn btn-primary btn-sm" onclick="addCloseoutItem(${projectId})"><i class="fas fa-plus" style="font-size:0.7rem;"></i> Add</button>
+                    ${s.total > 0 ? `<button class="btn btn-secondary btn-sm" onclick="loadCloseoutDefaults(${projectId})"><i class="fas fa-list-check"></i> Add standard items</button>` : ''}
+                </div>
+                <div>${rows || '<p style="color:var(--text-tertiary);font-size:0.85rem;">No checklist items yet. Load the standard checklist or add your own above.</p>'}</div>`;
+        }
+
+        async function toggleCloseoutItem(projectId, itemId, isCompleted) {
+            const data = await apiCall(`/project-closeout/${projectId}/items/${itemId}`, 'PUT', { is_completed: isCompleted });
+            if (data && data.success) {
+                showToast(isCompleted ? 'Item completed' : 'Item reopened');
+                await loadCloseout(projectId);
+            } else {
+                showToast(data?.message || 'Failed to update item', 'error');
+            }
+        }
+
+        async function addCloseoutItem(projectId) {
+            const input = document.getElementById(`closeoutNewItem-${projectId}`);
+            const name = (input.value || '').trim();
+            if (!name) { showToast('Enter a checklist item', 'warning'); return; }
+            const data = await apiCall(`/project-closeout/${projectId}/items`, 'POST', { item_name: name, category: 'handover', notes: null });
+            if (data && data.success) {
+                input.value = '';
+                await loadCloseout(projectId);
+            } else {
+                showToast(data?.message || 'Failed to add item', 'error');
+            }
+        }
+
+        async function removeCloseoutItem(projectId, itemId) {
+            if (!(await confirmAction('Remove this checklist item?'))) return;
+            const data = await apiCall(`/project-closeout/${projectId}/items/${itemId}`, 'DELETE');
+            if (data && data.success) {
+                showToast('Item removed');
+                await loadCloseout(projectId);
+            } else {
+                showToast(data?.message || 'Failed to remove item', 'error');
+            }
+        }
+
+        async function loadCloseoutDefaults(projectId) {
+            const data = await apiCall(`/project-closeout/${projectId}/defaults`, 'POST');
+            if (data && data.success) {
+                showToast(data.added ? `${data.added} standard items added` : 'Checklist items already present');
+                await loadCloseout(projectId);
+            } else {
+                showToast(data?.message || 'Failed to load standard checklist', 'error');
             }
         }
 

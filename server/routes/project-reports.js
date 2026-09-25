@@ -435,11 +435,12 @@ function round2(n) {
     return Math.round((Number(n) || 0) * 100) / 100;
 }
 
-// Entity types the projects module writes to the audit trail (Phases 0-2).
+// Entity types the projects module writes to the audit trail (Phases 0-4).
 const PROJECT_ENTITY_TYPES = [
     'project', 'project_set', 'daily_work_count',
     'project_invoice', 'project_daily_report',
-    'project_labour_register', 'project_material'
+    'project_labour_register', 'project_material',
+    'project_document', 'project_snag', 'project_closeout_item'
 ];
 
 /**

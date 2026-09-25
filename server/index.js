@@ -64,6 +64,9 @@ app.use('/api/project-invoices', require('./routes/project-invoices'));
 app.use('/api/project-dpr', require('./routes/project-dpr'));
 app.use('/api/project-labour', require('./routes/project-labour'));
 app.use('/api/project-materials', require('./routes/project-materials'));
+app.use('/api/project-documents', require('./routes/project-documents'));
+app.use('/api/project-snags', require('./routes/project-snags'));
+app.use('/api/project-closeout', require('./routes/project-closeout'));
 
 // Static files (mounted after API routes so API paths always take precedence)
 app.use(express.static(path.join(__dirname, '../public')));
@@ -387,6 +390,67 @@ async function runMigrations() {
         await query(`CREATE INDEX IF NOT EXISTS idx_project_materials_project ON project_materials(project_id)`);
         console.log('[Migration] project_materials table ensured.');
     } catch (e) { console.warn('[Migration] project_materials table skipped:', e.message); }
+
+    // Phase 4 - documents, snags and closeout checklist.
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS project_documents (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            title VARCHAR(255) NOT NULL,
+            doc_type VARCHAR(50) DEFAULT 'other',
+            description TEXT,
+            file_name VARCHAR(255),
+            file_url TEXT,
+            uploader_id INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_documents_project ON project_documents(project_id)`);
+        console.log('[Migration] project_documents table ensured.');
+    } catch (e) { console.warn('[Migration] project_documents table skipped:', e.message); }
+
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS project_snags (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            category VARCHAR(50) DEFAULT 'quality',
+            severity VARCHAR(20) DEFAULT 'medium'
+                CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+            status VARCHAR(20) DEFAULT 'open'
+                CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
+            assigned_to INT REFERENCES employees(id) ON DELETE SET NULL,
+            due_date DATE,
+            resolved_at TIMESTAMP,
+            resolved_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            closed_at TIMESTAMP,
+            closed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_snags_project ON project_snags(project_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_snags_status ON project_snags(status)`);
+        console.log('[Migration] project_snags table ensured.');
+    } catch (e) { console.warn('[Migration] project_snags table skipped:', e.message); }
+
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS project_closeout_items (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            item_name VARCHAR(255) NOT NULL,
+            category VARCHAR(50) DEFAULT 'handover',
+            is_completed BOOLEAN DEFAULT false,
+            completed_at TIMESTAMP,
+            completed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(project_id, item_name)
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_closeout_project ON project_closeout_items(project_id)`);
+        console.log('[Migration] project_closeout_items table ensured.');
+    } catch (e) { console.warn('[Migration] project_closeout_items table skipped:', e.message); }
 
     // Rename customer → client: add the new column, copy existing data,
     // then use `client` everywhere. The old `customer` column is kept for

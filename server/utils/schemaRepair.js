@@ -301,6 +301,62 @@ const ENSURE_TABLE_DDL = {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_project_materials_project ON project_materials(project_id)`
     ],
+    // Phase 4 - documents, snags and closeout checklist. Fully self-contained
+    // so an older live DB heals itself on first contact with these routes.
+    project_documents: [
+        `CREATE TABLE IF NOT EXISTS project_documents (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            title VARCHAR(255) NOT NULL,
+            doc_type VARCHAR(50) DEFAULT 'other',
+            description TEXT,
+            file_name VARCHAR(255),
+            file_url TEXT,
+            uploader_id INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_project_documents_project ON project_documents(project_id)`
+    ],
+    project_snags: [
+        `CREATE TABLE IF NOT EXISTS project_snags (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            category VARCHAR(50) DEFAULT 'quality',
+            severity VARCHAR(20) DEFAULT 'medium'
+                CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+            status VARCHAR(20) DEFAULT 'open'
+                CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
+            assigned_to INT REFERENCES employees(id) ON DELETE SET NULL,
+            due_date DATE,
+            resolved_at TIMESTAMP,
+            resolved_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            closed_at TIMESTAMP,
+            closed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_project_snags_project ON project_snags(project_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_project_snags_status ON project_snags(status)`
+    ],
+    project_closeout_items: [
+        `CREATE TABLE IF NOT EXISTS project_closeout_items (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            item_name VARCHAR(255) NOT NULL,
+            category VARCHAR(50) DEFAULT 'handover',
+            is_completed BOOLEAN DEFAULT false,
+            completed_at TIMESTAMP,
+            completed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(project_id, item_name)
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_project_closeout_project ON project_closeout_items(project_id)`
+    ],
     project_sets: [
         `CREATE TABLE IF NOT EXISTS project_sets (
             id SERIAL PRIMARY KEY,
@@ -477,6 +533,45 @@ const PROJECT_MODULE_ALTER_COLUMNS = {
         created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
         created_at: 'TIMESTAMP DEFAULT NOW()',
         updated_at: 'TIMESTAMP DEFAULT NOW()',
+    },
+    // Phase 4 - documents, snags and closeout checklist column maps.
+    'project_documents': {
+        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
+        title: 'VARCHAR(255) NOT NULL',
+        doc_type: "VARCHAR(50) DEFAULT 'other'",
+        description: 'TEXT',
+        file_name: 'VARCHAR(255)',
+        file_url: 'TEXT',
+        uploader_id: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        created_at: 'TIMESTAMP DEFAULT NOW()',
+    },
+    'project_snags': {
+        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
+        title: 'VARCHAR(255) NOT NULL',
+        description: 'TEXT',
+        category: "VARCHAR(50) DEFAULT 'quality'",
+        severity: "VARCHAR(20) DEFAULT 'medium'",
+        status: "VARCHAR(20) DEFAULT 'open'",
+        assigned_to: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        due_date: 'DATE',
+        resolved_at: 'TIMESTAMP',
+        resolved_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        closed_at: 'TIMESTAMP',
+        closed_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        created_at: 'TIMESTAMP DEFAULT NOW()',
+        updated_at: 'TIMESTAMP DEFAULT NOW()',
+    },
+    'project_closeout_items': {
+        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
+        item_name: 'VARCHAR(255) NOT NULL',
+        category: "VARCHAR(50) DEFAULT 'handover'",
+        is_completed: 'BOOLEAN DEFAULT false',
+        completed_at: 'TIMESTAMP',
+        completed_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        notes: 'TEXT',
+        created_at: 'TIMESTAMP DEFAULT NOW()',
+        updated_at: 'TIMESTAMP DEFAULT NOW()',
     }
 };
 
@@ -521,10 +616,13 @@ async function runWithSchemaRepair(fn) {
                         healed = miss.column && await ensureProjectSetColumn(miss.column);
                     } else if (table === 'daily_work_counts' || table === 'dwc' || table === 'project_employees' || table === 'pe' || table === 'project_invoices' || table === 'pi'
                             || table === 'project_daily_reports' || table === 'pdr' || table === 'dpr_activities' || table === 'da'
-                            || table === 'project_labour_register' || table === 'plr' || table === 'project_materials' || table === 'pm') {
+                            || table === 'project_labour_register' || table === 'plr' || table === 'project_materials' || table === 'pm'
+                            || table === 'project_documents' || table === 'pdoc' || table === 'project_snags' || table === 'psnag'
+                            || table === 'project_closeout_items' || table === 'pci') {
                         const resolved = {
                             dwc: 'daily_work_counts', pe: 'project_employees', pi: 'project_invoices',
-                            pdr: 'project_daily_reports', da: 'dpr_activities', plr: 'project_labour_register', pm: 'project_materials'
+                            pdr: 'project_daily_reports', da: 'dpr_activities', plr: 'project_labour_register', pm: 'project_materials',
+                            pdoc: 'project_documents', psnag: 'project_snags', pci: 'project_closeout_items'
                         }[table] || table;
                         healed = miss.column && await ensureProjectModuleColumn(resolved, miss.column);
                     } else if (table === 'employees' || table === 'e') {
@@ -543,6 +641,9 @@ async function runWithSchemaRepair(fn) {
                             || await ensureProjectModuleColumn('dpr_activities', miss.column)
                             || await ensureProjectModuleColumn('project_labour_register', miss.column)
                             || await ensureProjectModuleColumn('project_materials', miss.column)
+                            || await ensureProjectModuleColumn('project_documents', miss.column)
+                            || await ensureProjectModuleColumn('project_snags', miss.column)
+                            || await ensureProjectModuleColumn('project_closeout_items', miss.column)
                             || await ensureEmployeeColumn(miss.column)
                             || await ensureAnnouncementsColumn(miss.column);
                     }

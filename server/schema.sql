@@ -827,6 +827,66 @@ CREATE TABLE IF NOT EXISTS project_materials (
 CREATE INDEX IF NOT EXISTS idx_project_materials_project ON project_materials(project_id);
 
 -- ============================================================
+-- 28. PROJECT DOCUMENTS (repository for drawings, contracts, approvals...)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS project_documents (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    doc_type VARCHAR(50) DEFAULT 'other',
+    description TEXT,
+    file_name VARCHAR(255),
+    file_url TEXT,
+    uploader_id INT REFERENCES employees(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_project_documents_project ON project_documents(project_id);
+
+-- ============================================================
+-- 29. PROJECT SNAGS (issue / deficiency log through closeout)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS project_snags (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    category VARCHAR(50) DEFAULT 'quality',
+    severity VARCHAR(20) DEFAULT 'medium'
+        CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+    status VARCHAR(20) DEFAULT 'open'
+        CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
+    assigned_to INT REFERENCES employees(id) ON DELETE SET NULL,
+    due_date DATE,
+    resolved_at TIMESTAMP,
+    resolved_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    closed_at TIMESTAMP,
+    closed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_project_snags_project ON project_snags(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_snags_status ON project_snags(status);
+
+-- ============================================================
+-- 30. PROJECT CLOSEOUT CHECKLIST (handover items per project)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS project_closeout_items (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    item_name VARCHAR(255) NOT NULL,
+    category VARCHAR(50) DEFAULT 'handover',
+    is_completed BOOLEAN DEFAULT false,
+    completed_at TIMESTAMP,
+    completed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(project_id, item_name)
+);
+CREATE INDEX IF NOT EXISTS idx_project_closeout_project ON project_closeout_items(project_id);
+
+-- ============================================================
 -- SEED DATA for projects (optional - admin can add later)
 -- ============================================================
 
