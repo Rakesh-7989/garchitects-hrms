@@ -203,6 +203,75 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Daily Update (plain text studio work note) -->
+            <div id="dailyUpdateCard" class="card mb-3" style="display:none;">
+                <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                    <h3 style="font-weight:600;"><i class="fas fa-calendar-day" style="margin-right:6px;"></i> POST DAILY UPDATE</h3>
+                    <span id="dailyUpdateEditBadge" style="display:none;font-size:0.8rem;color:#d97706;font-weight:600;">Editing an update</span>
+                </div>
+                <div class="card-body">
+                    <form id="dailyUpdateForm">
+                        <input type="hidden" id="updateEditId">
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;">
+                            <div class="form-group">
+                                <label style="font-weight:500;margin-bottom:4px;display:block;color:var(--text-secondary);font-size:0.85rem;">Project *</label>
+                                <select id="updateProject" class="form-control"><option value="">-- Select Project --</option></select>
+                            </div>
+                            <div class="form-group">
+                                <label style="font-weight:500;margin-bottom:4px;display:block;color:var(--text-secondary);font-size:0.85rem;">Date *</label>
+                                <input type="date" id="updateDate" class="form-control" style="background:var(--bg-light);">
+                            </div>
+                            <div class="form-group">
+                                <label style="font-weight:500;margin-bottom:4px;display:block;color:var(--text-secondary);font-size:0.85rem;">Category *</label>
+                                <select id="updateCategory" class="form-control">
+                                    <option value="">-- Category --</option>
+                                    <option value="design">Design</option>
+                                    <option value="drafting">Drafting</option>
+                                    <option value="site_visit">Site Visit</option>
+                                    <option value="coordination">Coordination</option>
+                                    <option value="approvals">Approvals</option>
+                                    <option value="documentation">Documentation</option>
+                                    <option value="meeting">Meeting</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 3fr;gap:16px;margin-bottom:16px;">
+                            <div class="form-group">
+                                <label style="font-weight:500;margin-bottom:4px;display:block;color:var(--text-secondary);font-size:0.85rem;">Hours (0-24)</label>
+                                <input type="number" id="updateHours" class="form-control" min="0" max="24" step="0.5" placeholder="0">
+                            </div>
+                            <div class="form-group">
+                                <label style="font-weight:600;display:block;margin-bottom:6px;">What did you work on? *</label>
+                                <input type="text" id="updateDescription" class="form-control" required placeholder="e.g. Working drawings R-10 slab, coordination with structural consultant">
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom:16px;">
+                            <label style="font-weight:500;margin-bottom:4px;display:block;color:var(--text-secondary);font-size:0.85rem;">Notes (optional)</label>
+                            <textarea id="updateNotes" class="form-control" rows="2" placeholder="Anything worth flagging?"></textarea>
+                        </div>
+                        <div style="display:flex;gap:10px;">
+                            <button type="submit" class="btn btn-primary" id="updateSubmitBtn" style="padding:12px 24px;font-weight:600;">
+                                <i class="fas fa-paper-plane"></i> Save Update
+                            </button>
+                            <button type="button" class="btn" id="updateCancelEditBtn" style="display:none;padding:12px 24px;font-weight:600;background:var(--bg-light);color:var(--text-primary);border:1px solid var(--border-light);" onclick="cancelUpdateEdit()">Cancel Edit</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- My Daily Updates Feed -->
+            <div id="myUpdatesCard" class="card mb-3" style="display:none;">
+                <div class="card-header">
+                    <h3 style="font-weight:600;"><i class="fas fa-stream" style="margin-right:6px;"></i> MY DAILY UPDATES</h3>
+                </div>
+                <div class="card-body">
+                    <div id="myUpdatesFeed">
+                        <p style="color:var(--text-secondary);padding:16px 0;text-align:center;">No updates yet. Post your first update above.</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -267,6 +336,16 @@
             document.getElementById('selectPrompt').style.display = 'block';
             document.getElementById('projectsList').style.display = 'none';
             document.getElementById('projectsList').innerHTML = '';
+
+            // Daily update card: project picker + the employee's own plain-text updates.
+            const updSel = document.getElementById('updateProject');
+            updSel.innerHTML = '<option value="">-- Select Project --</option>';
+            allProjects.forEach(p => {
+                updSel.innerHTML += `<option value="${p.id}">${escapeHtml(p.name)}</option>`;
+            });
+            document.getElementById('dailyUpdateCard').style.display = 'block';
+            document.getElementById('updateDate').value = getTodayIST();
+            loadMyUpdates();
 
             // Auto-select when there is only one choice, so data shows immediately
             // (multi-project users still get the step-by-step dropdown flow).
@@ -490,6 +569,117 @@
             });
         }
 
+        // ===================== DAILY UPDATES (plain text) =====================
+        let updatesCache = [];
+
+        function categoryLabel(cat) {
+            const m = { design: 'Design', drafting: 'Drafting', site_visit: 'Site Visit', coordination: 'Coordination', approvals: 'Approvals', documentation: 'Documentation', meeting: 'Meeting', other: 'Other' };
+            return m[cat] || String(cat || 'other').replace(/_/g, ' ');
+        }
+
+        function catBadge(cat) {
+            return '<span style="background:#4f46e5;color:#fff;padding:3px 10px;border-radius:12px;font-size:0.7rem;font-weight:600;">' + escapeHtml(categoryLabel(cat)) + '</span>';
+        }
+
+        function resetUpdateForm() {
+            document.getElementById('updateEditId').value = '';
+            document.getElementById('updateCategory').value = '';
+            document.getElementById('updateDescription').value = '';
+            document.getElementById('updateHours').value = '';
+            document.getElementById('updateNotes').value = '';
+            document.getElementById('updateDate').value = getTodayIST();
+            document.getElementById('dailyUpdateEditBadge').style.display = 'none';
+            document.getElementById('updateCancelEditBtn').style.display = 'none';
+        }
+
+        function cancelUpdateEdit() {
+            resetUpdateForm();
+            document.getElementById('dailyUpdateCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        async function loadMyUpdates() {
+            const user = getCurrentUser();
+            if (!user) return;
+            const card = document.getElementById('myUpdatesCard');
+            const feed = document.getElementById('myUpdatesFeed');
+            const data = await apiCall('/project-updates?limit=50');
+            if (!data || !data.success || !data.updates || data.updates.length === 0) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            updatesCache = data.updates;
+            feed.innerHTML = data.updates.map(u => {
+                const canEdit = String(u.employee_id) === String(user.id);
+                return `
+                    <div style="padding:12px 0;border-bottom:1px dashed var(--border-light);">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+                            <div style="min-width:0;flex:1;">
+                                <div style="font-size:0.85rem;font-weight:600;">${formatDate(u.update_date)} &middot; ${escapeHtml(u.project_name)} ${catBadge(u.task_cat)}${Number(u.hours) > 0 ? ` <span style="font-size:0.78rem;color:var(--text-tertiary);">${u.hours}h</span>` : ''}</div>
+                                <div style="font-size:0.85rem;color:var(--text-primary);margin-top:4px;">${escapeHtml(u.description)}</div>
+                                ${u.notes ? `<div style="font-size:0.78rem;color:var(--text-tertiary);margin-top:2px;">Note: ${escapeHtml(u.notes)}</div>` : ''}
+                            </div>
+                            ${canEdit ? `<button type="button" class="btn btn-secondary" style="padding:6px 12px;font-size:0.78rem;" onclick="editMyUpdate(${u.id})"><i class="fas fa-pen"></i> Edit</button>` : ''}
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        function editMyUpdate(id) {
+            const u = updatesCache.find(x => String(x.id) === String(id));
+            if (!u) { showToast('Update not found', 'error'); return; }
+            document.getElementById('updateEditId').value = u.id;
+            document.getElementById('updateProject').value = String(u.project_id);
+            document.getElementById('updateDate').value = String(u.update_date).slice(0, 10);
+            document.getElementById('updateCategory').value = u.task_cat;
+            document.getElementById('updateHours').value = u.hours || 0;
+            document.getElementById('updateDescription').value = u.description;
+            document.getElementById('updateNotes').value = u.notes || '';
+            document.getElementById('dailyUpdateCard').style.display = 'block';
+            document.getElementById('dailyUpdateEditBadge').style.display = 'inline';
+            document.getElementById('updateCancelEditBtn').style.display = 'inline-block';
+            document.getElementById('dailyUpdateCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        async function submitDailyUpdate(e) {
+            e.preventDefault();
+            const user = getCurrentUser();
+            if (!user) return;
+            const projectId = document.getElementById('updateProject').value;
+            const updateDate = document.getElementById('updateDate').value;
+            const taskCat = document.getElementById('updateCategory').value;
+            const description = document.getElementById('updateDescription').value.trim();
+            const hours = document.getElementById('updateHours').value === '' ? 0 : Number(document.getElementById('updateHours').value);
+            const notes = document.getElementById('updateNotes').value.trim() || null;
+            const editId = document.getElementById('updateEditId').value;
+
+            if (!projectId || !updateDate || !taskCat || !description) {
+                showToast('Project, date, category and description are required', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('updateSubmitBtn');
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            btn.disabled = true;
+
+            const body = { projectId: parseInt(projectId), updateDate: updateDate, taskCat: taskCat, description: description, hours: hours, notes: notes };
+            const data = editId
+                ? await apiCall('/project-updates/' + editId, 'PUT', body)
+                : await apiCall('/project-updates', 'POST', body);
+
+            btn.innerHTML = original;
+            btn.disabled = false;
+
+            if (data && data.success) {
+                showToast(data.message || 'Update saved!', 'success');
+                resetUpdateForm();
+                loadMyUpdates();
+            } else {
+                showToast(data?.message || 'Failed to save update', 'error');
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', async () => {
             if (!checkAuth()) {
                 window.location.href = '/';
@@ -576,6 +766,8 @@
 
             loadMyProjectsData();
             loadRecentSubmissions();
+
+            document.getElementById('dailyUpdateForm').addEventListener('submit', submitDailyUpdate);
         });
 
         document.addEventListener('click', function(e) {

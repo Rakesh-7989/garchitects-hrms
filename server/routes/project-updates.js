@@ -82,13 +82,15 @@ router.get('/', verifyToken, async (req, res) => {
 
 /**
  * POST /api/project-updates
- * Submit (or update) the caller's own daily update for a project+date.
- * - The employee must still be assigned to the project.
+ * Submit (or update) a daily update for a project+date.
+ * - Employees always post their OWN update; admins may pass employeeId to post
+ *   on behalf of an assigned employee (the admin project page relies on this).
+ * - The effective employee must still be assigned to the project.
  * - One update per employee per project per date (upsert, like daily work counts).
  */
 router.post('/', verifyToken, async (req, res) => {
     try {
-        const { projectId, updateDate, taskCat, description, hours, notes } = req.body;
+        const { projectId, employeeId, updateDate, taskCat, description, hours, notes } = req.body;
         if (!projectId || !updateDate || !taskCat || !description) {
             return res.status(400).json({ success: false, message: 'Project, date, category and description are required' });
         }
@@ -104,11 +106,23 @@ router.post('/', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Hours must be between 0 and 24' });
         }
         const myId = req.user.id;
+        // Role rule: employees always post their own update; admins may post on
+        // behalf of an assigned employee (the admin project page uses this).
+        let empId = myId;
+        if (employeeId !== undefined && employeeId !== null && employeeId !== '') {
+            if (req.user.role !== 'admin') {
+                return res.status(403).json({ success: false, message: 'Only admins can post updates for other employees' });
+            }
+            empId = parseInt(employeeId, 10);
+            if (isNaN(empId)) {
+                return res.status(400).json({ success: false, message: 'Invalid employee selected' });
+            }
+        }
 
-        // Employee must be assigned to this project.
+        // The effective employee must be assigned to this project.
         const empCheck = await q(
             `SELECT id FROM project_employees WHERE project_id = $1 AND employee_id = $2`,
-            [projectId, myId]
+            [projectId, empId]
         );
         if (empCheck.rows.length === 0) {
             return res.status(403).json({ success: false, message: 'Employee is not assigned to this project' });
@@ -117,7 +131,7 @@ router.post('/', verifyToken, async (req, res) => {
         // One update per employee per project per day - create or refresh.
         const existing = await q(
             `SELECT id FROM project_daily_updates WHERE project_id = $1 AND employee_id = $2 AND update_date = $3`,
-            [projectId, myId, updateDate]
+            [projectId, empId, updateDate]
         );
 
         if (existing.rows.length > 0) {
@@ -138,7 +152,7 @@ router.post('/', verifyToken, async (req, res) => {
                 `INSERT INTO project_daily_updates (project_id, employee_id, update_date, task_cat, description, hours, notes)
                  VALUES ($1, $2, $3, $4, $5, $6, $7)
                  RETURNING id, project_id, employee_id, update_date, task_cat, description, hours, notes`,
-                [projectId, myId, updateDate, taskCat, desc, hrs, notes || null]
+                [projectId, empId, updateDate, taskCat, desc, hrs, notes || null]
             );
             logAudit({
                 actorId: myId, action: 'project.update.create', entityType: 'project_daily_update',

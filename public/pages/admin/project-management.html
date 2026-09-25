@@ -139,15 +139,9 @@
                     </div>
                     <div style="display:flex;gap:12px;">
                         <div class="form-group" style="flex:1;">
-                            <label>Contract Value (₹)</label>
-                            <input type="number" class="form-control" name="contract_value" min="0" step="0.01" placeholder="0">
-                        </div>
-                        <div class="form-group" style="flex:1;">
                             <label>Location</label>
                             <input type="text" class="form-control" name="location" placeholder="City / site address">
                         </div>
-                    </div>
-                    <div style="display:flex;gap:12px;">
                         <div class="form-group" style="flex:1;">
                             <label>Project Type</label>
                             <select class="form-control" name="project_type">
@@ -159,16 +153,6 @@
                                 <option value="interior">Interior</option>
                                 <option value="landscape">Landscape</option>
                                 <option value="other">Other</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Phase</label>
-                            <select class="form-control" name="phase">
-                                <option value="planning">Planning</option>
-                                <option value="preconstruction">Preconstruction</option>
-                                <option value="construction">Construction</option>
-                                <option value="snagging">Snagging</option>
-                                <option value="closeout">Closeout</option>
                             </select>
                         </div>
                     </div>
@@ -226,15 +210,9 @@
                     </div>
                     <div style="display:flex;gap:12px;">
                         <div class="form-group" style="flex:1;">
-                            <label>Contract Value (₹)</label>
-                            <input type="number" class="form-control" name="contract_value" id="editProjectContractValue" min="0" step="0.01" placeholder="0">
-                        </div>
-                        <div class="form-group" style="flex:1;">
                             <label>Location</label>
                             <input type="text" class="form-control" name="location" id="editProjectLocation" placeholder="City / site address">
                         </div>
-                    </div>
-                    <div style="display:flex;gap:12px;">
                         <div class="form-group" style="flex:1;">
                             <label>Project Type</label>
                             <select class="form-control" name="project_type" id="editProjectType">
@@ -246,16 +224,6 @@
                                 <option value="interior">Interior</option>
                                 <option value="landscape">Landscape</option>
                                 <option value="other">Other</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Phase</label>
-                            <select class="form-control" name="phase" id="editProjectPhase">
-                                <option value="planning">Planning</option>
-                                <option value="preconstruction">Preconstruction</option>
-                                <option value="construction">Construction</option>
-                                <option value="snagging">Snagging</option>
-                                <option value="closeout">Closeout</option>
                             </select>
                         </div>
                     </div>
@@ -382,217 +350,63 @@
         </div>
     </div>
 
-    <div class="modal" id="createInvoiceModal">
-        <div class="modal-content" style="max-width:520px;">
+    <div class="modal" id="updateModal">
+        <div class="modal-content" style="max-width:560px;">
             <div class="modal-header">
-                <h2>RA Bill</h2>
-                <button onclick="closeModal('createInvoiceModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+                <h2 id="updateModalTitle">Daily Update</h2>
+                <button onclick="closeModal('updateModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
             </div>
             <div class="modal-body">
-                <form id="createInvoiceForm" onsubmit="saveInvoice(event)">
-                    <input type="hidden" id="invoiceEditId">
-                    <input type="hidden" id="invoiceProjectId">
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Bill No</label>
-                            <input type="text" class="form-control" id="invoiceBillNo" disabled style="background:var(--bg-light);">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Retention %</label>
-                            <input type="number" class="form-control" name="retention_pct" id="invoiceRetentionPct" min="0" max="100" step="0.01" value="7.5" oninput="updateInvoicePreview()">
-                        </div>
+                <form id="updateForm" onsubmit="saveUpdate(event)">
+                    <input type="hidden" id="updateId">
+                    <input type="hidden" id="updateProjectId">
+                    <div id="updateEmployeeField" class="form-group" style="display:none;">
+                        <label>Employee *</label>
+                        <select class="form-control" id="updateEmployee"><option value="">-- Select Employee --</option></select>
                     </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Period Start</label>
-                            <input type="date" class="form-control" name="period_start" oninput="updateInvoicePreview()">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Period End</label>
-                            <input type="date" class="form-control" name="period_end" oninput="updateInvoicePreview()">
-                        </div>
+                    <div id="updateEmployeeReadonly" class="form-group" style="display:none;">
+                        <label>Employee</label>
+                        <input type="text" class="form-control" id="updateEmployeeName" readonly style="background:var(--bg-light);">
                     </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Gross Value (₹) *</label>
-                            <input type="number" class="form-control" name="gross_value" min="0.01" step="0.01" required placeholder="0.00" oninput="updateInvoicePreview()">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Remarks</label>
-                            <input type="text" class="form-control" name="remarks" placeholder="e.g. RA-01 civil works">
-                        </div>
-                    </div>
-                    <div id="invoicePreviewPanel" style="display:none;background:var(--primary-50, #eff6ff);border:1px solid var(--primary-200, #bfdbfe);border-radius:var(--radius, 8px);padding:12px;margin-top:8px;">
-                        <div style="font-size:0.72rem;color:var(--text-tertiary);margin-bottom:8px;font-weight:600;">RETENTION PREVIEW (SAME RULE AS SERVER)</div>
-                        <div style="font-size:0.85rem;color:var(--text-secondary);" id="invoicePreviewText">-</div>
-                    </div>
-                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('createInvoiceModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="createInvoiceBtn">Save</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal" id="payInvoiceModal">
-        <div class="modal-content" style="max-width:420px;">
-            <div class="modal-header">
-                <h2>Record Payment</h2>
-                <button onclick="closeModal('payInvoiceModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="payInvoiceMeta" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.6;"></div>
-                <form id="payInvoiceForm" onsubmit="payInvoiceSubmit(event)">
-                    <input type="hidden" id="payInvoiceId">
-                    <input type="hidden" id="payInvoiceProjectId">
                     <div class="form-group">
-                        <label>Payment Amount (₹) *</label>
-                        <input type="number" class="form-control" id="payInvoiceAmount" min="0.01" step="0.01" required>
+                        <label>Project</label>
+                        <input type="text" class="form-control" id="updateProjectName" readonly style="background:var(--bg-light);">
                     </div>
-                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('payInvoiceModal')">Cancel</button>
-                        <button type="submit" class="btn btn-success" id="payInvoiceBtn">Record Payment</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal" id="dprModal">
-        <div class="modal-content" style="max-width:680px;">
-            <div class="modal-header">
-                <h2 id="dprModalTitle">Daily Progress Report</h2>
-                <button onclick="closeModal('dprModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="dprForm" onsubmit="saveDpr(event)">
-                    <input type="hidden" id="dprEditId">
-                    <input type="hidden" id="dprProjectId">
                     <div style="display:flex;gap:12px;">
                         <div class="form-group" style="flex:1;">
-                            <label>Report Date *</label>
-                            <input type="date" class="form-control" name="report_date" required>
+                            <label>Date *</label>
+                            <input type="date" class="form-control" id="updateDate" required>
                         </div>
                         <div class="form-group" style="flex:1;">
-                            <label>Weather</label>
-                            <select class="form-control" name="weather">
-                                <option value="">—</option>
-                                <option value="Sunny">Sunny</option>
-                                <option value="Cloudy">Cloudy</option>
-                                <option value="Rainy">Rainy</option>
-                                <option value="Windy">Windy</option>
-                                <option value="Hot">Hot</option>
-                                <option value="Cold">Cold</option>
+                            <label>Category *</label>
+                            <select class="form-control" id="updateCategory" required>
+                                <option value="">-- Category --</option>
+                                <option value="design">Design</option>
+                                <option value="drafting">Drafting</option>
+                                <option value="site_visit">Site Visit</option>
+                                <option value="coordination">Coordination</option>
+                                <option value="approvals">Approvals</option>
+                                <option value="documentation">Documentation</option>
+                                <option value="meeting">Meeting</option>
+                                <option value="other">Other</option>
                             </select>
                         </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Hours (0-24)</label>
+                            <input type="number" class="form-control" id="updateHours" min="0" max="24" step="0.5" placeholder="0">
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label>Work Summary</label>
-                        <textarea class="form-control" name="work_summary" rows="3" placeholder="Narrative of the day's progress..."></textarea>
+                        <label>What did you work on? *</label>
+                        <textarea class="form-control" id="updateDescription" rows="3" required placeholder="Describe today's work..."></textarea>
                     </div>
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                        <label style="font-size:0.85rem;font-weight:600;">Activity Lines</label>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="addDprActivityRow()"><i class="fas fa-plus"></i> Add Activity</button>
-                    </div>
-                    <div id="dprActivities"></div>
-                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('dprModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="dprSaveBtn">Save Report</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal" id="labourModal">
-        <div class="modal-content" style="max-width:560px;">
-            <div class="modal-header">
-                <h2>Labour Register</h2>
-                <button onclick="closeModal('labourModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="labourForm" onsubmit="saveLabour(event)">
-                    <input type="hidden" id="labourProjectId">
                     <div class="form-group">
-                        <label>Report Date *</label>
-                        <input type="date" class="form-control" id="labourReportDate" required>
-                    </div>
-                    <div id="labourCategoryGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;"></div>
-                    <div class="form-group">
-                        <label>Notes (for the whole day)</label>
-                        <input type="text" class="form-control" id="labourNotes" placeholder="e.g. overtime, absenteeism, deployment note">
-                    </div>
-                    <div id="labourTotalLine" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;">Total on site: <strong id="labourTotalValue" style="color:var(--text-primary);">0</strong></div>
-                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('labourModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="labourSaveBtn">Save Register</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal" id="materialModal">
-        <div class="modal-content" style="max-width:560px;">
-            <div class="modal-header">
-                <h2 id="materialModalTitle">Materials Entry</h2>
-                <button onclick="closeModal('materialModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="materialForm" onsubmit="saveMaterial(event)">
-                    <input type="hidden" id="materialEditId">
-                    <input type="hidden" id="materialProjectId">
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1.6;">
-                            <label>Material *</label>
-                            <input type="text" class="form-control" name="material" required placeholder="e.g. Cement (OPC 53)">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Unit</label>
-                            <input type="text" class="form-control" name="unit" placeholder="bags / kg / nos / sqft" list="materialUnits">
-                            <datalist id="materialUnits">
-                                <option value="bags"><option value="kg"><option value="tonnes"><option value="nos"><option value="sqft"><option value="cft"><option value="litres"><option value="rolls">
-                            </datalist>
-                        </div>
-                    </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Quantity Received *</label>
-                            <input type="number" class="form-control" name="quantity" min="0" step="0.01" required oninput="updateMaterialBalance()">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Quantity Used</label>
-                            <input type="number" class="form-control" name="qty_used" min="0" step="0.01" value="0" oninput="updateMaterialBalance()">
-                        </div>
-                    </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Received On</label>
-                            <input type="date" class="form-control" name="received_on">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Vendor</label>
-                            <input type="text" class="form-control" name="vendor" placeholder="Supplier name">
-                        </div>
-                    </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Purpose</label>
-                            <input type="text" class="form-control" name="purpose" placeholder="Stage / work item">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Notes</label>
-                            <input type="text" class="form-control" name="notes">
-                        </div>
-                    </div>
-                    <div id="materialBalancePanel" style="display:none;background:var(--primary-50, #eff6ff);border:1px solid var(--primary-200, #bfdbfe);border-radius:var(--radius, 8px);padding:12px;margin-top:8px;">
-                        <div style="font-size:0.72rem;color:var(--text-tertiary);margin-bottom:8px;font-weight:600;">RUNNING BALANCE</div>
-                        <div style="font-size:0.85rem;color:var(--text-secondary);" id="materialBalanceText">-</div>
+                        <label>Notes (optional)</label>
+                        <textarea class="form-control" id="updateNotes" rows="2" placeholder="Anything worth flagging?"></textarea>
                     </div>
                     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('materialModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="materialSaveBtn">Save</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('updateModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="updateSaveBtn">Save Update</button>
                     </div>
                 </form>
             </div>
@@ -639,78 +453,6 @@
                     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
                         <button type="button" class="btn btn-secondary" onclick="closeModal('documentsModal')">Cancel</button>
                         <button type="submit" class="btn btn-primary" id="documentSaveBtn">Upload</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal" id="snagModal">
-        <div class="modal-content" style="max-width:560px;">
-            <div class="modal-header">
-                <h2 id="snagModalTitle">New Snag</h2>
-                <button onclick="closeModal('snagModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="snagForm" onsubmit="saveSnag(event)">
-                    <input type="hidden" id="snagEditId">
-                    <input type="hidden" id="snagProjectId">
-                    <div class="form-group">
-                        <label>Title *</label>
-                        <input type="text" class="form-control" id="snagTitle" placeholder="e.g. Water seepage at basement lift lobby">
-                    </div>
-                    <div class="form-group">
-                        <label>Description</label>
-                        <textarea class="form-control" id="snagDescription" rows="2" placeholder="Where, what, who noticed it"></textarea>
-                    </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Category</label>
-                            <select class="form-control" id="snagCategory">
-                                <option value="quality">Quality</option>
-                                <option value="safety">Safety</option>
-                                <option value="design">Design</option>
-                                <option value="material">Material</option>
-                                <option value="workmanship">Workmanship</option>
-                                <option value="other">Other</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Severity</label>
-                            <select class="form-control" id="snagSeverity">
-                                <option value="low">Low</option>
-                                <option value="medium" selected>Medium</option>
-                                <option value="high">High</option>
-                                <option value="critical">Critical</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="form-group" style="flex:1;">
-                            <label>Assign To</label>
-                            <select class="form-control" id="snagAssignee"><option value="">— Unassigned —</option></select>
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label>Due Date</label>
-                            <input type="date" class="form-control" id="snagDueDate">
-                        </div>
-                    </div>
-                    <div class="form-group" id="snagStatusField" style="display:none;">
-                        <label>Status</label>
-                        <select class="form-control" id="snagStatus">
-                            <option value="open">Open</option>
-                            <option value="in_progress">In Progress</option>
-                            <option value="resolved">Resolved</option>
-                            <option value="closed">Closed</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Note (what changed)</label>
-                        <input type="text" class="form-control" id="snagNote" placeholder="Optional note recorded to the activity log">
-                    </div>
-                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('snagModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="snagSaveBtn">Save Snag</button>
                     </div>
                 </form>
             </div>
@@ -971,33 +713,13 @@
                             const s = document.getElementById(`expand-sets-${p.id}`);
                             if (s) { s.style.display = 'block'; loadSets(p.id); }
                         }
-                        if (expandedSections[`${p.id}-invoices`]) {
-                            const inv = document.getElementById(`expand-invoices-${p.id}`);
-                            if (inv) { inv.style.display = 'block'; loadInvoices(p.id); }
-                        }
-                        if (expandedSections[`${p.id}-dpr`]) {
-                            const dp = document.getElementById(`expand-dpr-${p.id}`);
-                            if (dp) { dp.style.display = 'block'; loadDprs(p.id); }
-                        }
-                        if (expandedSections[`${p.id}-labour`]) {
-                            const lb = document.getElementById(`expand-labour-${p.id}`);
-                            if (lb) { lb.style.display = 'block'; loadLabour(p.id); }
-                        }
-                        if (expandedSections[`${p.id}-materials`]) {
-                            const mt = document.getElementById(`expand-materials-${p.id}`);
-                            if (mt) { mt.style.display = 'block'; loadMaterials(p.id); }
+                        if (expandedSections[`${p.id}-updates`]) {
+                            const up = document.getElementById(`expand-updates-${p.id}`);
+                            if (up) { up.style.display = 'block'; loadUpdates(p.id); }
                         }
                         if (expandedSections[`${p.id}-documents`]) {
                             const dc = document.getElementById(`expand-documents-${p.id}`);
                             if (dc) { dc.style.display = 'block'; loadDocuments(p.id); }
-                        }
-                        if (expandedSections[`${p.id}-snags`]) {
-                            const sn = document.getElementById(`expand-snags-${p.id}`);
-                            if (sn) { sn.style.display = 'block'; loadSnags(p.id); }
-                        }
-                        if (expandedSections[`${p.id}-closeout`]) {
-                            const co = document.getElementById(`expand-closeout-${p.id}`);
-                            if (co) { co.style.display = 'block'; loadCloseout(p.id); }
                         }
                         if (expandedSections[`${p.id}-employees`]) {
                             const e = document.getElementById(`expand-employees-${p.id}`);
@@ -1030,15 +752,10 @@
                         </div>
                         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
                             ${statusBadge(p.status)}
-                            ${p.phase ? statusBadge(p.phase) : ''}
                             <span class="badge badge-secondary">${typeLabel}</span>
                         </div>
                         ${p.description ? `<p style="color:var(--text-secondary);font-size:0.82rem;margin-bottom:12px;line-height:1.5;">${esc(p.description)}</p>` : ''}
                         <div style="display:flex;gap:18px;margin-bottom:12px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-secondary);">
-                            ${Number(p.contract_value) > 0 ? `<span style="display:inline-flex;align-items:center;gap:7px;">
-                                <i class="fas fa-file-invoice-dollar" style="color:var(--primary);width:16px;text-align:center;"></i>
-                                <strong style="color:var(--text-primary);">${fmtMoney(p.contract_value)}</strong> Contract
-                            </span>` : ''}
                             ${startDate ? `<span style="display:inline-flex;align-items:center;gap:7px;">
                                 <i class="fas fa-calendar" style="color:var(--primary);width:16px;text-align:center;"></i>
                                 ${startDate}${endDate ? ` → ${endDate}` : ''}
@@ -1062,26 +779,11 @@
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'sets')">
                                 <i class="fas fa-layer-group"></i> Sets
                             </button>
-                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'invoices')">
-                                <i class="fas fa-file-invoice-dollar"></i> RA Bills
-                            </button>
-                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'dpr')">
-                                <i class="fas fa-clipboard-list"></i> Daily Reports
-                            </button>
-                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'labour')">
-                                <i class="fas fa-hard-hat"></i> Labour
-                            </button>
-                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'materials')">
-                                <i class="fas fa-boxes"></i> Materials
+                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'updates')">
+                                <i class="fas fa-calendar-day"></i> Daily Updates
                             </button>
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'documents')">
                                 <i class="fas fa-folder-open"></i> Documents
-                            </button>
-                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'snags')">
-                                <i class="fas fa-exclamation-triangle"></i> Snags
-                            </button>
-                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'closeout')">
-                                <i class="fas fa-clipboard-check"></i> Closeout
                             </button>
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'employees')">
                                 <i class="fas fa-users"></i> Employees
@@ -1097,26 +799,11 @@
                     <div id="expand-sets-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="sets-content-${p.id}"></div>
                     </div>
-                    <div id="expand-invoices-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
-                        <div id="invoices-content-${p.id}"></div>
-                    </div>
-                    <div id="expand-dpr-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
-                        <div id="dpr-content-${p.id}"></div>
-                    </div>
-                    <div id="expand-labour-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
-                        <div id="labour-content-${p.id}"></div>
-                    </div>
-                    <div id="expand-materials-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
-                        <div id="materials-content-${p.id}"></div>
+                    <div id="expand-updates-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
+                        <div id="updates-content-${p.id}"></div>
                     </div>
                     <div id="expand-documents-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="documents-content-${p.id}"></div>
-                    </div>
-                    <div id="expand-snags-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
-                        <div id="snags-content-${p.id}"></div>
-                    </div>
-                    <div id="expand-closeout-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
-                        <div id="closeout-content-${p.id}"></div>
                     </div>
                     <div id="expand-employees-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="employees-content-${p.id}"></div>
@@ -1204,13 +891,8 @@
             section.style.display = 'block';
             expandedSections[key] = true;
             if (type === 'sets') await loadSets(projectId);
-            else if (type === 'invoices') await loadInvoices(projectId);
-            else if (type === 'dpr') await loadDprs(projectId);
-            else if (type === 'labour') await loadLabour(projectId);
-            else if (type === 'materials') await loadMaterials(projectId);
             else if (type === 'documents') await loadDocuments(projectId);
-            else if (type === 'snags') await loadSnags(projectId);
-            else if (type === 'closeout') await loadCloseout(projectId);
+            else if (type === 'updates') await loadUpdates(projectId);
             else await loadEmployeesForProject(projectId);
         }
 
@@ -1375,12 +1057,12 @@
         // Overview cards get real numbers from /project-reports/overview.
         function overviewStatCards(s) {
             const cards = [
-                { label: 'Total Contract', value: fmtMoney(s.total_contract), icon: 'fa-file-contract', tint: 'primary' },
-                { label: 'Billed (Net)', value: fmtMoney(s.total_billed_net), icon: 'fa-file-invoice-dollar', tint: 'primary' },
-                { label: 'Received', value: fmtMoney(s.total_received), icon: 'fa-hand-holding-usd', tint: 'success' },
-                { label: 'Retention Held', value: fmtMoney(s.total_retention), icon: 'fa-vault', tint: 'warning' },
-                { label: 'Outstanding RA', value: fmtMoney(s.total_outstanding) + ` <span class="badge badge-warning">${s.approved_unpaid_count || 0}</span>`, icon: 'fa-hourglass-half', tint: 'danger' },
-                { label: 'Man-days Logged', value: fmtQty(s.total_man_days), icon: 'fa-hard-hat', tint: 'primary' }
+                { label: 'Total Projects', value: (s.total_projects || 0).toLocaleString(), icon: 'fa-project-diagram', tint: 'primary' },
+                { label: 'Active Now', value: (s.active_projects || 0).toLocaleString(), icon: 'fa-folder-open', tint: 'success' },
+                { label: 'Updates (7d)', value: (s.updates_last_7_days || 0).toLocaleString(), icon: 'fa-calendar-day', tint: 'primary' },
+                { label: 'Updates (30d)', value: (s.updates_last_30_days || 0).toLocaleString(), icon: 'fa-calendar-check', tint: 'warning' },
+                { label: 'Employees Assigned', value: (s.employees_assigned || 0).toLocaleString(), icon: 'fa-users', tint: 'primary' },
+                { label: 'Documents', value: (s.documents_count || 0).toLocaleString(), icon: 'fa-folder', tint: 'success' }
             ];
             return cards.map(c => `
                 <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:14px 16px;background:var(--bg-card,#fff);display:flex;gap:12px;align-items:center;">
@@ -1394,23 +1076,6 @@
                 </div>`).join('');
         }
 
-        function phaseChips(phaseDist) {
-            const order = [
-                ['planning', 'Planning'], ['preconstruction', 'Preconstruction'], ['construction', 'Construction'],
-                ['snagging', 'Snagging'], ['closeout', 'Closeout']
-            ];
-            const chips = [];
-            for (const [key, label] of order) {
-                const c = (phaseDist && phaseDist[key]) || 0;
-                if (c > 0) chips.push(`<span class="badge badge-primary">${label}: ${c}</span>`);
-            }
-            const others = Object.entries(phaseDist || {}).filter(([k]) => !order.some(o => o[0] === k) && k !== 'other');
-            const otherCount = (phaseDist && phaseDist.other) || 0;
-            if (otherCount > 0) chips.push(`<span class="badge badge-secondary">Other: ${otherCount}</span>`);
-            for (const [k, c] of others) chips.push(`<span class="badge badge-secondary">${esc(k)}: ${c}</span>`);
-            return chips.join('') || '<span style="font-size:0.82rem;color:var(--text-tertiary);">No projects yet</span>';
-        }
-
         async function loadOverview() {
             const sec = document.getElementById('overviewSection');
             const data = await apiCall('/project-reports/overview');
@@ -1419,46 +1084,34 @@
                 return;
             }
             const s = data.summary || {};
-            const focus = data.collectionFocus || [];
-            const recentInv = data.recentInvoices || [];
-            const recentDprs = data.recentDprs || [];
             const activeProjects = (data.projects || []).filter(p => p.status === 'active' && p.name && p.name !== 'Travel Management' && p.name !== 'Medical Billing' && p.name !== 'KYC');
             const totalActiveProjects = activeProjects.length || s.active_projects;
 
-            const focusRows = focus.length
-                ? focus.map(f => `
-                    <tr style="border-bottom:1px solid var(--border);">
-                        <td style="padding:8px 6px;font-weight:600;white-space:nowrap;">${esc(f.invoice_no)}</td>
-                        <td style="padding:8px 6px;">${esc(f.project_name)}</td>
-                        <td style="padding:8px 6px;text-align:right;">${fmtMoney(f.net_value)}</td>
-                        <td style="padding:8px 6px;text-align:right;">${fmtMoney(f.payment_received)}</td>
-                        <td style="padding:8px 6px;text-align:right;font-weight:700;color:var(--danger, #dc2626);">${fmtMoney(f.outstanding)}</td>
-                        <td style="padding:8px 6px;white-space:nowrap;color:var(--text-tertiary);font-size:0.78rem;">${timeAgo(f.updated_at)}</td>
-                    </tr>`).join('')
-                : '<tr><td colspan="6" style="padding:14px 6px;color:var(--text-tertiary);font-size:0.85rem;">No approved bills awaiting payment — collection is up to date.</td></tr>';
+            const recentUpdates = data.recentUpdates || [];
+            const recentDocuments = data.recentDocuments || [];
 
-            const dprRows = recentDprs.length
-                ? recentDprs.map(d => `
+            const updateRows = recentUpdates.length
+                ? recentUpdates.map(u => `
                     <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border);align-items:flex-start;">
-                        <i class="fas fa-clipboard-list" style="color:var(--primary);margin-top:2px;"></i>
+                        <i class="fas fa-calendar-day" style="color:var(--primary);margin-top:2px;"></i>
                         <div style="flex:1;min-width:0;">
-                            <div style="font-size:0.84rem;"><strong>${esc(d.project_name)}</strong> <span style="color:var(--text-tertiary);">· ${String(d.report_date).slice(0, 10)}</span>${d.weather ? ` <span class="badge badge-primary">${esc(d.weather)}</span>` : ''}</div>
-                            ${d.work_summary ? `<div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(d.work_summary)}</div>` : ''}
-                            <div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:2px;">${d.activity_count || 0} activity line${(d.activity_count || 0) === 1 ? '' : 's'}</div>
+                            <div style="font-size:0.84rem;"><strong>${esc(u.project_name)}</strong> <span style="color:var(--text-tertiary);">· ${String(u.update_date).slice(0, 10)}</span></div>
+                            <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">${esc(u.first_name || '')} ${esc(u.last_name || '')} · ${updatesCategoryBadge(u.task_cat)}${Number(u.hours) > 0 ? ` · ${u.hours}h` : ''}</div>
+                            <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.description)}</div>
                         </div>
                     </div>`).join('')
-                : '<div style="padding:10px 0;color:var(--text-tertiary);font-size:0.85rem;">No DPRs yet.</div>';
+                : '<div style="padding:10px 0;color:var(--text-tertiary);font-size:0.85rem;">No daily updates yet.</div>';
 
-            const invRows = recentInv.length
-                ? recentInv.map(i => `
-                    <tr style="border-bottom:1px solid var(--border);">
-                        <td style="padding:8px 6px;font-weight:600;white-space:nowrap;">${esc(i.invoice_no)}</td>
-                        <td style="padding:8px 6px;">${esc(i.project_name)}</td>
-                        <td style="padding:8px 6px;text-align:right;">${fmtMoney(i.net_value)}</td>
-                        <td style="padding:8px 6px;text-align:right;">${fmtMoney(i.payment_received)}</td>
-                        <td style="padding:8px 6px;">${statusBadge(i.status)}</td>
-                    </tr>`).join('')
-                : '<tr><td colspan="5" style="padding:14px 6px;color:var(--text-tertiary);font-size:0.85rem;">No RA bills yet.</td></tr>';
+            const docRows = recentDocuments.length
+                ? recentDocuments.map(d => `
+                    <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border);align-items:flex-start;">
+                        <i class="fas fa-file-alt" style="color:var(--primary);margin-top:2px;"></i>
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:0.84rem;"><strong>${esc(d.title)}</strong></div>
+                            <div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:2px;">${esc(d.project_name)} · ${timeAgo(d.created_at)}</div>
+                        </div>
+                    </div>`).join('')
+                : '<div style="padding:10px 0;color:var(--text-tertiary);font-size:0.85rem;">No documents yet.</div>';
 
             sec.innerHTML = `
                 <div class="card" style="padding:20px;">
@@ -1472,53 +1125,16 @@
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px;">
                         ${overviewStatCards(s)}
                     </div>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:18px;">
-                        <span style="font-size:0.75rem;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:600;">Phases</span>
-                        ${phaseChips(s.phase_distribution)}
-                    </div>
 
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
                         <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:14px;">
-                            <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">RA Collection Focus <span class="badge badge-warning">${focus.length}</span></div>
-                            <div style="overflow-x:auto;">
-                                <table style="width:100%;border-collapse:collapse;font-size:0.82rem;min-width:340px;">
-                                    <thead><tr style="text-align:left;border-bottom:2px solid var(--border);">
-                                        <th style="padding:6px;">Bill</th><th style="padding:6px;">Project</th>
-                                        <th style="padding:6px;text-align:right;">Net</th><th style="padding:6px;text-align:right;">Received</th>
-                                        <th style="padding:6px;text-align:right;">Due</th><th style="padding:6px;">When</th>
-                                    </tr></thead><tbody>${focusRows}</tbody></table>
-                            </div>
+                            <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">Latest Daily Updates <span class="badge badge-primary">${recentUpdates.length}</span></div>
+                            <div>${updateRows}</div>
                         </div>
                         <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:14px;">
-                            <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">Latest Daily Reports</div>
-                            <div>${dprRows}</div>
+                            <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">Recent Documents</div>
+                            <div>${docRows}</div>
                         </div>
-                        <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:14px;">
-                            <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">Recent RA Bills</div>
-                            <div style="overflow-x:auto;">
-                                <table style="width:100%;border-collapse:collapse;font-size:0.82rem;min-width:300px;">
-                                    <thead><tr style="text-align:left;border-bottom:2px solid var(--border);">
-                                        <th style="padding:6px;">Bill</th><th style="padding:6px;">Project</th>
-                                        <th style="padding:6px;text-align:right;">Net</th><th style="padding:6px;text-align:right;">Received</th><th style="padding:6px;">Status</th>
-                                    </tr></thead><tbody>${invRows}</tbody></table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-                            <div style="font-size:0.85rem;font-weight:600;">Monthly Labour Report</div>
-                            <div style="display:flex;gap:8px;align-items:center;">
-                                <select id="labourMonthSel" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.8rem;background:var(--bg-card,#fff);color:var(--text-primary);">
-                                    ${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][i]}</option>`).join('')}
-                                </select>
-                                <select id="labourYearSel" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.8rem;background:var(--bg-card,#fff);color:var(--text-primary);">
-                                    ${labourYearOptions()}
-                                </select>
-                                <button class="btn btn-primary btn-sm" onclick="loadLabourMonthly()"><i class="fas fa-redo" style="font-size:0.7rem;"></i> Load</button>
-                            </div>
-                        </div>
-                        <div id="labourMonthlyResult"></div>
                     </div>
 
                     <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px;">
@@ -1527,57 +1143,7 @@
                     </div>
                 </div>`;
 
-            // Default selectors to the current month/year, then load both.
-            const now = new Date();
-            const ms = document.getElementById('labourMonthSel');
-            const ys = document.getElementById('labourYearSel');
-            ms.value = String(now.getMonth() + 1);
-            if (Array.prototype.some.call(ys.options, o => o.value === String(now.getFullYear()))) ys.value = String(now.getFullYear());
-            await Promise.all([loadLabourMonthly(), loadProjectActivity()]);
-        }
-
-        function labourYearOptions() {
-            const year = new Date().getFullYear();
-            let html = '';
-            for (let y = year; y >= year - 4; y--) html += `<option value="${y}">${y}</option>`;
-            return html;
-        }
-
-        async function loadLabourMonthly() {
-            const holder = document.getElementById('labourMonthlyResult');
-            const month = document.getElementById('labourMonthSel').value;
-            const year = document.getElementById('labourYearSel').value;
-            holder.innerHTML = '<div style="padding:10px;color:var(--text-tertiary);font-size:0.82rem;">Loading...</div>';
-            const data = await apiCall(`/project-reports/labour-monthly?month=${month}&year=${year}`);
-            if (!data || !data.success) {
-                holder.innerHTML = `<span style="font-size:0.82rem;color:var(--danger,#dc2626);">Failed to load: ${esc((data && data.message) || 'unknown error')}</span>`;
-                return;
-            }
-            const cats = data.categories || [];
-            const rows = (data.projects || []).map(p => `
-                <tr style="border-bottom:1px solid var(--border);">
-                    <td style="padding:6px;font-weight:600;">${esc(p.project_name)}</td>
-                    <td style="padding:6px;text-align:center;">${p.dayCount}</td>
-                    ${cats.map(c => `<td style="padding:6px;text-align:right;">${p.byCategory[c] || 0}</td>`).join('')}
-                    <td style="padding:6px;text-align:right;font-weight:700;">${p.grandTotal}</td>
-                </tr>`).join('');
-            const headRow = `<tr style="text-align:left;border-bottom:2px solid var(--border);">
-                    <th style="padding:6px;">Project</th><th style="padding:6px;text-align:center;">Days</th>
-                    ${cats.map(c => `<th style="padding:6px;text-align:right;">${esc(c.replace(/_/g, ' '))}</th>`).join('')}
-                    <th style="padding:6px;text-align:right;">Total Man-days</th>
-                </tr>`;
-            holder.innerHTML = `
-                <div style="overflow-x:auto;">
-                    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;min-width:460px;">
-                        <thead>${headRow}</thead>
-                        <tbody>${rows || '<tr><td colspan="' + (cats.length + 3) + '" style="padding:10px;color:var(--text-tertiary);">No labour recorded for this month.</td></tr>'}</tbody>
-                        ${data.projects && data.projects.length ? `<tfoot><tr style="border-top:2px solid var(--border);font-weight:700;">
-                            <td style="padding:6px;">Total</td><td style="padding:6px;text-align:center;">${data.projects.reduce((s, p) => s + p.dayCount, 0)}</td>
-                            ${cats.map(c => `<td style="padding:6px;text-align:right;">${data.projects.reduce((s, p) => s + (p.byCategory[c] || 0), 0)}</td>`).join('')}
-                            <td style="padding:6px;text-align:right;">${data.grandTotal}</td>
-                        </tr></tfoot>` : ''}
-                    </table>
-                </div>`;
+            loadProjectActivity();
         }
 
         // --- Activity feed ---
@@ -1592,35 +1158,12 @@
             'project.daily_count.create': ['fa-plus-circle', 'logged daily count'],
             'project.daily_count.update': ['fa-pen', 'updated daily count'],
             'project.daily_count.delete': ['fa-trash', 'deleted daily count'],
-            'invoice.create': ['fa-file-invoice-dollar', 'added RA bill'],
-            'invoice.update': ['fa-pen', 'edited RA bill'],
-            'invoice.submit': ['fa-paper-plane', 'submitted RA bill'],
-            'invoice.approve': ['fa-check', 'approved RA bill'],
-            'invoice.reject': ['fa-undo', 'rejected RA bill'],
-            'invoice.paid': ['fa-hand-holding-usd', 'marked RA bill paid'],
-            'invoice.partial_payment': ['fa-coins', 'recorded partial payment'],
-            'invoice.delete': ['fa-trash', 'deleted RA bill'],
-            'dpr.create': ['fa-clipboard-list', 'posted DPR'],
-            'dpr.update': ['fa-pen', 'edited DPR'],
-            'dpr.delete': ['fa-trash', 'deleted DPR'],
-            'labour.upsert': ['fa-hard-hat', 'saved labour register'],
-            'labour.delete': ['fa-trash', 'removed labour entry'],
-            'material.create': ['fa-boxes', 'added material'],
-            'material.update': ['fa-pen', 'edited material'],
-            'material.delete': ['fa-trash', 'removed material'],
             'document.upload': ['fa-upload', 'uploaded document'],
             'document.update': ['fa-pen', 'edited document'],
             'document.delete': ['fa-trash', 'deleted document'],
-            'snag.create': ['fa-exclamation-triangle', 'logged snag'],
-            'snag.update': ['fa-pen', 'updated snag'],
-            'snag.status': ['fa-sync', 'changed snag status'],
-            'snag.delete': ['fa-trash', 'deleted snag'],
-            'closeout.add': ['fa-list-check', 'added closeout item'],
-            'closeout.update': ['fa-pen', 'updated closeout item'],
-            'closeout.complete': ['fa-check', 'completed closeout item'],
-            'closeout.reopen': ['fa-undo', 'reopened closeout item'],
-            'closeout.remove': ['fa-trash', 'removed closeout item'],
-            'closeout.defaults': ['fa-list-check', 'loaded standard closeout checklist']
+            'project.update.create': ['fa-calendar-day', 'logged daily update'],
+            'project.update.update': ['fa-pen', 'updated daily update'],
+            'project.update.delete': ['fa-trash', 'deleted daily update']
         };
 
         function activityMeta(action) {
@@ -1657,7 +1200,7 @@
             feed.innerHTML = data.items.map(it => {
                 const [icon, verb] = activityMeta(it.action);
                 const details = it.details || {};
-                const extra = details.invoiceNo ? ` · ${esc(details.invoiceNo)}` : details.reportDate ? ` · ${esc(details.reportDate)}` : '';
+                const extra = details.reportDate ? ` · ${esc(details.reportDate)}` : details.updateDate ? ` · ${esc(details.updateDate)}` : '';
                 return `
                     <div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px dashed var(--border);align-items:flex-start;">
                         <div style="width:30px;height:30px;border-radius:50%;background:var(--primary-50,#eff6ff);display:flex;align-items:center;justify-content:center;color:var(--primary);flex-shrink:0;"><i class="fas ${icon}" style="font-size:0.75rem;"></i></div>
@@ -1687,10 +1230,8 @@
                 status: form.status.value,
                 start_date: form.start_date.value || null,
                 end_date: form.end_date.value || null,
-                contract_value: form.contract_value.value === '' ? null : Number(form.contract_value.value),
                 location: form.location.value.trim() || null,
                 project_type: form.project_type.value,
-                phase: form.phase.value,
                 description: form.description.value.trim()
             };
             const data = await apiCall('/projects', 'POST', body);
@@ -1717,10 +1258,8 @@
             document.getElementById('editProjectStatus').value = project.status || 'active';
             document.getElementById('editProjectStartDate').value = project.start_date ? String(project.start_date).slice(0, 10) : '';
             document.getElementById('editProjectEndDate').value = project.end_date ? String(project.end_date).slice(0, 10) : '';
-            document.getElementById('editProjectContractValue').value = project.contract_value != null ? project.contract_value : '';
             document.getElementById('editProjectLocation').value = project.location || '';
             document.getElementById('editProjectType').value = project.project_type || 'other';
-            document.getElementById('editProjectPhase').value = project.phase || 'planning';
             document.getElementById('editProjectDescription').value = project.description || '';
             openModal('editProjectModal');
         }
@@ -1738,10 +1277,8 @@
                 status: form.status.value,
                 start_date: form.start_date.value || null,
                 end_date: form.end_date.value || null,
-                contract_value: form.contract_value.value === '' ? null : Number(form.contract_value.value),
                 location: form.location.value.trim() || null,
                 project_type: form.project_type.value,
-                phase: form.phase.value,
                 description: form.description.value.trim()
             };
             const data = await apiCall(`/projects/${id}`, 'PUT', body);
@@ -2144,766 +1681,6 @@
             }
         }
 
-        // ===================== RA BILLS (INVOICES) =====================
-        async function loadInvoices(projectId) {
-            const container = document.getElementById(`invoices-content-${projectId}`);
-            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
-            const data = await apiCall(`/project-invoices/${projectId}`);
-            if (!data || !data.success) {
-                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load RA bills.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
-                return;
-            }
-            const invoices = data.invoices || [];
-            const summary = data.summary || {};
-            const s = summary.by_status || {};
-            const header = `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-                    <h4 style="font-size:0.9rem;font-weight:600;">RA Bills Register (${invoices.length})</h4>
-                    <button class="btn btn-primary btn-sm" onclick="openCreateInvoiceModal(${projectId})">
-                        <i class="fas fa-plus"></i> Add RA Bill
-                    </button>
-                </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:0.82rem;color:var(--text-secondary);">
-                    <span class="badge badge-secondary">Draft ${s.draft || 0}</span>
-                    <span class="badge badge-primary">Submitted ${s.submitted || 0}</span>
-                    <span class="badge badge-warning">Approved ${s.approved || 0}</span>
-                    <span class="badge badge-success">Paid ${s.paid || 0}</span>
-                    <span style="margin-left:auto;display:inline-flex;gap:14px;flex-wrap:wrap;">
-                        <span>Billed: <strong style="color:var(--text-primary);">${fmtMoney(summary.total_gross)}</strong></span>
-                        <span>Retention held: <strong style="color:var(--text-danger, #dc3545);">${fmtMoney(summary.total_retention)}</strong></span>
-                        <span>Received: <strong style="color:var(--text-success, #28a745);">${fmtMoney(summary.total_received)}</strong></span>
-                    </span>
-                </div>`;
-            if (!invoices.length) {
-                container.innerHTML = header + '<p style="color:var(--text-secondary);font-size:0.85rem;">No RA bills yet. Add the first bill to start the register (bill numbers are auto-assigned RA-01, RA-02...).</p>';
-                return;
-            }
-            container.innerHTML = header + `
-                <div style="overflow-x:auto;">
-                    <table style="width:100%;border-collapse:collapse;font-size:0.84rem;min-width:820px;">
-                        <thead>
-                            <tr style="text-align:left;border-bottom:2px solid var(--border);">
-                                <th style="padding:8px 6px;">Bill No</th>
-                                <th style="padding:8px 6px;">Period</th>
-                                <th style="padding:8px 6px;text-align:right;">Gross (₹)</th>
-                                <th style="padding:8px 6px;text-align:right;">Retention</th>
-                                <th style="padding:8px 6px;text-align:right;">Net (₹)</th>
-                                <th style="padding:8px 6px;text-align:right;">Received (₹)</th>
-                                <th style="padding:8px 6px;">Status</th>
-                                <th style="padding:8px 6px;text-align:right;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${invoices.map(inv => invoiceRow(inv)).join('')}
-                        </tbody>
-                    </table>
-                </div>`;
-        }
-
-        function invoiceRow(inv) {
-            const period = (inv.period_start ? String(inv.period_start).slice(0, 10) : '—') + ' → ' + (inv.period_end ? String(inv.period_end).slice(0, 10) : '—');
-            const rm = inv.remarks ? `<div style="font-size:0.75rem;color:var(--text-tertiary);max-width:220px;white-space:normal;">${esc(inv.remarks)}</div>` : '';
-            let actions = '';
-            const iconStyle = 'font-size:0.72rem;';
-            if (inv.status === 'draft') {
-                actions = `
-                    <button class="btn btn-primary btn-sm" onclick="submitInvoice(${inv.project_id}, ${inv.id})" title="Submit for certification"><i class="fas fa-paper-plane" style="${iconStyle}"></i></button>
-                    <button class="btn btn-secondary btn-sm" onclick="openEditInvoiceModal(${inv.project_id}, ${inv.id})" title="Edit draft"><i class="fas fa-pen" style="${iconStyle}"></i></button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteInvoice(${inv.project_id}, ${inv.id})" title="Delete"><i class="fas fa-trash" style="${iconStyle}"></i></button>`;
-            } else if (inv.status === 'submitted') {
-                actions = `
-                    <button class="btn btn-primary btn-sm" onclick="approveInvoice(${inv.project_id}, ${inv.id})" title="Approve / certify bill"><i class="fas fa-check" style="${iconStyle}"></i></button>
-                    <button class="btn btn-secondary btn-sm" onclick="rejectInvoice(${inv.project_id}, ${inv.id})" title="Reject back to draft"><i class="fas fa-undo" style="${iconStyle}"></i></button>`;
-            } else if (inv.status === 'approved') {
-                actions = `
-                    <button class="btn btn-success btn-sm" onclick="payInvoice(${inv.project_id}, ${inv.id})" title="Record payment"><i class="fas fa-rupee-sign" style="${iconStyle}"></i></button>`;
-            }
-            return `
-                <tr style="border-bottom:1px solid var(--border);">
-                    <td style="padding:8px 6px;font-weight:600;white-space:nowrap;">${esc(inv.invoice_no)}${rm}</td>
-                    <td style="padding:8px 6px;white-space:nowrap;">${period}</td>
-                    <td style="padding:8px 6px;text-align:right;">${fmtMoney(inv.gross_value)}</td>
-                    <td style="padding:8px 6px;text-align:right;">${Number(inv.retention_pct)}% · ${fmtMoney(inv.retention_amount)}</td>
-                    <td style="padding:8px 6px;text-align:right;font-weight:600;">${fmtMoney(inv.net_value)}</td>
-                    <td style="padding:8px 6px;text-align:right;">${fmtMoney(inv.payment_received)}</td>
-                    <td style="padding:8px 6px;white-space:nowrap;">${statusBadge(inv.status)}</td>
-                    <td style="padding:8px 6px;text-align:right;white-space:nowrap;"><div style="display:inline-flex;gap:4px;">${actions}</div></td>
-                </tr>`;
-        }
-
-        // --- Create / edit draft ---
-        function openCreateInvoiceModal(projectId) {
-            const form = document.getElementById('createInvoiceForm');
-            form.reset();
-            document.getElementById('invoiceEditId').value = '';
-            document.getElementById('invoiceProjectId').value = projectId;
-            document.getElementById('invoiceBillNo').value = 'AUTO';
-            document.getElementById('invoiceRetentionPct').value = 7.5;
-            updateInvoicePreview();
-            openModal('createInvoiceModal');
-        }
-
-        async function openEditInvoiceModal(projectId, invoiceId) {
-            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}`);
-            if (!data || !data.success || !data.invoice) {
-                showToast((data && data.message) || 'Could not load invoice', 'error');
-                return;
-            }
-            const inv = data.invoice;
-            const form = document.getElementById('createInvoiceForm');
-            form.reset();
-            document.getElementById('invoiceEditId').value = inv.id;
-            document.getElementById('invoiceProjectId').value = inv.project_id;
-            document.getElementById('invoiceBillNo').value = inv.invoice_no;
-            form.period_start.value = inv.period_start ? String(inv.period_start).slice(0, 10) : '';
-            form.period_end.value = inv.period_end ? String(inv.period_end).slice(0, 10) : '';
-            form.gross_value.value = inv.gross_value;
-            form.retention_pct.value = inv.retention_pct;
-            form.remarks.value = inv.remarks || '';
-            updateInvoicePreview();
-            openModal('createInvoiceModal');
-        }
-
-        function updateInvoicePreview() {
-            const form = document.getElementById('createInvoiceForm');
-            const gross = parseFloat(form.gross_value.value) || 0;
-            const pctInput = parseFloat(form.retention_pct.value);
-            const pct = isFinite(pctInput) ? pctInput : 0;
-            let ret = 0, net = gross;
-            if (window.projectMath) {
-                ret = window.projectMath.retentionAmount(gross, pct);
-                net = window.projectMath.netValue(gross, pct);
-            } else {
-                ret = Math.round(gross * Math.min(pct, 100) / 100 * 100) / 100;
-                net = Math.round((gross - ret) * 100) / 100;
-            }
-            const el = document.getElementById('invoicePreviewText');
-            document.getElementById('invoicePreviewPanel').style.display = 'block';
-            el.innerHTML = `Retention held: <strong style="color:var(--text-danger, #dc3545);">${fmtMoney(ret)}</strong> &nbsp;·&nbsp; Net billable: <strong style="color:var(--text-success, #28a745);">${fmtMoney(net)}</strong>`;
-        }
-
-        async function saveInvoice(e) {
-            e.preventDefault();
-            const form = e.target;
-            const editId = document.getElementById('invoiceEditId').value;
-            const projectId = document.getElementById('invoiceProjectId').value;
-            const gross = parseFloat(form.gross_value.value);
-            if (!isFinite(gross) || gross <= 0) {
-                showToast('Gross value must be greater than 0', 'warning');
-                return;
-            }
-            if (form.period_start.value && form.period_end.value && form.period_end.value < form.period_start.value) {
-                showToast('Period end must be on or after period start', 'warning');
-                return;
-            }
-            const btn = document.getElementById('createInvoiceBtn');
-            btn.disabled = true;
-            btn.textContent = 'Saving...';
-            const body = {
-                period_start: form.period_start.value || null,
-                period_end: form.period_end.value || null,
-                gross_value: gross,
-                retention_pct: isFinite(parseFloat(form.retention_pct.value)) ? parseFloat(form.retention_pct.value) : 7.5,
-                remarks: form.remarks.value.trim() || null
-            };
-            const data = editId
-                ? await apiCall(`/project-invoices/${projectId}/${editId}`, 'PUT', body)
-                : await apiCall(`/project-invoices/${projectId}`, 'POST', body);
-            btn.disabled = false;
-            btn.textContent = 'Save';
-            if (data && data.success) {
-                showToast(editId ? 'RA bill updated' : `RA bill ${data.invoice ? data.invoice.invoice_no : ''} created`);
-                closeModal('createInvoiceModal');
-                await loadInvoices(projectId);
-            } else {
-                showToast(data?.message || 'Failed to save RA bill', 'error');
-            }
-        }
-
-        // --- Lifecycle transitions ---
-        async function submitInvoice(projectId, invoiceId) {
-            if (!(await confirmAction('Submit this bill for certification?'))) return;
-            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}/submit`, 'POST', {});
-            if (data && data.success) {
-                showToast('RA bill submitted');
-                await loadInvoices(projectId);
-            } else {
-                showToast(data?.message || 'Failed to submit bill', 'error');
-            }
-        }
-
-        async function approveInvoice(projectId, invoiceId) {
-            if (!(await confirmAction('Approve / certify this bill? Retention stays held until closeout.'))) return;
-            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}/approve`, 'POST', {});
-            if (data && data.success) {
-                showToast('RA bill approved');
-                await loadInvoices(projectId);
-            } else {
-                showToast(data?.message || 'Failed to approve bill', 'error');
-            }
-        }
-
-        async function rejectInvoice(projectId, invoiceId) {
-            if (!(await confirmAction('Reject this bill back to draft? It can then be edited and resubmitted.'))) return;
-            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}/reject`, 'POST', {});
-            if (data && data.success) {
-                showToast(data.message || 'RA bill rejected');
-                await loadInvoices(projectId);
-            } else {
-                showToast(data?.message || 'Failed to reject bill', 'error');
-            }
-        }
-
-        async function payInvoice(projectId, invoiceId) {
-            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}`);
-            if (!data || !data.success || !data.invoice) {
-                showToast((data && data.message) || 'Could not load invoice', 'error');
-                return;
-            }
-            const inv = data.invoice;
-            const net = Number(inv.net_value) || 0;
-            const received = Number(inv.payment_received) || 0;
-            const remaining = Math.round((net - received) * 100) / 100;
-            document.getElementById('payInvoiceProjectId').value = inv.project_id;
-            document.getElementById('payInvoiceId').value = inv.id;
-            document.getElementById('payInvoiceAmount').value = remaining > 0 ? remaining : net;
-            document.getElementById('payInvoiceMeta').innerHTML =
-                `${esc(inv.invoice_no)} · Net: <strong>${fmtMoney(net)}</strong> · Already received: <strong>${fmtMoney(received)}</strong> · Remaining: <strong>${fmtMoney(remaining)}</strong>`;
-            openModal('payInvoiceModal');
-        }
-
-        async function payInvoiceSubmit(e) {
-            e.preventDefault();
-            const invoiceId = document.getElementById('payInvoiceId').value;
-            const projectId = document.getElementById('payInvoiceProjectId').value;
-            const amount = parseFloat(document.getElementById('payInvoiceAmount').value);
-            if (!isFinite(amount) || amount <= 0) {
-                showToast('Enter a valid payment amount', 'warning');
-                return;
-            }
-            const btn = document.getElementById('payInvoiceBtn');
-            btn.disabled = true;
-            btn.textContent = 'Recording...';
-            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}/pay`, 'POST', { amount });
-            btn.disabled = false;
-            btn.textContent = 'Record Payment';
-            if (data && data.success) {
-                showToast(data.message || 'Payment recorded');
-                closeModal('payInvoiceModal');
-                await loadInvoices(projectId);
-            } else {
-                showToast(data?.message || 'Failed to record payment', 'error');
-            }
-        }
-
-        async function deleteInvoice(projectId, invoiceId) {
-            if (!(await confirmAction('Delete this RA bill? This cannot be undone.'))) return;
-            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}`, 'DELETE');
-            if (data && data.success) {
-                showToast('RA bill deleted');
-                await loadInvoices(projectId);
-            } else {
-                showToast(data?.message || 'Failed to delete bill', 'error');
-            }
-        }
-
-        // ===================== DAILY PROGRESS REPORTS (DPR) =====================
-        // Light per-project caches so edit modals can pre-fill without a refetch.
-        let dprCache = {}, labourCache = {}, materialsCache = {};
-
-        async function loadDprs(projectId) {
-            const container = document.getElementById(`dpr-content-${projectId}`);
-            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
-            const data = await apiCall(`/project-dpr/${projectId}`);
-            if (!data || !data.success) {
-                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load DPRs.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
-                return;
-            }
-            const dprs = data.dprs || [];
-            dprCache[projectId] = dprs;
-            const header = `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-                    <h4 style="font-size:0.9rem;font-weight:600;">Daily Progress Reports (${dprs.length})</h4>
-                    <button class="btn btn-primary btn-sm" onclick="openCreateDprModal(${projectId})">
-                        <i class="fas fa-plus"></i> Add DPR
-                    </button>
-                </div>`;
-            if (!dprs.length) {
-                container.innerHTML = header + '<p style="color:var(--text-secondary);font-size:0.85rem;">No daily reports yet. Add the first one to start the site log.</p>';
-                return;
-            }
-            container.innerHTML = header + `<div style="display:flex;flex-direction:column;gap:10px;">${dprs.map(dprBlock).join('')}</div>`;
-        }
-
-        function dprBlock(dpr) {
-            const weather = dpr.weather ? `<span class="badge badge-primary">${esc(dpr.weather)}</span>` : '';
-            const acts = (dpr.activities || []).map(a => `
-                <div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px dashed var(--border);font-size:0.82rem;">
-                    <span style="font-weight:600;min-width:150px;">${esc(a.work_item)}</span>
-                    ${a.description ? `<span style="color:var(--text-secondary);flex:1;">${esc(a.description)}</span>` : '<span style="flex:1;"></span>'}
-                    <span style="color:var(--text-tertiary);white-space:nowrap;min-width:70px;text-align:right;">${a.qty_done != null ? `<strong>${fmtQty(a.qty_done)}</strong> ${esc(a.unit || '')}` : ''}</span>
-                    ${a.remarks ? `<span style="color:var(--text-tertiary);white-space:nowrap;">${esc(a.remarks)}</span>` : ''}
-                </div>`).join('');
-            const summary = dpr.work_summary ? `<div style="font-size:0.84rem;color:var(--text-secondary);margin-bottom:8px;line-height:1.5;">${esc(dpr.work_summary)}</div>` : '';
-            return `
-                <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:12px;background:var(--bg-card, #fff);">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
-                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                            <strong style="font-size:0.9rem;">${String(dpr.report_date).slice(0, 10)}</strong>
-                            ${weather}
-                            <span style="font-size:0.75rem;color:var(--text-tertiary);">by ${esc(dpr.created_by_name || '—')}</span>
-                        </div>
-                        <div style="display:inline-flex;gap:4px;">
-                            <button class="btn btn-secondary btn-sm" onclick="openEditDprModal(${dpr.project_id}, ${dpr.id})" title="Edit"><i class="fas fa-pen" style="font-size:0.7rem;"></i></button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteDpr(${dpr.project_id}, ${dpr.id})" title="Delete"><i class="fas fa-trash" style="font-size:0.7rem;"></i></button>
-                        </div>
-                    </div>
-                    ${summary}
-                    ${acts ? `<div>${acts}</div>` : ''}
-                </div>`;
-        }
-
-        function openCreateDprModal(projectId) {
-            const form = document.getElementById('dprForm');
-            form.reset();
-            document.getElementById('dprEditId').value = '';
-            document.getElementById('dprProjectId').value = projectId;
-            document.getElementById('dprModalTitle').textContent = 'Daily Progress Report';
-            document.getElementById('dprActivities').innerHTML = '';
-            form.report_date.value = localDateStr(new Date());
-            addDprActivityRow();
-            openModal('dprModal');
-        }
-
-        function localDateStr(d) {
-            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-        }
-
-        async function openEditDprModal(projectId, dprId) {
-            const cached = (dprCache[projectId] || []).find(d => d.id === dprId);
-            const dpr = cached || (await apiCall(`/project-dpr/${projectId}/${dprId}`))?.dpr;
-            if (!dpr) {
-                showToast('Could not load DPR', 'error');
-                return;
-            }
-            const form = document.getElementById('dprForm');
-            form.reset();
-            document.getElementById('dprEditId').value = dpr.id;
-            document.getElementById('dprProjectId').value = dpr.project_id;
-            document.getElementById('dprModalTitle').textContent = 'Edit DPR — ' + String(dpr.report_date).slice(0, 10);
-            form.report_date.value = String(dpr.report_date).slice(0, 10);
-            if (dpr.weather) form.weather.value = dpr.weather;
-            form.work_summary.value = dpr.work_summary || '';
-            const actsContainer = document.getElementById('dprActivities');
-            actsContainer.innerHTML = '';
-            (dpr.activities || []).forEach(a => addDprActivityRow(a));
-            if (!(dpr.activities || []).length) addDprActivityRow();
-            openModal('dprModal');
-        }
-
-        function addDprActivityRow(act) {
-            act = act || {};
-            const container = document.getElementById('dprActivities');
-            const div = document.createElement('div');
-            div.className = 'dpr-activity-row';
-            div.style.cssText = 'display:flex;gap:8px;align-items:flex-end;margin-bottom:8px;';
-            const v = (k, def) => (act[k] !== undefined && act[k] !== null ? act[k] : def);
-            div.innerHTML = `
-                <div style="flex:1.4;min-width:0;">
-                    <input type="text" class="form-control" placeholder="Work item *" value="${escAttr(v('work_item', ''))}">
-                </div>
-                <div style="flex:1.8;min-width:0;">
-                    <input type="text" class="form-control" placeholder="What was done" value="${escAttr(v('description', ''))}">
-                </div>
-                <div style="width:86px;">
-                    <input type="number" class="form-control" placeholder="Qty" min="0" step="0.01" value="${v('qty_done', '')}">
-                </div>
-                <div style="width:78px;">
-                    <input type="text" class="form-control" placeholder="Unit" value="${escAttr(v('unit', ''))}">
-                </div>
-                <div style="width:90px;">
-                    <input type="text" class="form-control" placeholder="Remarks" value="${escAttr(v('remarks', ''))}">
-                </div>
-                <button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" title="Remove line"><i class="fas fa-times" style="font-size:0.7rem;"></i></button>`;
-            container.appendChild(div);
-        }
-
-        function collectDprActivities() {
-            const out = [];
-            document.querySelectorAll('#dprActivities .dpr-activity-row').forEach(row => {
-                const inputs = row.querySelectorAll('input');
-                const work_item = (inputs[0].value || '').trim();
-                if (!work_item) return;
-                const qty = inputs[2].value === '' ? null : Number(inputs[2].value);
-                out.push({
-                    work_item,
-                    description: (inputs[1].value || '').trim() || null,
-                    qty_done: Number.isFinite(qty) ? qty : null,
-                    unit: (inputs[3].value || '').trim() || null,
-                    remarks: (inputs[4].value || '').trim() || null
-                });
-            });
-            return out;
-        }
-
-        async function saveDpr(e) {
-            e.preventDefault();
-            const form = e.target;
-            const editId = document.getElementById('dprEditId').value;
-            const projectId = document.getElementById('dprProjectId').value;
-            const reportDate = form.report_date.value;
-            if (!reportDate) { showToast('Report date is required', 'warning'); return; }
-            const activities = collectDprActivities();
-            if (!(form.work_summary.value || '').trim() && !activities.length) {
-                showToast('Add a work summary or at least one activity line', 'warning');
-                return;
-            }
-            const btn = document.getElementById('dprSaveBtn');
-            btn.disabled = true;
-            btn.textContent = 'Saving...';
-            const body = {
-                report_date: reportDate,
-                weather: form.weather.value || null,
-                work_summary: (form.work_summary.value || '').trim() || null,
-                activities
-            };
-            const data = editId
-                ? await apiCall(`/project-dpr/${projectId}/${editId}`, 'PUT', body)
-                : await apiCall(`/project-dpr/${projectId}`, 'POST', body);
-            btn.disabled = false;
-            btn.textContent = 'Save Report';
-            if (data && data.success) {
-                showToast(editId ? 'DPR updated' : 'DPR saved');
-                closeModal('dprModal');
-                await loadDprs(projectId);
-            } else {
-                showToast(data?.message || 'Failed to save DPR', 'error');
-            }
-        }
-
-        async function deleteDpr(projectId, dprId) {
-            if (!(await confirmAction('Delete this daily report? This cannot be undone.'))) return;
-            const data = await apiCall(`/project-dpr/${projectId}/${dprId}`, 'DELETE');
-            if (data && data.success) {
-                showToast('DPR deleted');
-                await loadDprs(projectId);
-            } else {
-                showToast(data?.message || 'Failed to delete DPR', 'error');
-            }
-        }
-
-        // ===================== LABOUR REGISTER =====================
-        const LABOUR_CATEGORIES = [
-            { key: 'mason', label: 'Mason' },
-            { key: 'carpenter', label: 'Carpenter' },
-            { key: 'steel_fixer', label: 'Steel Fixer' },
-            { key: 'electrician', label: 'Electrician' },
-            { key: 'plumber', label: 'Plumber' },
-            { key: 'painter', label: 'Painter' },
-            { key: 'helper', label: 'Helper' },
-            { key: 'general', label: 'General' }
-        ];
-
-        function labourLabel(key) {
-            const found = LABOUR_CATEGORIES.find(c => c.key === key);
-            return found ? found.label : key.replace(/_/g, ' ');
-        }
-
-        async function loadLabour(projectId) {
-            const container = document.getElementById(`labour-content-${projectId}`);
-            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
-            const data = await apiCall(`/project-labour/${projectId}`);
-            if (!data || !data.success) {
-                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load the labour register.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
-                return;
-            }
-            const dates = data.dates || [];
-            labourCache[projectId] = dates;
-            const header = `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-                    <h4 style="font-size:0.9rem;font-weight:600;">Labour Register (${dates.length} day${dates.length === 1 ? '' : 's'})</h4>
-                    <button class="btn btn-primary btn-sm" onclick="openSaveLabourModal(${projectId}, null)">
-                        <i class="fas fa-plus"></i> Add Day
-                    </button>
-                </div>`;
-            if (!dates.length) {
-                container.innerHTML = header + '<p style="color:var(--text-secondary);font-size:0.85rem;">No labour register entries yet. Record the day\'s headcount by trade (mason, carpenter, steel fixer...).</p>';
-                return;
-            }
-            container.innerHTML = header + `<div style="display:flex;flex-direction:column;gap:10px;">${dates.map(d => labourDayBlock(projectId, d)).join('')}</div>`;
-        }
-
-        function labourDayBlock(projectId, day) {
-            const chips = day.entries.map(en => `
-                <span style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:0.8rem;margin:3px 4px 3px 0;background:var(--bg-card,#fff);">
-                    ${esc(labourLabel(en.category))}: <strong>${en.count}</strong>
-                    <button style="background:none;border:none;color:var(--text-tertiary);cursor:pointer;font-size:0.8rem;padding:0;line-height:1;" onclick="deleteLabourEntry(${projectId}, ${en.id})" title="Remove category">&times;</button>
-                </span>`).join('');
-            const dayNote = day.entries.reduce((acc, en) => acc || (en.notes || null), null);
-            return `
-                <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:12px;background:var(--bg-card, #fff);">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
-                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                            <strong style="font-size:0.9rem;">${esc(day.report_date)}</strong>
-                            <span class="badge badge-primary">Total ${day.total} on site</span>
-                        </div>
-                        <button class="btn btn-secondary btn-sm" onclick="openSaveLabourModal(${projectId}, '${escAttr(day.report_date)}')">
-                            <i class="fas fa-pen" style="font-size:0.7rem;"></i> Edit Day
-                        </button>
-                    </div>
-                    <div>${chips}</div>
-                    ${dayNote ? `<div style="font-size:0.78rem;color:var(--text-tertiary);margin-top:8px;">&#128221; ${esc(dayNote)}</div>` : ''}
-                </div>`;
-        }
-
-        function openSaveLabourModal(projectId, dateKey) {
-            document.getElementById('labourProjectId').value = projectId;
-            const grid = document.getElementById('labourCategoryGrid');
-            grid.innerHTML = '';
-            let existingMap = {};
-            let note = '';
-            if (dateKey) {
-                const day = (labourCache[projectId] || []).find(d => d.report_date === dateKey);
-                if (day) {
-                    day.entries.forEach(en => { existingMap[en.category] = en; });
-                    note = day.entries.reduce((acc, en) => acc || (en.notes || ''), '');
-                    document.getElementById('labourReportDate').value = day.report_date;
-                }
-            } else {
-                document.getElementById('labourReportDate').value = localDateStr(new Date());
-            }
-            document.getElementById('labourNotes').value = note;
-            LABOUR_CATEGORIES.forEach(cat => {
-                const en = existingMap[cat.key];
-                const count = en ? en.count : 0;
-                grid.innerHTML += `
-                    <div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;display:flex;gap:8px;align-items:center;background:var(--bg-card,#fff);">
-                        <div style="flex:1;font-size:0.85rem;font-weight:500;">${cat.label}</div>
-                        <input type="number" min="0" step="1" value="${count}" data-category="${cat.key}" oninput="updateLabourTotal()" style="width:70px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg-card,#fff);color:var(--text-primary);">
-                    </div>`;
-            });
-            updateLabourTotal();
-            openModal('labourModal');
-        }
-
-        function updateLabourTotal() {
-            let total = 0;
-            document.querySelectorAll('#labourCategoryGrid input[data-category]').forEach(inp => {
-                total += parseInt(inp.value || '0', 10) || 0;
-            });
-            document.getElementById('labourTotalValue').textContent = total;
-        }
-
-        async function saveLabour(e) {
-            e.preventDefault();
-            const projectId = document.getElementById('labourProjectId').value;
-            const reportDate = document.getElementById('labourReportDate').value;
-            if (!reportDate) { showToast('Report date is required', 'warning'); return; }
-            const notes = document.getElementById('labourNotes').value.trim();
-            const entries = [];
-            LABOUR_CATEGORIES.forEach(cat => {
-                const input = document.querySelector(`#labourCategoryGrid input[data-category="${cat.key}"]`);
-                const count = input ? (parseInt(input.value || '0', 10) || 0) : 0;
-                if (count > 0) entries.push({ category: cat.key, count, notes: null });
-            });
-            if (!entries.length) {
-                showToast('Enter at least one trade count', 'warning');
-                return;
-            }
-            if (notes) entries[0].notes = notes;
-            const btn = document.getElementById('labourSaveBtn');
-            btn.disabled = true;
-            btn.textContent = 'Saving...';
-            const data = await apiCall(`/project-labour/${projectId}`, 'POST', { report_date: reportDate, entries });
-            btn.disabled = false;
-            btn.textContent = 'Save Register';
-            if (data && data.success) {
-                showToast(data.message || 'Labour register saved');
-                closeModal('labourModal');
-                await loadLabour(projectId);
-            } else {
-                showToast(data?.message || 'Failed to save labour register', 'error');
-            }
-        }
-
-        async function deleteLabourEntry(projectId, id) {
-            if (!(await confirmAction('Remove this trade from the register?'))) return;
-            const data = await apiCall(`/project-labour/${projectId}/${id}`, 'DELETE');
-            if (data && data.success) {
-                showToast('Entry removed');
-                await loadLabour(projectId);
-            } else {
-                showToast(data?.message || 'Failed to remove entry', 'error');
-            }
-        }
-
-        // ===================== MATERIALS REGISTER =====================
-        async function loadMaterials(projectId) {
-            const container = document.getElementById(`materials-content-${projectId}`);
-            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
-            const data = await apiCall(`/project-materials/${projectId}`);
-            if (!data || !data.success) {
-                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load materials.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
-                return;
-            }
-            const materials = data.materials || [];
-            const summary = data.summary || {};
-            materialsCache[projectId] = materials;
-            const header = `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-                    <h4 style="font-size:0.9rem;font-weight:600;">Materials Register (${materials.length})</h4>
-                    <button class="btn btn-primary btn-sm" onclick="openCreateMaterialModal(${projectId})">
-                        <i class="fas fa-plus"></i> Add Material
-                    </button>
-                </div>
-                <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:0.82rem;color:var(--text-secondary);">
-                    <span>Received: <strong style="color:var(--text-primary);">${fmtQty(summary.total_quantity)}</strong></span>
-                    <span>Used: <strong>${fmtQty(summary.total_used)}</strong></span>
-                    <span>Balance: <strong style="color:var(--text-success,#28a745);">${fmtQty(summary.total_balance)}</strong></span>
-                </div>`;
-            if (!materials.length) {
-                container.innerHTML = header + '<p style="color:var(--text-secondary);font-size:0.85rem;">No materials recorded yet. Track receipts and usage with a running balance.</p>';
-                return;
-            }
-            container.innerHTML = header + `
-                <div style="overflow-x:auto;">
-                    <table style="width:100%;border-collapse:collapse;font-size:0.84rem;min-width:820px;">
-                        <thead>
-                            <tr style="text-align:left;border-bottom:2px solid var(--border);">
-                                <th style="padding:8px 6px;">Material</th>
-                                <th style="padding:8px 6px;text-align:right;">Received</th>
-                                <th style="padding:8px 6px;text-align:right;">Used</th>
-                                <th style="padding:8px 6px;text-align:right;">Balance</th>
-                                <th style="padding:8px 6px;">Received On</th>
-                                <th style="padding:8px 6px;">Vendor</th>
-                                <th style="padding:8px 6px;text-align:right;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${materials.map(m => materialRow(m)).join('')}
-                        </tbody>
-                    </table>
-                </div>`;
-        }
-
-        function materialRow(m) {
-            const bal = Math.round((Number(m.quantity) - Number(m.qty_used)) * 100) / 100;
-            const meta = [
-                m.purpose ? `<div style="font-size:0.75rem;color:var(--text-tertiary);">${esc(m.purpose)}</div>` : '',
-                m.notes ? `<div style="font-size:0.75rem;color:var(--text-tertiary);">${esc(m.notes)}</div>` : ''
-            ].join('');
-            return `
-                <tr style="border-bottom:1px solid var(--border);">
-                    <td style="padding:8px 6px;font-weight:600;">${esc(m.material)}${meta}</td>
-                    <td style="padding:8px 6px;text-align:right;white-space:nowrap;">${fmtQty(m.quantity)} ${esc(m.unit || '')}</td>
-                    <td style="padding:8px 6px;text-align:right;white-space:nowrap;">${fmtQty(m.qty_used)}</td>
-                    <td style="padding:8px 6px;text-align:right;white-space:nowrap;font-weight:600;color:${bal > 0 ? 'var(--text-success,#28a745)' : bal < 0 ? 'var(--text-danger,#dc3545)' : 'var(--text-tertiary)'};">${fmtQty(bal)}</td>
-                    <td style="padding:8px 6px;white-space:nowrap;">${m.received_on ? String(m.received_on).slice(0, 10) : '—'}</td>
-                    <td style="padding:8px 6px;white-space:nowrap;">${esc(m.vendor || '—')}</td>
-                    <td style="padding:8px 6px;text-align:right;white-space:nowrap;">
-                        <div style="display:inline-flex;gap:4px;">
-                            <button class="btn btn-secondary btn-sm" onclick="openEditMaterialModal(${m.project_id}, ${m.id})" title="Edit"><i class="fas fa-pen" style="font-size:0.7rem;"></i></button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteMaterial(${m.project_id}, ${m.id})" title="Delete"><i class="fas fa-trash" style="font-size:0.7rem;"></i></button>
-                        </div>
-                    </td>
-                </tr>`;
-        }
-
-        function fmtQty(n) {
-            const v = Number(n) || 0;
-            return v % 1 === 0 ? String(v) : v.toFixed(2);
-        }
-
-        function updateMaterialBalance() {
-            const qty = parseFloat(document.querySelector('#materialForm [name="quantity"]').value);
-            const used = parseFloat(document.querySelector('#materialForm [name="qty_used"]').value);
-            if (!isFinite(qty)) { document.getElementById('materialBalancePanel').style.display = 'none'; return; }
-            const q = isFinite(qty) ? qty : 0;
-            const u = isFinite(used) ? used : 0;
-            const bal = Math.round((q - u) * 100) / 100;
-            const unit = (document.querySelector('#materialForm [name="unit"]').value || '').trim();
-            document.getElementById('materialBalancePanel').style.display = 'block';
-            document.getElementById('materialBalanceText').innerHTML =
-                `Received <strong>${fmtQty(q)}</strong> · Used <strong>${fmtQty(u)}</strong> · Balance <strong style="color:${bal < 0 ? 'var(--text-danger,#dc3545)' : 'var(--text-success,#28a745)'};">${fmtQty(bal)}</strong> ${esc(unit)}`;
-        }
-
-        function openCreateMaterialModal(projectId) {
-            const form = document.getElementById('materialForm');
-            form.reset();
-            document.getElementById('materialEditId').value = '';
-            document.getElementById('materialProjectId').value = projectId;
-            document.getElementById('materialModalTitle').textContent = 'Materials Entry';
-            document.getElementById('materialBalancePanel').style.display = 'none';
-            openModal('materialModal');
-        }
-
-        function openEditMaterialModal(projectId, materialId) {
-            const m = (materialsCache[projectId] || []).find(x => x.id === materialId);
-            if (!m) { showToast('Could not load material entry', 'error'); return; }
-            const form = document.getElementById('materialForm');
-            form.reset();
-            document.getElementById('materialEditId').value = m.id;
-            document.getElementById('materialProjectId').value = m.project_id;
-            document.getElementById('materialModalTitle').textContent = 'Edit — ' + m.material;
-            form.material.value = m.material || '';
-            form.unit.value = m.unit || 'nos';
-            form.quantity.value = m.quantity;
-            form.qty_used.value = m.qty_used;
-            form.received_on.value = m.received_on ? String(m.received_on).slice(0, 10) : '';
-            form.vendor.value = m.vendor || '';
-            form.purpose.value = m.purpose || '';
-            form.notes.value = m.notes || '';
-            updateMaterialBalance();
-            openModal('materialModal');
-        }
-
-        async function saveMaterial(e) {
-            e.preventDefault();
-            const form = e.target;
-            const editId = document.getElementById('materialEditId').value;
-            const projectId = document.getElementById('materialProjectId').value;
-            const quantity = parseFloat(form.quantity.value);
-            const qtyUsed = parseFloat(form.qty_used.value || '0');
-            if (!isFinite(quantity) || quantity < 0) { showToast('Enter a valid quantity received', 'warning'); return; }
-            if (isFinite(qtyUsed) && qtyUsed > quantity) { showToast('Quantity used cannot exceed quantity received', 'warning'); return; }
-            const btn = document.getElementById('materialSaveBtn');
-            btn.disabled = true;
-            btn.textContent = 'Saving...';
-            const body = {
-                material: form.material.value.trim(),
-                unit: form.unit.value.trim() || 'nos',
-                quantity,
-                qty_used: isFinite(qtyUsed) ? qtyUsed : 0,
-                received_on: form.received_on.value || null,
-                vendor: form.vendor.value.trim() || null,
-                purpose: form.purpose.value.trim() || null,
-                notes: form.notes.value.trim() || null
-            };
-            const data = editId
-                ? await apiCall(`/project-materials/${projectId}/${editId}`, 'PUT', body)
-                : await apiCall(`/project-materials/${projectId}`, 'POST', body);
-            btn.disabled = false;
-            btn.textContent = 'Save';
-            if (data && data.success) {
-                showToast(editId ? 'Material entry updated' : 'Material entry added');
-                closeModal('materialModal');
-                await loadMaterials(projectId);
-            } else {
-                showToast(data?.message || 'Failed to save material entry', 'error');
-            }
-        }
-
-        async function deleteMaterial(projectId, materialId) {
-            if (!(await confirmAction('Delete this material entry? The audit log keeps a record.'))) return;
-            const data = await apiCall(`/project-materials/${projectId}/${materialId}`, 'DELETE');
-            if (data && data.success) {
-                showToast('Material entry removed');
-                await loadMaterials(projectId);
-            } else {
-                showToast(data?.message || 'Failed to remove entry', 'error');
-            }
-        }
-
         // ===================== PROJECT DOCUMENTS =====================
         let documentsCache = {};
 
@@ -3098,292 +1875,168 @@
             }
         }
 
-        // ===================== PROJECT SNAGS =====================
-        let snagsCache = {};
 
-        async function fetchProjectEmployees(projectId) {
-            const data = await apiCall(`/projects/${projectId}/employees`);
-            if (!data || !data.success) return [];
-            const employees = data.employees || data.data || data || [];
-            return Array.isArray(employees) ? employees : [];
-        }
+        // ===================== DAILY UPDATES =====================
+        let updatesCache = {};
 
-        function snagStatusBadge(status) {
-            const map = { open: 'badge-danger', in_progress: 'badge-primary', resolved: 'badge-success', closed: 'badge-secondary' };
-            const label = String(status || 'open').replace(/_/g, ' ');
-            return `<span class="badge ${map[status] || 'badge-secondary'}">${label}</span>`;
-        }
-
-        function snagSeverityBadge(sev) {
-            const map = { low: 'badge-secondary', medium: 'badge-info', high: 'badge-warning', critical: 'badge-danger' };
-            const label = String(sev || 'medium').replace(/_/g, ' ');
-            return `<span class="badge ${map[sev] || 'badge-secondary'}">${label}</span>`;
-        }
-
-        async function loadSnags(projectId) {
-            const container = document.getElementById(`snags-content-${projectId}`);
-            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
-            const data = await apiCall(`/project-snags/${projectId}`);
-            if (!data || !data.success) {
-                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load snags.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
-                return;
-            }
-            const snags = data.snags || [];
-            snagsCache[projectId] = snags;
-            const header = `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-                    <h4 style="font-size:0.9rem;font-weight:600;">Snags & Issues (${snags.length}) <span class="badge badge-danger">${data.openCount || 0} open</span></h4>
-                    <button class="btn btn-primary btn-sm" onclick="openCreateSnagModal(${projectId})">
-                        <i class="fas fa-plus"></i> Log Snag
-                    </button>
-                </div>`;
-            if (!snags.length) {
-                container.innerHTML = header + '<p style="color:var(--text-secondary);font-size:0.85rem;">No snags logged. Quick actions on a card: resolve it, close it, reopen it.</p>';
-                return;
-            }
-            container.innerHTML = header + `<div style="display:flex;flex-direction:column;gap:8px;">${snags.map(s => snagRow(projectId, s)).join('')}</div>`;
-        }
-
-        function snagRow(projectId, s) {
-            const due = s.due_date ? `<span style="color:var(--text-tertiary);font-size:0.78rem;">Due ${String(s.due_date).slice(0, 10)}</span>` : '';
-            const assignee = s.assignee_name ? ` · ${esc(s.assignee_name)}` : '';
-            let actions = '';
-            if (s.status === 'open') {
-                actions = `<button class="btn btn-secondary btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'in_progress')"><i class="fas fa-play" style="font-size:0.7rem;"></i> Start</button>
-                           <button class="btn btn-success btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'resolved')"><i class="fas fa-check" style="font-size:0.7rem;"></i> Resolve</button>`;
-            } else if (s.status === 'in_progress') {
-                actions = `<button class="btn btn-success btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'resolved')"><i class="fas fa-check" style="font-size:0.7rem;"></i> Resolve</button>`;
-            } else if (s.status === 'resolved') {
-                actions = `<button class="btn btn-primary btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'closed')"><i class="fas fa-lock" style="font-size:0.7rem;"></i> Close</button>
-                           <button class="btn btn-secondary btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'open')"><i class="fas fa-undo" style="font-size:0.7rem;"></i> Reopen</button>`;
-            } else {
-                actions = `<button class="btn btn-secondary btn-sm" onclick="setSnagStatus(${projectId}, ${s.id}, 'open')"><i class="fas fa-undo" style="font-size:0.7rem;"></i> Reopen</button>`;
-            }
-            return `
-                <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:10px 14px;background:var(--bg-card,#fff);">
-                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
-                        <div style="flex:1;min-width:0;">
-                            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-                                <strong style="font-size:0.88rem;">${esc(s.title)}</strong>
-                                ${snagStatusBadge(s.status)}
-                                ${snagSeverityBadge(s.severity)}
-                                <span class="badge badge-secondary">${esc(s.category || 'quality')}</span>
-                            </div>
-                            ${s.description ? `<div style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;line-height:1.5;">${esc(s.description)}</div>` : ''}
-                            <div style="font-size:0.76rem;color:var(--text-tertiary);margin-top:4px;">by ${esc(s.creator_name || '—')}${assignee} ${due}</div>
-                        </div>
-                        <div style="display:inline-flex;gap:4px;flex-wrap:wrap;flex-shrink:0;">
-                            ${actions}
-                            <button class="btn btn-secondary btn-sm" onclick="openEditSnagModal(${projectId}, ${s.id})" title="Edit"><i class="fas fa-pen" style="font-size:0.7rem;"></i></button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteSnag(${projectId}, ${s.id})" title="Delete"><i class="fas fa-trash" style="font-size:0.7rem;"></i></button>
-                        </div>
-                    </div>
-                </div>`;
-        }
-
-        async function openCreateSnagModal(projectId) {
-            document.getElementById('snagForm').reset();
-            document.getElementById('snagEditId').value = '';
-            document.getElementById('snagProjectId').value = projectId;
-            document.getElementById('snagModalTitle').textContent = 'Log Snag';
-            document.getElementById('snagSaveBtn').textContent = 'Save Snag';
-            document.getElementById('snagStatusField').style.display = 'none';
-            await fillSnagAssigneeSelect(projectId);
-            document.getElementById('snagDueDate').value = '';
-            openModal('snagModal');
-        }
-
-        async function openEditSnagModal(projectId, snagId) {
-            const cached = (snagsCache[projectId] || []).find(s => s.id === snagId);
-            const s = cached || null;
-            if (!s) { showToast('Could not load snag details', 'error'); return; }
-            document.getElementById('snagForm').reset();
-            document.getElementById('snagEditId').value = s.id;
-            document.getElementById('snagProjectId').value = s.project_id;
-            document.getElementById('snagModalTitle').textContent = 'Edit — ' + s.title;
-            document.getElementById('snagSaveBtn').textContent = 'Save Snag';
-            document.getElementById('snagStatusField').style.display = 'block';
-            document.getElementById('snagTitle').value = s.title || '';
-            document.getElementById('snagDescription').value = s.description || '';
-            document.getElementById('snagCategory').value = s.category || 'quality';
-            document.getElementById('snagSeverity').value = s.severity || 'medium';
-            document.getElementById('snagStatus').value = s.status || 'open';
-            await fillSnagAssigneeSelect(projectId, s.assigned_to);
-            document.getElementById('snagDueDate').value = s.due_date ? String(s.due_date).slice(0, 10) : '';
-            document.getElementById('snagNote').value = '';
-            openModal('snagModal');
-        }
-
-        async function fillSnagAssigneeSelect(projectId, selectedId) {
-            const select = document.getElementById('snagAssignee');
-            select.innerHTML = '<option value="">— Unassigned —</option>';
-            const employees = await fetchProjectEmployees(projectId);
-            employees.forEach(emp => {
-                const id = emp.id != null ? emp.id : emp.employee_id;
-                const name = esc((emp.first_name || '') + ' ' + (emp.last_name || ''));
-                select.innerHTML += `<option value="${id}"${String(id) === String(selectedId) ? ' selected' : ''}>${name}</option>`;
-            });
-        }
-
-        async function saveSnag(e) {
-            e.preventDefault();
-            const editId = document.getElementById('snagEditId').value;
-            const projectId = document.getElementById('snagProjectId').value;
-            const title = document.getElementById('snagTitle').value.trim();
-            if (!title) { showToast('Snag title is required', 'warning'); return; }
-            const body = {
-                title,
-                description: document.getElementById('snagDescription').value.trim() || null,
-                category: document.getElementById('snagCategory').value,
-                severity: document.getElementById('snagSeverity').value,
-                assigned_to: document.getElementById('snagAssignee').value || null,
-                due_date: document.getElementById('snagDueDate').value || null,
-                note: document.getElementById('snagNote').value.trim() || null
+        function updatesCategoryLabel(cat) {
+            const m = {
+                design: 'Design', drafting: 'Drafting', site_visit: 'Site Visit', coordination: 'Coordination',
+                approvals: 'Approvals', documentation: 'Documentation', meeting: 'Meeting', other: 'Other'
             };
-            if (editId) {
-                body.status = document.getElementById('snagStatus').value;
-                const data = await apiCall(`/project-snags/${projectId}/${editId}`, 'PUT', body);
-                if (data && data.success) {
-                    showToast('Snag updated');
-                    closeModal('snagModal');
-                    await loadSnags(projectId);
-                } else {
-                    showToast(data?.message || 'Failed to update snag', 'error');
-                }
-                return;
-            }
-            const data = await apiCall(`/project-snags/${projectId}`, 'POST', body);
-            if (data && data.success) {
-                showToast('Snag logged');
-                closeModal('snagModal');
-                await loadSnags(projectId);
-            } else {
-                showToast(data?.message || 'Failed to log snag', 'error');
-            }
+            return m[cat] || String(cat || 'other').replace(/_/g, ' ');
         }
 
-        async function setSnagStatus(projectId, snagId, status) {
-            const data = await apiCall(`/project-snags/${projectId}/${snagId}`, 'PUT', { status, note: null });
-            if (data && data.success) {
-                showToast('Snag status updated');
-                await loadSnags(projectId);
-            } else {
-                showToast(data?.message || 'Failed to update status', 'error');
-            }
+        function updatesCategoryBadge(cat) {
+            return `<span class="badge badge-primary">${esc(updatesCategoryLabel(cat))}</span>`;
         }
 
-        async function deleteSnag(projectId, snagId) {
-            if (!(await confirmAction('Delete this snag? The activity log keeps a record.'))) return;
-            const data = await apiCall(`/project-snags/${projectId}/${snagId}`, 'DELETE');
-            if (data && data.success) {
-                showToast('Snag deleted');
-                await loadSnags(projectId);
-            } else {
-                showToast(data?.message || 'Failed to delete snag', 'error');
-            }
-        }
-
-        // ===================== PROJECT CLOSEOUT =====================
-        async function loadCloseout(projectId) {
-            const container = document.getElementById(`closeout-content-${projectId}`);
+        async function loadUpdates(projectId) {
+            const container = document.getElementById(`updates-content-${projectId}`);
             container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
-            const data = await apiCall(`/project-closeout/${projectId}`);
+            const data = await apiCall(`/project-updates?projectId=${projectId}&limit=100`);
             if (!data || !data.success) {
-                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load closeout.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
+                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load daily updates.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
                 return;
             }
-            renderCloseout(projectId, container, data);
-        }
-
-        function renderCloseout(projectId, container, data) {
-            const items = data.items || [];
-            const s = data.summary || {};
-            const snags = s.snags || {};
-            const inv = s.invoices || {};
-            const ready = snags.open_count > 0 ? false : (s.total > 0 && s.percent >= 100);
-            const pct = s.percent || 0;
-
-            const chips = `
-                <span class="badge badge-secondary">DPRs: ${s.dpr_count || 0}</span>
-                <span class="badge ${snags.open_count > 0 ? 'badge-danger' : 'badge-success'}">Snags open: ${snags.open_count || 0} / ${snags.total || 0}</span>
-                <span class="badge badge-primary">Billed (net): ${fmtMoney(inv.net)}</span>
-                <span class="badge badge-success">Received: ${fmtMoney(inv.received)}</span>
-                <span class="badge badge-warning">Retention held: ${fmtMoney(inv.retention)}</span>
-                <span class="badge ${ready ? 'badge-success' : 'badge-secondary'}">${ready ? 'Ready for handover!' : 'In progress'}</span>`;
-
-            const rows = items.map(it => {
-                const cat = esc((it.category || 'handover').replace(/_/g, ' '));
-                const doneBy = it.completed_by_name ? ` <span style="color:var(--text-tertiary);font-size:0.72rem;">· ${esc(it.completed_by_name)}</span>` : '';
+            const updates = data.updates || [];
+            updatesCache[projectId] = updates;
+            if (!updates.length) {
+                container.innerHTML = '<div style="padding:12px 0;color:var(--text-secondary);font-size:0.85rem;">No daily updates yet. Use <strong>+ Update</strong> to log the first one.</div>';
+                return;
+            }
+            const currentUser = getCurrentUser();
+            container.innerHTML = updates.map(u => {
+                const empName = `${esc(u.first_name || '')} ${esc(u.last_name || '')}`.trim() || esc(u.emp_code || '');
+                const canEdit = currentUser && (currentUser.role === 'admin' || String(u.employee_id) === String(currentUser.id));
+                const canDelete = currentUser && currentUser.role === 'admin';
                 return `
-                    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed var(--border);">
-                        <input type="checkbox" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer;flex-shrink:0;" ${it.is_completed ? 'checked' : ''} onchange="toggleCloseoutItem(${projectId}, ${it.id}, this.checked)">
-                        <span style="flex:1;min-width:0;font-size:0.84rem;${it.is_completed ? 'text-decoration:line-through;color:var(--text-tertiary);' : ''}">${esc(it.item_name)}${doneBy}</span>
-                        <span class="badge badge-secondary" style="flex-shrink:0;">${cat}</span>
-                        <button class="btn btn-danger btn-sm" style="flex-shrink:0;" onclick="removeCloseoutItem(${projectId}, ${it.id})" title="Remove"><i class="fas fa-times" style="font-size:0.7rem;"></i></button>
+                    <div style="padding:10px 0;border-bottom:1px dashed var(--border);">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+                            <div style="min-width:0;flex:1;">
+                                <div style="font-size:0.85rem;font-weight:600;">${String(u.update_date).slice(0, 10)} &middot; ${updatesCategoryBadge(u.task_cat)}${Number(u.hours) > 0 ? ` <span class="badge badge-secondary">${u.hours}h</span>` : ''}</div>
+                                <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">${empName}${u.notes ? ` <span style="color:var(--text-tertiary);">&middot; ${esc(u.notes)}</span>` : ''}</div>
+                                <div style="font-size:0.82rem;margin-top:4px;color:var(--text-primary);">${esc(u.description)}</div>
+                            </div>
+                            <div style="display:flex;gap:6px;flex-shrink:0;">
+                                ${canEdit ? `<button class="btn btn-secondary btn-sm" onclick="openUpdateModal(${projectId}, ${u.id})" title="Edit"><i class="fas fa-pen"></i></button>` : ''}
+                                ${canDelete ? `<button class="btn btn-danger btn-sm" onclick="deleteUpdate(${projectId}, ${u.id})" title="Delete"><i class="fas fa-trash"></i></button>` : ''}
+                            </div>
+                        </div>
                     </div>`;
             }).join('');
-
-            container.innerHTML = `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-                    <h4 style="font-size:0.9rem;font-weight:600;">Closeout Checklist (${s.completed || 0}/${s.total || 0})</h4>
-                    ${s.total > 0 ? '' : `<button class="btn btn-primary btn-sm" onclick="loadCloseoutDefaults(${projectId})"><i class="fas fa-list-check"></i> Load standard checklist</button>`}
-                </div>
-                <div style="margin-bottom:12px;">
-                    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:0.78rem;color:var(--text-secondary);">Handover readiness <strong>${pct}%</strong></div>
-                    <div style="height:8px;background:var(--border);border-radius:6px;overflow:hidden;">
-                        <div style="height:100%;width:${pct}%;background:${pct >= 100 ? 'var(--success,#16a34a)' : 'var(--primary,#4f46e5)'};border-radius:6px;transition:width 0.3s;"></div>
-                    </div>
-                </div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">${chips}</div>
-                <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-                    <input type="text" class="form-control" id="closeoutNewItem-${projectId}" placeholder="Add handover item..." style="flex:1;min-width:200px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addCloseoutItem(${projectId});}">
-                    <button class="btn btn-primary btn-sm" onclick="addCloseoutItem(${projectId})"><i class="fas fa-plus" style="font-size:0.7rem;"></i> Add</button>
-                    ${s.total > 0 ? `<button class="btn btn-secondary btn-sm" onclick="loadCloseoutDefaults(${projectId})"><i class="fas fa-list-check"></i> Add standard items</button>` : ''}
-                </div>
-                <div>${rows || '<p style="color:var(--text-tertiary);font-size:0.85rem;">No checklist items yet. Load the standard checklist or add your own above.</p>'}</div>`;
         }
 
-        async function toggleCloseoutItem(projectId, itemId, isCompleted) {
-            const data = await apiCall(`/project-closeout/${projectId}/items/${itemId}`, 'PUT', { is_completed: isCompleted });
-            if (data && data.success) {
-                showToast(isCompleted ? 'Item completed' : 'Item reopened');
-                await loadCloseout(projectId);
+        async function openUpdateModal(projectId, updateId) {
+            const project = allProjects.find(p => String(p.id) === String(projectId));
+            if (!project) return;
+            const currentUser = getCurrentUser();
+            document.getElementById('updateProjectId').value = projectId;
+            document.getElementById('updateProjectName').value = project.name;
+            const empField = document.getElementById('updateEmployeeField');
+            const empRo = document.getElementById('updateEmployeeReadonly');
+
+            if (updateId) {
+                // Edit an existing update - the owner or an admin.
+                let u = (updatesCache[projectId] || []).find(x => String(x.id) === String(updateId));
+                if (!u) {
+                    const data = await apiCall(`/project-updates?projectId=${projectId}&limit=500`);
+                    const ups = (data && data.success && data.updates) || [];
+                    updatesCache[projectId] = ups;
+                    u = ups.find(x => String(x.id) === String(updateId));
+                    if (!u) { showToast('Update not found', 'error'); return; }
+                }
+                fillUpdateModal(projectId, u, true);
             } else {
-                showToast(data?.message || 'Failed to update item', 'error');
+                // New update - admins may pick any assigned employee.
+                document.getElementById('updateId').value = '';
+                document.getElementById('updateModalTitle').textContent = 'Add Daily Update';
+                document.getElementById('updateDate').value = new Date().toISOString().slice(0, 10);
+                document.getElementById('updateCategory').value = 'design';
+                document.getElementById('updateHours').value = 0;
+                document.getElementById('updateDescription').value = '';
+                document.getElementById('updateNotes').value = '';
+                empRo.style.display = 'none';
+                const sel = empField.querySelector('select');
+                if (currentUser && currentUser.role === 'admin') {
+                    const data = await apiCall(`/projects/${projectId}/employees`);
+                    const employees = (data && data.success) ? (data.employees || data.data || []) : [];
+                    sel.innerHTML = '<option value="">-- Select Employee --</option>' + employees.map(e =>
+                        `<option value="${e.id}">${esc(e.first_name || '')} ${esc(e.last_name || '')}${e.employee_id ? ' (' + esc(e.employee_id) + ')' : ''}</option>`
+                    ).join('');
+                    empField.style.display = 'block';
+                } else {
+                    empField.style.display = 'none';
+                }
+            }
+            openModal('updateModal');
+        }
+
+        function fillUpdateModal(projectId, u, isEdit) {
+            document.getElementById('updateId').value = u.id;
+            document.getElementById('updateModalTitle').textContent = isEdit ? 'Edit Daily Update' : 'Daily Update';
+            document.getElementById('updateDate').value = String(u.update_date).slice(0, 10);
+            document.getElementById('updateCategory').value = u.task_cat;
+            document.getElementById('updateHours').value = u.hours || 0;
+            document.getElementById('updateDescription').value = u.description;
+            document.getElementById('updateNotes').value = u.notes || '';
+            const empField = document.getElementById('updateEmployeeField');
+            const empRo = document.getElementById('updateEmployeeReadonly');
+            empField.style.display = 'none';
+            empField.querySelector('select').innerHTML = '<option value="">-- Select Employee --</option>';
+            empRo.style.display = 'block';
+            empRo.querySelector('input').value = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.emp_code || '';
+        }
+
+        async function saveUpdate(e) {
+            e.preventDefault();
+            const btn = document.getElementById('updateSaveBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            const projectId = document.getElementById('updateProjectId').value;
+            const updateId = document.getElementById('updateId').value;
+            const body = {
+                projectId: parseInt(projectId),
+                updateDate: document.getElementById('updateDate').value,
+                taskCat: document.getElementById('updateCategory').value,
+                description: document.getElementById('updateDescription').value.trim(),
+                hours: document.getElementById('updateHours').value === '' ? 0 : Number(document.getElementById('updateHours').value),
+                notes: document.getElementById('updateNotes').value.trim() || null
+            };
+            if (document.getElementById('updateEmployeeField').style.display === 'block') {
+                const empSel = document.getElementById('updateEmployee');
+                if (!empSel.value) {
+                    showToast('Please select an employee', 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Save Update';
+                    return;
+                }
+                body.employeeId = parseInt(empSel.value);
+            }
+            const data = updateId
+                ? await apiCall(`/project-updates/${updateId}`, 'PUT', body)
+                : await apiCall('/project-updates', 'POST', body);
+            btn.disabled = false;
+            btn.textContent = 'Save Update';
+            if (data && data.success) {
+                showToast(data.message || 'Daily update saved');
+                closeModal('updateModal');
+                await loadUpdates(projectId);
+                if (typeof overviewLoaded !== 'undefined' && overviewLoaded) loadOverview();
+            } else {
+                showToast(data?.message || 'Failed to save update', 'error');
             }
         }
 
-        async function addCloseoutItem(projectId) {
-            const input = document.getElementById(`closeoutNewItem-${projectId}`);
-            const name = (input.value || '').trim();
-            if (!name) { showToast('Enter a checklist item', 'warning'); return; }
-            const data = await apiCall(`/project-closeout/${projectId}/items`, 'POST', { item_name: name, category: 'handover', notes: null });
+        async function deleteUpdate(projectId, updateId) {
+            if (!(await confirmAction('Delete this daily update? The activity log keeps a record.'))) return;
+            const data = await apiCall(`/project-updates/${updateId}`, 'DELETE');
             if (data && data.success) {
-                input.value = '';
-                await loadCloseout(projectId);
+                showToast('Daily update deleted');
+                await loadUpdates(projectId);
+                if (typeof overviewLoaded !== 'undefined' && overviewLoaded) loadOverview();
             } else {
-                showToast(data?.message || 'Failed to add item', 'error');
-            }
-        }
-
-        async function removeCloseoutItem(projectId, itemId) {
-            if (!(await confirmAction('Remove this checklist item?'))) return;
-            const data = await apiCall(`/project-closeout/${projectId}/items/${itemId}`, 'DELETE');
-            if (data && data.success) {
-                showToast('Item removed');
-                await loadCloseout(projectId);
-            } else {
-                showToast(data?.message || 'Failed to remove item', 'error');
-            }
-        }
-
-        async function loadCloseoutDefaults(projectId) {
-            const data = await apiCall(`/project-closeout/${projectId}/defaults`, 'POST');
-            if (data && data.success) {
-                showToast(data.added ? `${data.added} standard items added` : 'Checklist items already present');
-                await loadCloseout(projectId);
-            } else {
-                showToast(data?.message || 'Failed to load standard checklist', 'error');
+                showToast(data?.message || 'Failed to delete update', 'error');
             }
         }
 
