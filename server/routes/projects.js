@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { query } = require('../config/database');
+const { query, getClient } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse, hasColumn } = require('../utils/schemaRepair');
+const { logAudit } = require('../utils/audit');
 
 // Self-healing query wrapper: if a legacy database is missing the projects
 // module tables, the first 42P01 error creates them and the request retries.
@@ -16,7 +17,6 @@ const ALLOWED_STATUSES = ['active', 'inactive', 'on_hold', 'completed', 'cancell
  */
 router.get('/my', verifyToken, async (req, res) => {
     try {
-        await q(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS client VARCHAR(255)`).catch(() => {});
         const result = await q(
             `SELECT p.id, p.name, COALESCE(p.client, p.customer) as client, p.description, p.status, p.created_at
              FROM projects p
@@ -69,10 +69,6 @@ router.get('/my/:projectId/sets', verifyToken, async (req, res) => {
  */
 router.get('/', verifyToken, isAdmin, async (req, res) => {
     try {
-        // Ensure client column exists (safe DDL, idempotent)
-        await q(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS client VARCHAR(255)`).catch(() => {});
-        await q(`UPDATE projects SET client = customer WHERE client IS NULL AND customer IS NOT NULL`).catch(() => {});
-
         const hasDeletedAt = await hasColumn('project_sets', 'deleted_at');
         const result = await q(
             `SELECT p.id, p.name, COALESCE(p.client, p.customer) as client, p.description, p.status, p.created_at,
@@ -139,6 +135,11 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
         const created = result.rows[0];
         created.employees_count = 0;
         created.sets_count = 0;
+        logAudit({
+            actorId: req.user.id, action: 'project.create', entityType: 'project',
+            entityId: created.id, details: { name: created.name, client: created.client || null, status: created.status },
+            ip: req.ip
+        });
         res.json({ success: true, project: created });
     } catch (error) {
         console.error('Error creating project:', error);
@@ -174,16 +175,32 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
 router.put('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         const { name, client, description, status } = req.body;
-        const finalStatus = ALLOWED_STATUSES.includes(status) ? status : 'active';
+        if (!name || !String(name).trim()) {
+            return res.status(400).json({ success: false, message: 'Project name is required' });
+        }
+        const trimmedName = String(name).trim();
+        // When status is omitted/blank, keep the CURRENT status instead of
+        // silently resetting the project to 'active' (the old default).
+        const hasStatus = status !== undefined && status !== null && status !== '';
+        const finalStatus = hasStatus && ALLOWED_STATUSES.includes(status) ? status : null;
+        if (hasStatus && !finalStatus) {
+            return res.status(400).json({ success: false, message: `Invalid status. Allowed: ${ALLOWED_STATUSES.join(', ')}` });
+        }
+
         const result = await q(
-            `UPDATE projects SET name = $1, client = $2, description = $3, status = $4, updated_at = NOW() 
+            `UPDATE projects SET name = $1, client = $2, description = $3, status = COALESCE($4::varchar, status), updated_at = NOW() 
              WHERE id = $5 
              RETURNING id, name, client, description, status, created_at, updated_at`,
-            [name, client || null, description || null, finalStatus, req.params.id]
+            [trimmedName, client || null, description || null, finalStatus, req.params.id]
         );
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Project not found' });
         }
+        logAudit({
+            actorId: req.user.id, action: 'project.update', entityType: 'project',
+            entityId: req.params.id, details: { name: trimmedName, client: client || null, statusChange: hasStatus ? { to: finalStatus } : null },
+            ip: req.ip
+        });
         res.json({ success: true, project: result.rows[0] });
     } catch (error) {
         console.error(`Error updating project ${req.params.id}:`, error);
@@ -197,30 +214,39 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
  * Delete/deactivate a project
  */
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
+    const projectId = req.params.id;
+    const client = await getClient();
     try {
-        const projectId = req.params.id;
-        const exists = await q(
-            `SELECT id FROM projects WHERE id = $1`,
-            [projectId]
-        );
+        const exists = await client.query(`SELECT id, name FROM projects WHERE id = $1`, [projectId]);
         if (exists.rows.length === 0) {
+            client.release();
             return res.status(404).json({ success: false, message: 'Project not found' });
         }
 
-        // Delete descendants explicitly (daily counts, sets, assignments) so the
+        // Delete descendants atomically (daily counts, sets, assignments) so the
         // project can be removed even when it has associated sets - and so a
-        // legacy DB without FK CASCADE is handled too.
-        await q(`DELETE FROM daily_work_counts WHERE project_id = $1`, [projectId]);
-        await q(`DELETE FROM project_sets WHERE project_id = $1`, [projectId]);
-        await q(`DELETE FROM project_employees WHERE project_id = $1`, [projectId]);
-
-        const result = await q(
+        // legacy DB without FK CASCADE is handled too. Hard delete is
+        // intentional here: the admin UI warns it is permanent (no undo).
+        await client.query('BEGIN');
+        await client.query(`DELETE FROM daily_work_counts WHERE project_id = $1`, [projectId]);
+        await client.query(`DELETE FROM project_sets WHERE project_id = $1`, [projectId]);
+        await client.query(`DELETE FROM project_employees WHERE project_id = $1`, [projectId]);
+        const result = await client.query(
             `DELETE FROM projects WHERE id = $1 RETURNING id, name`,
             [projectId]
         );
+        await client.query('COMMIT');
+        client.release();
+
+        logAudit({
+            actorId: req.user.id, action: 'project.delete', entityType: 'project',
+            entityId: projectId, details: { name: result.rows[0].name, hard: true }, ip: req.ip
+        });
         res.json({ success: true, project: result.rows[0], message: 'Project deleted successfully' });
     } catch (error) {
-        console.error(`Error deleting project ${req.params.id}:`, error);
+        try { if (client) await client.query('ROLLBACK'); } catch (_) {}
+        if (client) client.release();
+        console.error(`Error deleting project ${projectId}:`, error);
         const r = pgErrorResponse(error);
         res.status(r.status).json({ success: false, message: r.message });
     }
@@ -293,6 +319,13 @@ router.post('/:projectId/employees', verifyToken, isAdmin, async (req, res) => {
             [req.params.projectId]
         );
     
+        logAudit({
+            actorId: req.user.id, action: 'project.assign', entityType: 'project',
+            entityId: req.params.projectId,
+            details: { employeeIds: Array.isArray(employeeIds) ? employeeIds.map(Number) : employeeIds },
+            ip: req.ip
+        });
+
         res.json({ 
             success: true, 
             assigned: results.filter(r => r.id),
@@ -319,7 +352,13 @@ router.delete('/:projectId/employees/:employeeId', verifyToken, isAdmin, async (
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Employee not assigned to project' });
         }
-    
+
+        logAudit({
+            actorId: req.user.id, action: 'project.unassign', entityType: 'project',
+            entityId: req.params.projectId,
+            details: { employeeId: Number(req.params.employeeId) }, ip: req.ip
+        });
+
         res.json({ 
             success: true, 
             message: 'Employee removed from project successfully' 

@@ -678,7 +678,9 @@ CREATE TABLE IF NOT EXISTS project_sets (
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     total_target INT NOT NULL DEFAULT 0,
+    working_days INT DEFAULT 0,
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'completed', 'paused')),
+    deleted_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );

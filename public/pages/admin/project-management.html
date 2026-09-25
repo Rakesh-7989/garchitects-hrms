@@ -114,9 +114,12 @@
                         <label>Status</label>
                         <select class="form-control" name="status">
                             <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                            <option value="paused">Paused</option>
                             <option value="on_hold">On Hold</option>
                             <option value="completed">Completed</option>
                             <option value="cancelled">Cancelled</option>
+                            <option value="terminated">Terminated</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -153,9 +156,12 @@
                         <label>Status</label>
                         <select class="form-control" name="status" id="editProjectStatus">
                             <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                            <option value="paused">Paused</option>
                             <option value="on_hold">On Hold</option>
                             <option value="completed">Completed</option>
                             <option value="cancelled">Cancelled</option>
+                            <option value="terminated">Terminated</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -230,6 +236,57 @@
         </div>
     </div>
 
+    <div class="modal" id="editSetModal">
+        <div class="modal-content" style="max-width:520px;">
+            <div class="modal-header">
+                <h2>Edit Set</h2>
+                <button onclick="closeModal('editSetModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="editSetForm" onsubmit="updateSet(event)">
+                    <input type="hidden" name="setId" id="editSetId">
+                    <input type="hidden" name="projectId" id="editSetProjectId">
+                    <div class="form-group">
+                        <label>Set Name *</label>
+                        <input type="text" class="form-control" name="name" required placeholder="Enter set name">
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Start Date *</label>
+                            <input type="date" class="form-control" name="start_date" required oninput="updateEditSetPreview()">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>End Date *</label>
+                            <input type="date" class="form-control" name="end_date" required oninput="updateEditSetPreview()">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Total Target *</label>
+                            <input type="number" class="form-control" name="total_target" min="0" placeholder="0" required oninput="updateEditSetPreview()">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Status</label>
+                            <select class="form-control" name="status">
+                                <option value="active">Active</option>
+                                <option value="paused">Paused</option>
+                                <option value="completed">Completed</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="editSetPreview" style="display:none;background:var(--primary-50);border:1px solid var(--primary-200, transparent);border-radius:var(--radius);padding:12px;margin-top:8px;">
+                        <div style="font-size:0.72rem;color:var(--text-tertiary);margin-bottom:8px;font-weight:600;">TARGET SPLIT (RECOMPUTED ON SAVE)</div>
+                        <div style="font-size:0.8rem;color:var(--text-secondary);" id="editSetPreviewText">-</div>
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('editSetModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="editSetBtn">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="modal" id="assignEmployeesModal">
         <div class="modal-content" style="max-width:520px;">
             <div class="modal-header">
@@ -280,6 +337,7 @@
 
     <script src="../../js/auth.js"></script>
     <script src="../../js/workWeek.js"></script>
+    <script src="../../js/project-math.js"></script>
     <script>
         async function apiCall(endpoint, method = 'GET', body = null) {
             const token = localStorage.getItem('token');
@@ -382,6 +440,7 @@
         function statusBadge(status) {
             const map = {
                 active: 'badge-success', on_hold: 'badge-warning', completed: 'badge-info', cancelled: 'badge-danger',
+                inactive: 'badge-secondary', paused: 'badge-warning', terminated: 'badge-danger',
                 planning: 'badge-secondary', 'in-progress': 'badge-primary'
             };
             const label = (status || 'active').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -440,20 +499,8 @@
                 console.error('loadProjects exception:', e);
                 data = null;
             }
-            const dbg = (() => {
-                if (!data) return 'Request failed (no response)';
-                if (!data.success) {
-                    return 'success=false message=' + (data.message || JSON.stringify(data));
-                }
-                const keys = Object.keys(data).join(',');
-                const n = Array.isArray(data.projects) ? data.projects.length
-                    : Array.isArray(data.data) ? data.data.length : -1;
-                const first = Array.isArray(data.projects) ? (data.projects[0] && JSON.stringify(data.projects[0])) : (Array.isArray(data.data) ? (data.data[0] && JSON.stringify(data.data[0])) : 'none');
-                return 'success=true keys=[' + keys + '] projects length=' + n + ' first=' + first;
-            })();
-            console.log('GET /projects response:', dbg);
             if (data && (!data.success || !Array.isArray(data.projects || data.data) || ((data.projects || data.data).length === 0))) {
-                grid.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-secondary);grid-column:1/-1;"><i class="fas fa-folder-open" style="font-size:2rem;margin-bottom:8px;display:block;"></i><p>No projects found</p><p style="font-size:0.7rem;margin-top:8px;background:var(--bg-light);padding:8px;border-radius:var(--radius);word-break:break-all;color:var(--text-tertiary);">${esc(dbg)}</p></div>`;
+                grid.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-secondary);grid-column:1/-1;"><i class="fas fa-folder-open" style="font-size:2rem;margin-bottom:8px;display:block;"></i><p>No projects found.</p><p style="font-size:0.85rem;">Create your first project to get started.</p></div>`;
                 return;
             }
             allProjects = (data.projects || data.data || []);
@@ -626,7 +673,6 @@
             const container = document.getElementById(`sets-content-${projectId}`);
             container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
             const data = await apiCall(`/project-sets/${projectId}`);
-            if (data) console.log(`GET /project-sets/${projectId} response:`, data.success, 'sets length=', Array.isArray(data.sets) ? data.sets.length : 'n/a', 'msg=', data.message || '');
             if (!data || !data.success) {
                 container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">No sets found.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
                 return;
@@ -659,6 +705,7 @@
                                     <span style="color:var(--text-tertiary);font-size:0.78rem;">${teamSize} employees</span>
                                     ${statusBadge && s.status ? statusBadge(s.status) : ''}
                                     <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toggleSetDetail(${s.id})" title="Details"><i class="fas fa-chevron-down" style="font-size:0.7rem;"></i></button>
+                                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();openEditSetModal(${s.id}, ${projectId})" title="Edit Set"><i class="fas fa-pencil-alt" style="font-size:0.7rem;"></i></button>
                                     <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteSet(${s.id}, ${projectId})" title="Delete"><i class="fas fa-trash" style="font-size:0.7rem;"></i></button>
                                 </div>
                             </div>
@@ -847,15 +894,38 @@
             openModal('createSetModal');
         }
 
+        // Holiday dates ('YYYY-MM-DD') loaded once so the set preview's
+        // working-days count matches the server's authoritative
+        // projectMath.workingDays (weekly off day + company holidays).
+        let holidayDates = [];
+
         function workingDaysBetween(startDate, endDate) {
+            if (window.projectMath) {
+                return window.projectMath.workingDaysBetween(startDate, endDate, holidayDates);
+            }
+            // Fallback: weekly off day only (pre-projectMath safety net).
             if (!startDate || !endDate || endDate < startDate) return 0;
+            let count = 0;
             const start = new Date(startDate + 'T00:00:00');
             const end = new Date(endDate + 'T00:00:00');
-            let count = 0;
             for (let cur = new Date(start); cur <= end; cur.setDate(cur.getDate() + 1)) {
                 if (window.workWeek ? !window.workWeek.isWeekOff(cur) : cur.getDay() !== 0) count++;
             }
             return count;
+        }
+
+        async function loadHolidays() {
+            try {
+                const d = await apiCall('/holidays');
+                const list = (d && (d.holidays || d.data)) || [];
+                if (Array.isArray(list)) {
+                    holidayDates = list
+                        .map(h => h && h.date ? String(h.date).slice(0, 10) : null)
+                        .filter(Boolean);
+                }
+            } catch (_) {
+                holidayDates = [];
+            }
         }
 
         function updateCreateSetPreview() {
@@ -913,6 +983,69 @@
                 }
             } else {
                 showToast(data?.message || 'Failed to create set', 'error');
+            }
+        }
+
+        // ===================== EDIT SET =====================
+        function openEditSetModal(setId, projectId) {
+            apiCall(`/project-sets/single/${setId}`).then(d => {
+                const s = d && d.success ? d.set : null;
+                if (!s) { showToast((d && d.message) || 'Could not load set', 'error'); return; }
+                document.getElementById('editSetId').value = s.id;
+                document.getElementById('editSetProjectId').value = s.project_id || projectId;
+                document.getElementById('editSetForm').name.value = s.name || '';
+                document.getElementById('editSetForm').start_date.value = String(s.start_date || '').slice(0, 10);
+                document.getElementById('editSetForm').end_date.value = String(s.end_date || '').slice(0, 10);
+                document.getElementById('editSetForm').total_target.value = s.total_target != null ? s.total_target : '';
+                const st = document.getElementById('editSetForm').status;
+                st.value = (s.status && ['active', 'paused', 'completed'].includes(s.status)) ? s.status : 'active';
+                updateEditSetPreview();
+                openModal('editSetModal');
+            });
+        }
+
+        function updateEditSetPreview() {
+            const form = document.getElementById('editSetForm');
+            const wd = workingDaysBetween(form.start_date.value, form.end_date.value);
+            const target = parseFloat(form.total_target.value) || 0;
+            document.getElementById('editSetPreviewText').textContent =
+                `Working days: ${wd} (weekly off + holidays). Total target: ${fmt(target)} files. ` +
+                `The per-employee split is recomputed on save when dates or target change.`;
+            document.getElementById('editSetPreview').style.display = 'block';
+        }
+
+        async function updateSet(e) {
+            e.preventDefault();
+            const form = e.target;
+            const setId = form.setId.value;
+            const projectId = form.projectId.value;
+            const startDate = form.start_date.value;
+            const endDate = form.end_date.value;
+            const targetValue = form.total_target.value;
+            if (!form.name.value.trim()) { showToast('Set name is required', 'warning'); return; }
+            if (!startDate || !endDate) { showToast('Start date and end date are required', 'warning'); return; }
+            if (endDate < startDate) { showToast('End date must be on or after the start date', 'warning'); return; }
+            if (targetValue === '' || Number(targetValue) < 0) { showToast('Total target is required (0 or more)', 'warning'); return; }
+            const btn = document.getElementById('editSetBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            const body = {
+                name: form.name.value.trim(),
+                start_date: startDate,
+                end_date: endDate,
+                total_target: Number(targetValue),
+                status: form.status.value
+            };
+            const data = await apiCall(`/project-sets/${setId}`, 'PUT', body);
+            btn.disabled = false;
+            btn.textContent = 'Save Changes';
+            if (data && data.success) {
+                showToast('Set updated successfully');
+                closeModal('editSetModal');
+                await refreshProjectCount(projectId);
+                await loadSets(projectId);
+            } else {
+                showToast(data?.message || 'Failed to update set', 'error');
             }
         }
 
@@ -1152,6 +1285,7 @@
                     photoEl.innerHTML = `<div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--primary);color:white;font-size:0.8rem;font-weight:600;">${(user.first_name || user.last_name || 'U')[0].toUpperCase()}</div>`;
                 }
             }
+            loadHolidays();
             loadProjects();
         });
     </script>

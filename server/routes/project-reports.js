@@ -2,8 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
-const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { runWithSchemaRepair, hasColumn } = require('../utils/schemaRepair');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
+const projectMath = require('../utils/projectMath');
 
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
 
@@ -47,13 +48,16 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         const filterEmployeeId = (employeeId && employeeId !== 'all') ? parseInt(employeeId) : null;
 
         // Simple query: get projects that have active sets and assigned employees
-        // Use COALESCE for client/customer backward compat
-        // Exclude soft-deleted sets (where deleted_at IS NULL is NOT set)
+        // Use COALESCE for client/customer backward compat.
+        // Soft-delete column is gated so legacy DBs without deleted_at still work.
+        const hasSetDeletedAt = await hasColumn('project_sets', 'deleted_at');
+        const setDeletedFilter = hasSetDeletedAt ? 'AND ps.deleted_at IS NULL' : '';
+
         const projectsResult = await q(`
             SELECT DISTINCT p.id, p.name, COALESCE(p.client, p.customer) as client, p.status
             FROM projects p
             INNER JOIN project_employees pe ON p.id = pe.project_id
-            INNER JOIN project_sets ps ON ps.project_id = p.id AND ps.status = 'active' AND ps.deleted_at IS NULL
+            INNER JOIN project_sets ps ON ps.project_id = p.id AND ps.status = 'active' ${setDeletedFilter}
             WHERE p.status = 'active'
             ORDER BY p.name
         `, []);
@@ -65,7 +69,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
             const setsResult = await q(`
                 SELECT ps.id, ps.name, ps.total_target, ps.working_days, ps.start_date, ps.end_date
                 FROM project_sets ps
-                WHERE ps.project_id = $1 AND ps.status = 'active' AND ps.deleted_at IS NULL
+                WHERE ps.project_id = $1 AND ps.status = 'active' ${setDeletedFilter}
                 ORDER BY ps.name
             `, [project.id]);
 
@@ -83,9 +87,10 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
 
                 const employees = empResult.rows;
                 const empCount = employees.length || 1;
-                const workingDays = set.working_days || 1;
-                const targetPerEmployee = Math.ceil(set.total_target / empCount);
-                const dailyTargetPerEmployee = Math.ceil(set.total_target / empCount / workingDays);
+                // Single source of truth for target splits (exact division - see
+                // projectMath). Daily per-head target = per-head share / working days.
+                const targetPerEmployee = projectMath.perEmployeeTarget(set.total_target, empCount);
+                const dailyTargetPerEmployee = projectMath.dailyPerEmployeeTarget(set.total_target, empCount, set.working_days);
 
                 const employeeData = [];
 
@@ -122,7 +127,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
                         employee: emp,
                         actualCounts,
                         totalActual,
-                        achievement: parseFloat(achievement.toFixed(1)),
+                        achievement: projectMath.achievementPercent(totalActual, targetPerEmployee),
                         status: achievement >= 100 ? 'ACHIEVED' : 'BELOW'
                     });
                 }
@@ -139,7 +144,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
                     employees: employeeData,
                     setTotalActual,
                     setTotalTarget: set.total_target,
-                    setOverallAchievement: set.total_target > 0 ? parseFloat((setTotalActual / set.total_target * 100).toFixed(1)) : 0
+                    setOverallAchievement: projectMath.achievementPercent(setTotalActual, set.total_target)
                 });
             }
 
@@ -151,7 +156,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
                 sets: projectSets,
                 projectTotalActual,
                 projectTotalTarget,
-                projectOverallAchievement: projectTotalTarget > 0 ? parseFloat((projectTotalActual / projectTotalTarget * 100).toFixed(1)) : 0
+                projectOverallAchievement: projectMath.achievementPercent(projectTotalActual, projectTotalTarget)
             });
         }
 
@@ -166,7 +171,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
             grandTotal: {
                 totalActual: grandTotalActual,
                 totalTarget: grandTotalTarget,
-                overallAchievement: grandTotalTarget > 0 ? parseFloat((grandTotalActual / grandTotalTarget * 100).toFixed(1)) : 0
+                overallAchievement: projectMath.achievementPercent(grandTotalActual, grandTotalTarget)
             }
         });
     } catch (error) {
@@ -256,11 +261,13 @@ router.get('/all-employees', verifyToken, isAdmin, async (req, res) => {
  */
 router.get('/all-sets', verifyToken, isAdmin, async (req, res) => {
     try {
+        const hasSetDeletedAt = await hasColumn('project_sets', 'deleted_at');
+        const setDeletedFilter = hasSetDeletedAt ? 'AND ps.deleted_at IS NULL' : '';
         const result = await q(
             `SELECT ps.id, ps.name, ps.project_id, p.name as project_name
              FROM project_sets ps
              INNER JOIN projects p ON p.id = ps.project_id
-             WHERE ps.status = 'active' AND ps.deleted_at IS NULL AND p.status = 'active'
+             WHERE ps.status = 'active' ${setDeletedFilter} AND p.status = 'active'
              ORDER BY p.name, ps.name`
         );
         res.json({ success: true, sets: result.rows });
@@ -359,18 +366,25 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
         }
 
         const rows = [];
-        const projectsResult = await q(`SELECT DISTINCT p.id, p.name, COALESCE(p.client, p.customer) as client FROM projects p INNER JOIN project_employees pe ON p.id = pe.project_id INNER JOIN project_sets ps ON ps.project_id = p.id AND ps.status = 'active' WHERE p.status = 'active' ORDER BY p.name`);
+        const projectsResult = await q(`SELECT DISTINCT p.id, p.name, COALESCE(p.client, p.customer) as client
+            FROM projects p
+            INNER JOIN project_employees pe ON p.id = pe.project_id
+            INNER JOIN project_sets ps ON ps.project_id = p.id AND ps.status = 'active'
+            WHERE p.status = 'active' ORDER BY p.name`);
+
+        const hasSetDeletedAt = await hasColumn('project_sets', 'deleted_at');
+        const setDeletedFilter = hasSetDeletedAt ? 'AND ps.deleted_at IS NULL' : '';
 
         for (const project of projectsResult.rows) {
             if (filterProjectId && project.id !== filterProjectId) continue;
-            const setsResult = await q(`SELECT ps.id, ps.name, ps.total_target, ps.working_days FROM project_sets ps WHERE ps.project_id = $1 AND ps.status = 'active' AND ps.deleted_at IS NULL ORDER BY ps.name`, [project.id]);
+            const setsResult = await q(`SELECT ps.id, ps.name, ps.total_target, ps.working_days
+                FROM project_sets ps WHERE ps.project_id = $1 AND ps.status = 'active' ${setDeletedFilter} ORDER BY ps.name`, [project.id]);
             for (const set of setsResult.rows) {
                 if (filterSetId && set.id !== filterSetId) continue;
                 const empResult = await q(`SELECT e.id, e.first_name, e.last_name FROM project_employees pe INNER JOIN employees e ON pe.employee_id = e.id WHERE pe.project_id = $1 AND e.role != 'admin' ORDER BY e.first_name`, [project.id]);
                 const empCount = empResult.rows.length || 1;
-                const workingDays = set.working_days || 1;
-                const targetPerEmployee = Math.ceil(set.total_target / empCount);
-                const dailyTarget = Math.ceil(set.total_target / empCount / workingDays);
+                const targetPerEmployee = projectMath.perEmployeeTarget(set.total_target, empCount);
+                const dailyTarget = projectMath.dailyPerEmployeeTarget(set.total_target, empCount, set.working_days);
 
                 for (const emp of empResult.rows) {
                     if (filterEmployeeId && emp.id !== filterEmployeeId) continue;
@@ -390,7 +404,7 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
                         });
                         row.totalActual = totalActual;
                     }
-                    row.achievement = targetPerEmployee > 0 ? totalActual / targetPerEmployee * 100 : 0;
+                    row.achievement = projectMath.achievementPercent(totalActual, targetPerEmployee);
                     row.status = row.achievement >= 100 ? 'ACHIEVED' : 'BELOW';
                     rows.push(row);
                 }
