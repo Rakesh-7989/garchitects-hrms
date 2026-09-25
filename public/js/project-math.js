@@ -28,6 +28,19 @@
         return Math.round((a / t) * 1000) / 10;
     }
 
+    // RA-bill retention (mirrors server projectMath - money to 2 decimals).
+    function retentionAmount(grossValue, retentionPct) {
+        const g = Number(grossValue) || 0;
+        const p = Number(retentionPct) || 0;
+        if (g <= 0 || p <= 0) return 0;
+        return Math.round(g * Math.min(p, 100) / 100 * 100) / 100;
+    }
+
+    function netValue(grossValue, retentionPct) {
+        const g = Number(grossValue) || 0;
+        return Math.round((g - retentionAmount(g, retentionPct)) * 100) / 100;
+    }
+
     // Working days in [startDate, endDate] (inclusive) excluding the configured
     // weekly off day and any optional holiday dates. On the server this also
     // reads company holidays from the DB; callers that already fetched /holidays
@@ -47,5 +60,5 @@
         return count;
     }
 
-    window.projectMath = { perEmployeeTarget, dailyPerEmployeeTarget, achievementPercent, workingDaysBetween };
+    window.projectMath = { perEmployeeTarget, dailyPerEmployeeTarget, achievementPercent, retentionAmount, netValue, workingDaysBetween };
 })();

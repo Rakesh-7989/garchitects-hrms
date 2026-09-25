@@ -9,7 +9,54 @@ const { logAudit } = require('../utils/audit');
 // module tables, the first 42P01 error creates them and the request retries.
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
 
+// Statuses accepted by the projects.status CHECK constraint (7 lifecycle states).
 const ALLOWED_STATUSES = ['active', 'inactive', 'on_hold', 'completed', 'cancelled', 'paused', 'terminated'];
+// Project classification + build phase (RIBA/Indian construction pipeline).
+const PROJECT_TYPES = ['residential', 'commercial', 'institutional', 'industrial', 'infrastructure', 'interior', 'landscape', 'other'];
+const PROJECT_PHASES = ['planning', 'preconstruction', 'construction', 'snagging', 'closeout'];
+
+// Guard the Phase 1 lifecycle fields shared by POST and PUT.
+// Returns { ok:true, values } or { ok:false, status, message }.
+function parseLifecycle(body) {
+    const values = {
+        start_date: null, end_date: null, contract_value: null,
+        location: null, project_type: null, phase: null
+    };
+    const has = (k) => body[k] !== undefined && body[k] !== null && String(body[k]) !== '';
+
+    if (has('start_date')) values.start_date = String(body.start_date).slice(0, 10);
+    if (has('end_date')) values.end_date = String(body.end_date).slice(0, 10);
+    if (values.start_date && values.end_date && values.end_date < values.start_date) {
+        return { ok: false, status: 400, message: 'End date must be on or after the start date' };
+    }
+    if (has('contract_value')) {
+        const cv = Number(body.contract_value);
+        if (!Number.isFinite(cv) || cv < 0) {
+            return { ok: false, status: 400, message: 'Contract value must be 0 or more' };
+        }
+        values.contract_value = cv;
+    }
+    if (has('location')) values.location = String(body.location).trim();
+    if (has('project_type')) {
+        if (!PROJECT_TYPES.includes(body.project_type)) {
+            return { ok: false, status: 400, message: `Invalid project type. Allowed: ${PROJECT_TYPES.join(', ')}` };
+        }
+        values.project_type = body.project_type;
+    }
+    if (has('phase')) {
+        if (!PROJECT_PHASES.includes(body.phase)) {
+            return { ok: false, status: 400, message: `Invalid phase. Allowed: ${PROJECT_PHASES.join(', ')}` };
+        }
+        values.phase = body.phase;
+    }
+    return { ok: true, values };
+}
+
+// Columns every project list/detail query returns (kept in sync so the UI
+// always sees the same shape).
+const PROJECT_SELECT_COLS = `p.id, p.name, COALESCE(p.client, p.customer) as client, p.description, p.status,
+    p.start_date, p.end_date, p.contract_value, p.location, p.project_type, p.phase,
+    p.created_at, p.updated_at`;
 
 /**
  * GET /api/projects/my
@@ -18,7 +65,7 @@ const ALLOWED_STATUSES = ['active', 'inactive', 'on_hold', 'completed', 'cancell
 router.get('/my', verifyToken, async (req, res) => {
     try {
         const result = await q(
-            `SELECT p.id, p.name, COALESCE(p.client, p.customer) as client, p.description, p.status, p.created_at
+            `SELECT ${PROJECT_SELECT_COLS}
              FROM projects p
              JOIN project_employees pe ON p.id = pe.project_id
              WHERE pe.employee_id = $1 AND p.status = 'active'
@@ -71,7 +118,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
     try {
         const hasDeletedAt = await hasColumn('project_sets', 'deleted_at');
         const result = await q(
-            `SELECT p.id, p.name, COALESCE(p.client, p.customer) as client, p.description, p.status, p.created_at,
+            `SELECT ${PROJECT_SELECT_COLS},
              (SELECT COUNT(*) FROM project_sets s WHERE s.project_id = p.id ${hasDeletedAt ? 'AND s.deleted_at IS NULL' : ''}) as sets_count,
              (SELECT COUNT(*) FROM project_employees pe WHERE pe.project_id = p.id) as employees_count
              FROM projects p
@@ -125,19 +172,29 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Project name is required' });
         }
         const finalStatus = ALLOWED_STATUSES.includes(status) ? status : 'active';
+        const lc = parseLifecycle(req.body);
+        if (!lc.ok) {
+            return res.status(lc.status).json({ success: false, message: lc.message });
+        }
+        const v = lc.values;
 
         const result = await q(
-            `INSERT INTO projects (name, client, description, status) 
-             VALUES ($1, $2, $3, $4) 
-             RETURNING id, name, client, description, status, created_at`,
-            [name, client || null, description || null, finalStatus]
+            `INSERT INTO projects (name, client, description, status,
+                start_date, end_date, contract_value, location, project_type, phase)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             RETURNING id, name, client, description, status,
+                start_date, end_date, contract_value, location, project_type, phase, created_at`,
+            [name, client || null, description || null, finalStatus,
+             v.start_date, v.end_date,
+             v.contract_value != null ? v.contract_value : 0,
+             v.location, v.project_type || 'other', v.phase || 'planning']
         );
         const created = result.rows[0];
         created.employees_count = 0;
         created.sets_count = 0;
         logAudit({
             actorId: req.user.id, action: 'project.create', entityType: 'project',
-            entityId: created.id, details: { name: created.name, client: created.client || null, status: created.status },
+            entityId: created.id, details: { name: created.name, client: created.client || null, status: created.status, phase: v.phase },
             ip: req.ip
         });
         res.json({ success: true, project: created });
@@ -155,7 +212,8 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
 router.get('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         const result = await q(
-            `SELECT id, name, COALESCE(client, customer) as client, description, status, created_at, updated_at 
+            `SELECT id, name, COALESCE(client, customer) as client, description, status,
+                start_date, end_date, contract_value, location, project_type, phase, created_at, updated_at
              FROM projects WHERE id = $1`,
             [req.params.id]
         );
@@ -186,19 +244,33 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
         if (hasStatus && !finalStatus) {
             return res.status(400).json({ success: false, message: `Invalid status. Allowed: ${ALLOWED_STATUSES.join(', ')}` });
         }
+        const lc = parseLifecycle(req.body);
+        if (!lc.ok) {
+            return res.status(lc.status).json({ success: false, message: lc.message });
+        }
+        const v = lc.values;
 
         const result = await q(
-            `UPDATE projects SET name = $1, client = $2, description = $3, status = COALESCE($4::varchar, status), updated_at = NOW() 
-             WHERE id = $5 
-             RETURNING id, name, client, description, status, created_at, updated_at`,
-            [trimmedName, client || null, description || null, finalStatus, req.params.id]
+            `UPDATE projects SET name = $1, client = $2, description = $3, status = COALESCE($4::varchar, status),
+                start_date = COALESCE($5::date, start_date),
+                end_date = COALESCE($6::date, end_date),
+                contract_value = COALESCE($7::numeric, contract_value),
+                location = COALESCE($8, location),
+                project_type = COALESCE($9, project_type),
+                phase = COALESCE($10, phase),
+                updated_at = NOW()
+             WHERE id = $11
+             RETURNING id, name, client, description, status,
+                start_date, end_date, contract_value, location, project_type, phase, created_at, updated_at`,
+            [trimmedName, client || null, description || null, finalStatus,
+             v.start_date, v.end_date, v.contract_value, v.location, v.project_type, v.phase, req.params.id]
         );
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Project not found' });
         }
         logAudit({
             actorId: req.user.id, action: 'project.update', entityType: 'project',
-            entityId: req.params.id, details: { name: trimmedName, client: client || null, statusChange: hasStatus ? { to: finalStatus } : null },
+            entityId: req.params.id, details: { name: trimmedName, client: client || null, statusChange: hasStatus ? { to: finalStatus } : null, phase: v.phase },
             ip: req.ip
         });
         res.json({ success: true, project: result.rows[0] });
@@ -230,6 +302,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
         await client.query('BEGIN');
         await client.query(`DELETE FROM daily_work_counts WHERE project_id = $1`, [projectId]);
         await client.query(`DELETE FROM project_sets WHERE project_id = $1`, [projectId]);
+        await client.query(`DELETE FROM project_invoices WHERE project_id = $1`, [projectId]);
         await client.query(`DELETE FROM project_employees WHERE project_id = $1`, [projectId]);
         const result = await client.query(
             `DELETE FROM projects WHERE id = $1 RETURNING id, name`,

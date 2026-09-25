@@ -122,6 +122,51 @@
                             <option value="terminated">Terminated</option>
                         </select>
                     </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Start Date</label>
+                            <input type="date" class="form-control" name="start_date">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>End Date</label>
+                            <input type="date" class="form-control" name="end_date">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Contract Value (₹)</label>
+                            <input type="number" class="form-control" name="contract_value" min="0" step="0.01" placeholder="0">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Location</label>
+                            <input type="text" class="form-control" name="location" placeholder="City / site address">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Project Type</label>
+                            <select class="form-control" name="project_type">
+                                <option value="residential">Residential</option>
+                                <option value="commercial">Commercial</option>
+                                <option value="institutional">Institutional</option>
+                                <option value="industrial">Industrial</option>
+                                <option value="infrastructure">Infrastructure</option>
+                                <option value="interior">Interior</option>
+                                <option value="landscape">Landscape</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Phase</label>
+                            <select class="form-control" name="phase">
+                                <option value="planning">Planning</option>
+                                <option value="preconstruction">Preconstruction</option>
+                                <option value="construction">Construction</option>
+                                <option value="snagging">Snagging</option>
+                                <option value="closeout">Closeout</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="form-group">
                         <label>Description</label>
                         <textarea class="form-control" name="description" rows="3" placeholder="Optional description"></textarea>
@@ -163,6 +208,51 @@
                             <option value="cancelled">Cancelled</option>
                             <option value="terminated">Terminated</option>
                         </select>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Start Date</label>
+                            <input type="date" class="form-control" name="start_date" id="editProjectStartDate">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>End Date</label>
+                            <input type="date" class="form-control" name="end_date" id="editProjectEndDate">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Contract Value (₹)</label>
+                            <input type="number" class="form-control" name="contract_value" id="editProjectContractValue" min="0" step="0.01" placeholder="0">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Location</label>
+                            <input type="text" class="form-control" name="location" id="editProjectLocation" placeholder="City / site address">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Project Type</label>
+                            <select class="form-control" name="project_type" id="editProjectType">
+                                <option value="residential">Residential</option>
+                                <option value="commercial">Commercial</option>
+                                <option value="institutional">Institutional</option>
+                                <option value="industrial">Industrial</option>
+                                <option value="infrastructure">Infrastructure</option>
+                                <option value="interior">Interior</option>
+                                <option value="landscape">Landscape</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Phase</label>
+                            <select class="form-control" name="phase" id="editProjectPhase">
+                                <option value="planning">Planning</option>
+                                <option value="preconstruction">Preconstruction</option>
+                                <option value="construction">Construction</option>
+                                <option value="snagging">Snagging</option>
+                                <option value="closeout">Closeout</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Description</label>
@@ -281,6 +371,83 @@
                     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
                         <button type="button" class="btn btn-secondary" onclick="closeModal('editSetModal')">Cancel</button>
                         <button type="submit" class="btn btn-primary" id="editSetBtn">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="createInvoiceModal">
+        <div class="modal-content" style="max-width:520px;">
+            <div class="modal-header">
+                <h2>RA Bill</h2>
+                <button onclick="closeModal('createInvoiceModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="createInvoiceForm" onsubmit="saveInvoice(event)">
+                    <input type="hidden" id="invoiceEditId">
+                    <input type="hidden" id="invoiceProjectId">
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Bill No</label>
+                            <input type="text" class="form-control" id="invoiceBillNo" disabled style="background:var(--bg-light);">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Retention %</label>
+                            <input type="number" class="form-control" name="retention_pct" id="invoiceRetentionPct" min="0" max="100" step="0.01" value="7.5" oninput="updateInvoicePreview()">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Period Start</label>
+                            <input type="date" class="form-control" name="period_start" oninput="updateInvoicePreview()">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Period End</label>
+                            <input type="date" class="form-control" name="period_end" oninput="updateInvoicePreview()">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Gross Value (₹) *</label>
+                            <input type="number" class="form-control" name="gross_value" min="0.01" step="0.01" required placeholder="0.00" oninput="updateInvoicePreview()">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Remarks</label>
+                            <input type="text" class="form-control" name="remarks" placeholder="e.g. RA-01 civil works">
+                        </div>
+                    </div>
+                    <div id="invoicePreviewPanel" style="display:none;background:var(--primary-50, #eff6ff);border:1px solid var(--primary-200, #bfdbfe);border-radius:var(--radius, 8px);padding:12px;margin-top:8px;">
+                        <div style="font-size:0.72rem;color:var(--text-tertiary);margin-bottom:8px;font-weight:600;">RETENTION PREVIEW (SAME RULE AS SERVER)</div>
+                        <div style="font-size:0.85rem;color:var(--text-secondary);" id="invoicePreviewText">-</div>
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('createInvoiceModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="createInvoiceBtn">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="payInvoiceModal">
+        <div class="modal-content" style="max-width:420px;">
+            <div class="modal-header">
+                <h2>Record Payment</h2>
+                <button onclick="closeModal('payInvoiceModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="payInvoiceMeta" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.6;"></div>
+                <form id="payInvoiceForm" onsubmit="payInvoiceSubmit(event)">
+                    <input type="hidden" id="payInvoiceId">
+                    <input type="hidden" id="payInvoiceProjectId">
+                    <div class="form-group">
+                        <label>Payment Amount (₹) *</label>
+                        <input type="number" class="form-control" id="payInvoiceAmount" min="0.01" step="0.01" required>
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('payInvoiceModal')">Cancel</button>
+                        <button type="submit" class="btn btn-success" id="payInvoiceBtn">Record Payment</button>
                     </div>
                 </form>
             </div>
@@ -441,7 +608,9 @@
             const map = {
                 active: 'badge-success', on_hold: 'badge-warning', completed: 'badge-info', cancelled: 'badge-danger',
                 inactive: 'badge-secondary', paused: 'badge-warning', terminated: 'badge-danger',
-                planning: 'badge-secondary', 'in-progress': 'badge-primary'
+                planning: 'badge-secondary', 'in-progress': 'badge-primary',
+                preconstruction: 'badge-primary', construction: 'badge-success', snagging: 'badge-warning', closeout: 'badge-info',
+                draft: 'badge-secondary', submitted: 'badge-primary', approved: 'badge-warning', paid: 'badge-success'
             };
             const label = (status || 'active').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
             return `<span class="badge ${map[status] || 'badge-secondary'}">${label}</span>`;
@@ -539,6 +708,10 @@
                             const s = document.getElementById(`expand-sets-${p.id}`);
                             if (s) { s.style.display = 'block'; loadSets(p.id); }
                         }
+                        if (expandedSections[`${p.id}-invoices`]) {
+                            const inv = document.getElementById(`expand-invoices-${p.id}`);
+                            if (inv) { inv.style.display = 'block'; loadInvoices(p.id); }
+                        }
                         if (expandedSections[`${p.id}-employees`]) {
                             const e = document.getElementById(`expand-employees-${p.id}`);
                             if (e) { e.style.display = 'block'; loadEmployeesForProject(p.id); }
@@ -552,6 +725,9 @@
         }
 
         function projectCard(p) {
+            const typeLabel = (p.project_type || 'other').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            const startDate = p.start_date ? String(p.start_date).slice(0, 10) : null;
+            const endDate = p.end_date ? String(p.end_date).slice(0, 10) : null;
             return `
                 <div class="card" style="padding:0;overflow:hidden;" id="project-card-${p.id}">
                     <div style="padding:20px;">
@@ -565,8 +741,26 @@
                                 <button class="btn btn-danger btn-sm" onclick="deleteProject(${p.id})" title="Delete"><i class="fas fa-trash"></i></button>
                             </div>
                         </div>
-                        <div style="margin-bottom:12px;">${statusBadge(p.status)}</div>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+                            ${statusBadge(p.status)}
+                            ${p.phase ? statusBadge(p.phase) : ''}
+                            <span class="badge badge-secondary">${typeLabel}</span>
+                        </div>
                         ${p.description ? `<p style="color:var(--text-secondary);font-size:0.82rem;margin-bottom:12px;line-height:1.5;">${esc(p.description)}</p>` : ''}
+                        <div style="display:flex;gap:18px;margin-bottom:12px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-secondary);">
+                            ${Number(p.contract_value) > 0 ? `<span style="display:inline-flex;align-items:center;gap:7px;">
+                                <i class="fas fa-file-invoice-dollar" style="color:var(--primary);width:16px;text-align:center;"></i>
+                                <strong style="color:var(--text-primary);">${fmtMoney(p.contract_value)}</strong> Contract
+                            </span>` : ''}
+                            ${startDate ? `<span style="display:inline-flex;align-items:center;gap:7px;">
+                                <i class="fas fa-calendar" style="color:var(--primary);width:16px;text-align:center;"></i>
+                                ${startDate}${endDate ? ` → ${endDate}` : ''}
+                            </span>` : ''}
+                            ${p.location ? `<span style="display:inline-flex;align-items:center;gap:7px;">
+                                <i class="fas fa-map-marker-alt" style="color:var(--primary);width:16px;text-align:center;"></i>
+                                ${esc(p.location)}
+                            </span>` : ''}
+                        </div>
                         <div style="display:flex;gap:18px;margin-bottom:14px;flex-wrap:wrap;">
                             <span style="display:inline-flex;align-items:center;gap:7px;font-size:0.9rem;color:var(--text-secondary);">
                                 <i class="fas fa-users" style="color:var(--primary);width:16px;text-align:center;"></i>
@@ -580,6 +774,9 @@
                         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'sets')">
                                 <i class="fas fa-layer-group"></i> Sets
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'invoices')">
+                                <i class="fas fa-file-invoice-dollar"></i> RA Bills
                             </button>
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'employees')">
                                 <i class="fas fa-users"></i> Employees
@@ -595,11 +792,19 @@
                     <div id="expand-sets-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="sets-content-${p.id}"></div>
                     </div>
+                    <div id="expand-invoices-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
+                        <div id="invoices-content-${p.id}"></div>
+                    </div>
                     <div id="expand-employees-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="employees-content-${p.id}"></div>
                     </div>
                 </div>
             `;
+        }
+
+        function fmtMoney(n) {
+            const v = Number(n) || 0;
+            return '₹' + v.toLocaleString('en-IN', { maximumFractionDigits: 2 });
         }
 
         function countOf(v) {
@@ -666,6 +871,7 @@
             section.style.display = 'block';
             expandedSections[key] = true;
             if (type === 'sets') await loadSets(projectId);
+            else if (type === 'invoices') await loadInvoices(projectId);
             else await loadEmployeesForProject(projectId);
         }
 
@@ -818,6 +1024,12 @@
                 name: form.name.value.trim(),
                 client: form.client.value.trim(),
                 status: form.status.value,
+                start_date: form.start_date.value || null,
+                end_date: form.end_date.value || null,
+                contract_value: form.contract_value.value === '' ? null : Number(form.contract_value.value),
+                location: form.location.value.trim() || null,
+                project_type: form.project_type.value,
+                phase: form.phase.value,
                 description: form.description.value.trim()
             };
             const data = await apiCall('/projects', 'POST', body);
@@ -842,6 +1054,12 @@
             document.getElementById('editProjectName').value = project.name || '';
             document.getElementById('editProjectClient').value = project.client || '';
             document.getElementById('editProjectStatus').value = project.status || 'active';
+            document.getElementById('editProjectStartDate').value = project.start_date ? String(project.start_date).slice(0, 10) : '';
+            document.getElementById('editProjectEndDate').value = project.end_date ? String(project.end_date).slice(0, 10) : '';
+            document.getElementById('editProjectContractValue').value = project.contract_value != null ? project.contract_value : '';
+            document.getElementById('editProjectLocation').value = project.location || '';
+            document.getElementById('editProjectType').value = project.project_type || 'other';
+            document.getElementById('editProjectPhase').value = project.phase || 'planning';
             document.getElementById('editProjectDescription').value = project.description || '';
             openModal('editProjectModal');
         }
@@ -857,6 +1075,12 @@
                 name: form.name.value.trim(),
                 client: form.client.value.trim(),
                 status: form.status.value,
+                start_date: form.start_date.value || null,
+                end_date: form.end_date.value || null,
+                contract_value: form.contract_value.value === '' ? null : Number(form.contract_value.value),
+                location: form.location.value.trim() || null,
+                project_type: form.project_type.value,
+                phase: form.phase.value,
                 description: form.description.value.trim()
             };
             const data = await apiCall(`/projects/${id}`, 'PUT', body);
@@ -1256,6 +1480,269 @@
                 }
             } else {
                 showToast(data?.message || 'Failed to assign employees', 'error');
+            }
+        }
+
+        // ===================== RA BILLS (INVOICES) =====================
+        async function loadInvoices(projectId) {
+            const container = document.getElementById(`invoices-content-${projectId}`);
+            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
+            const data = await apiCall(`/project-invoices/${projectId}`);
+            if (!data || !data.success) {
+                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load RA bills.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
+                return;
+            }
+            const invoices = data.invoices || [];
+            const summary = data.summary || {};
+            const s = summary.by_status || {};
+            const header = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                    <h4 style="font-size:0.9rem;font-weight:600;">RA Bills Register (${invoices.length})</h4>
+                    <button class="btn btn-primary btn-sm" onclick="openCreateInvoiceModal(${projectId})">
+                        <i class="fas fa-plus"></i> Add RA Bill
+                    </button>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:0.82rem;color:var(--text-secondary);">
+                    <span class="badge badge-secondary">Draft ${s.draft || 0}</span>
+                    <span class="badge badge-primary">Submitted ${s.submitted || 0}</span>
+                    <span class="badge badge-warning">Approved ${s.approved || 0}</span>
+                    <span class="badge badge-success">Paid ${s.paid || 0}</span>
+                    <span style="margin-left:auto;display:inline-flex;gap:14px;flex-wrap:wrap;">
+                        <span>Billed: <strong style="color:var(--text-primary);">${fmtMoney(summary.total_gross)}</strong></span>
+                        <span>Retention held: <strong style="color:var(--text-danger, #dc3545);">${fmtMoney(summary.total_retention)}</strong></span>
+                        <span>Received: <strong style="color:var(--text-success, #28a745);">${fmtMoney(summary.total_received)}</strong></span>
+                    </span>
+                </div>`;
+            if (!invoices.length) {
+                container.innerHTML = header + '<p style="color:var(--text-secondary);font-size:0.85rem;">No RA bills yet. Add the first bill to start the register (bill numbers are auto-assigned RA-01, RA-02...).</p>';
+                return;
+            }
+            container.innerHTML = header + `
+                <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.84rem;min-width:820px;">
+                        <thead>
+                            <tr style="text-align:left;border-bottom:2px solid var(--border);">
+                                <th style="padding:8px 6px;">Bill No</th>
+                                <th style="padding:8px 6px;">Period</th>
+                                <th style="padding:8px 6px;text-align:right;">Gross (₹)</th>
+                                <th style="padding:8px 6px;text-align:right;">Retention</th>
+                                <th style="padding:8px 6px;text-align:right;">Net (₹)</th>
+                                <th style="padding:8px 6px;text-align:right;">Received (₹)</th>
+                                <th style="padding:8px 6px;">Status</th>
+                                <th style="padding:8px 6px;text-align:right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${invoices.map(inv => invoiceRow(inv)).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+        }
+
+        function invoiceRow(inv) {
+            const period = (inv.period_start ? String(inv.period_start).slice(0, 10) : '—') + ' → ' + (inv.period_end ? String(inv.period_end).slice(0, 10) : '—');
+            const rm = inv.remarks ? `<div style="font-size:0.75rem;color:var(--text-tertiary);max-width:220px;white-space:normal;">${esc(inv.remarks)}</div>` : '';
+            let actions = '';
+            const iconStyle = 'font-size:0.72rem;';
+            if (inv.status === 'draft') {
+                actions = `
+                    <button class="btn btn-primary btn-sm" onclick="submitInvoice(${inv.project_id}, ${inv.id})" title="Submit for certification"><i class="fas fa-paper-plane" style="${iconStyle}"></i></button>
+                    <button class="btn btn-secondary btn-sm" onclick="openEditInvoiceModal(${inv.project_id}, ${inv.id})" title="Edit draft"><i class="fas fa-pen" style="${iconStyle}"></i></button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteInvoice(${inv.project_id}, ${inv.id})" title="Delete"><i class="fas fa-trash" style="${iconStyle}"></i></button>`;
+            } else if (inv.status === 'submitted') {
+                actions = `
+                    <button class="btn btn-primary btn-sm" onclick="approveInvoice(${inv.project_id}, ${inv.id})" title="Approve / certify bill"><i class="fas fa-check" style="${iconStyle}"></i></button>
+                    <button class="btn btn-secondary btn-sm" onclick="rejectInvoice(${inv.project_id}, ${inv.id})" title="Reject back to draft"><i class="fas fa-undo" style="${iconStyle}"></i></button>`;
+            } else if (inv.status === 'approved') {
+                actions = `
+                    <button class="btn btn-success btn-sm" onclick="payInvoice(${inv.project_id}, ${inv.id})" title="Record payment"><i class="fas fa-rupee-sign" style="${iconStyle}"></i></button>`;
+            }
+            return `
+                <tr style="border-bottom:1px solid var(--border);">
+                    <td style="padding:8px 6px;font-weight:600;white-space:nowrap;">${esc(inv.invoice_no)}${rm}</td>
+                    <td style="padding:8px 6px;white-space:nowrap;">${period}</td>
+                    <td style="padding:8px 6px;text-align:right;">${fmtMoney(inv.gross_value)}</td>
+                    <td style="padding:8px 6px;text-align:right;">${Number(inv.retention_pct)}% · ${fmtMoney(inv.retention_amount)}</td>
+                    <td style="padding:8px 6px;text-align:right;font-weight:600;">${fmtMoney(inv.net_value)}</td>
+                    <td style="padding:8px 6px;text-align:right;">${fmtMoney(inv.payment_received)}</td>
+                    <td style="padding:8px 6px;white-space:nowrap;">${statusBadge(inv.status)}</td>
+                    <td style="padding:8px 6px;text-align:right;white-space:nowrap;"><div style="display:inline-flex;gap:4px;">${actions}</div></td>
+                </tr>`;
+        }
+
+        // --- Create / edit draft ---
+        function openCreateInvoiceModal(projectId) {
+            const form = document.getElementById('createInvoiceForm');
+            form.reset();
+            document.getElementById('invoiceEditId').value = '';
+            document.getElementById('invoiceProjectId').value = projectId;
+            document.getElementById('invoiceBillNo').value = 'AUTO';
+            document.getElementById('invoiceRetentionPct').value = 7.5;
+            updateInvoicePreview();
+            openModal('createInvoiceModal');
+        }
+
+        async function openEditInvoiceModal(projectId, invoiceId) {
+            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}`);
+            if (!data || !data.success || !data.invoice) {
+                showToast((data && data.message) || 'Could not load invoice', 'error');
+                return;
+            }
+            const inv = data.invoice;
+            const form = document.getElementById('createInvoiceForm');
+            form.reset();
+            document.getElementById('invoiceEditId').value = inv.id;
+            document.getElementById('invoiceProjectId').value = inv.project_id;
+            document.getElementById('invoiceBillNo').value = inv.invoice_no;
+            form.period_start.value = inv.period_start ? String(inv.period_start).slice(0, 10) : '';
+            form.period_end.value = inv.period_end ? String(inv.period_end).slice(0, 10) : '';
+            form.gross_value.value = inv.gross_value;
+            form.retention_pct.value = inv.retention_pct;
+            form.remarks.value = inv.remarks || '';
+            updateInvoicePreview();
+            openModal('createInvoiceModal');
+        }
+
+        function updateInvoicePreview() {
+            const form = document.getElementById('createInvoiceForm');
+            const gross = parseFloat(form.gross_value.value) || 0;
+            const pctInput = parseFloat(form.retention_pct.value);
+            const pct = isFinite(pctInput) ? pctInput : 0;
+            let ret = 0, net = gross;
+            if (window.projectMath) {
+                ret = window.projectMath.retentionAmount(gross, pct);
+                net = window.projectMath.netValue(gross, pct);
+            } else {
+                ret = Math.round(gross * Math.min(pct, 100) / 100 * 100) / 100;
+                net = Math.round((gross - ret) * 100) / 100;
+            }
+            const el = document.getElementById('invoicePreviewText');
+            document.getElementById('invoicePreviewPanel').style.display = 'block';
+            el.innerHTML = `Retention held: <strong style="color:var(--text-danger, #dc3545);">${fmtMoney(ret)}</strong> &nbsp;·&nbsp; Net billable: <strong style="color:var(--text-success, #28a745);">${fmtMoney(net)}</strong>`;
+        }
+
+        async function saveInvoice(e) {
+            e.preventDefault();
+            const form = e.target;
+            const editId = document.getElementById('invoiceEditId').value;
+            const projectId = document.getElementById('invoiceProjectId').value;
+            const gross = parseFloat(form.gross_value.value);
+            if (!isFinite(gross) || gross <= 0) {
+                showToast('Gross value must be greater than 0', 'warning');
+                return;
+            }
+            if (form.period_start.value && form.period_end.value && form.period_end.value < form.period_start.value) {
+                showToast('Period end must be on or after period start', 'warning');
+                return;
+            }
+            const btn = document.getElementById('createInvoiceBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            const body = {
+                period_start: form.period_start.value || null,
+                period_end: form.period_end.value || null,
+                gross_value: gross,
+                retention_pct: isFinite(parseFloat(form.retention_pct.value)) ? parseFloat(form.retention_pct.value) : 7.5,
+                remarks: form.remarks.value.trim() || null
+            };
+            const data = editId
+                ? await apiCall(`/project-invoices/${projectId}/${editId}`, 'PUT', body)
+                : await apiCall(`/project-invoices/${projectId}`, 'POST', body);
+            btn.disabled = false;
+            btn.textContent = 'Save';
+            if (data && data.success) {
+                showToast(editId ? 'RA bill updated' : `RA bill ${data.invoice ? data.invoice.invoice_no : ''} created`);
+                closeModal('createInvoiceModal');
+                await loadInvoices(projectId);
+            } else {
+                showToast(data?.message || 'Failed to save RA bill', 'error');
+            }
+        }
+
+        // --- Lifecycle transitions ---
+        async function submitInvoice(projectId, invoiceId) {
+            if (!(await confirmAction('Submit this bill for certification?'))) return;
+            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}/submit`, 'POST', {});
+            if (data && data.success) {
+                showToast('RA bill submitted');
+                await loadInvoices(projectId);
+            } else {
+                showToast(data?.message || 'Failed to submit bill', 'error');
+            }
+        }
+
+        async function approveInvoice(projectId, invoiceId) {
+            if (!(await confirmAction('Approve / certify this bill? Retention stays held until closeout.'))) return;
+            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}/approve`, 'POST', {});
+            if (data && data.success) {
+                showToast('RA bill approved');
+                await loadInvoices(projectId);
+            } else {
+                showToast(data?.message || 'Failed to approve bill', 'error');
+            }
+        }
+
+        async function rejectInvoice(projectId, invoiceId) {
+            if (!(await confirmAction('Reject this bill back to draft? It can then be edited and resubmitted.'))) return;
+            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}/reject`, 'POST', {});
+            if (data && data.success) {
+                showToast(data.message || 'RA bill rejected');
+                await loadInvoices(projectId);
+            } else {
+                showToast(data?.message || 'Failed to reject bill', 'error');
+            }
+        }
+
+        async function payInvoice(projectId, invoiceId) {
+            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}`);
+            if (!data || !data.success || !data.invoice) {
+                showToast((data && data.message) || 'Could not load invoice', 'error');
+                return;
+            }
+            const inv = data.invoice;
+            const net = Number(inv.net_value) || 0;
+            const received = Number(inv.payment_received) || 0;
+            const remaining = Math.round((net - received) * 100) / 100;
+            document.getElementById('payInvoiceProjectId').value = inv.project_id;
+            document.getElementById('payInvoiceId').value = inv.id;
+            document.getElementById('payInvoiceAmount').value = remaining > 0 ? remaining : net;
+            document.getElementById('payInvoiceMeta').innerHTML =
+                `${esc(inv.invoice_no)} · Net: <strong>${fmtMoney(net)}</strong> · Already received: <strong>${fmtMoney(received)}</strong> · Remaining: <strong>${fmtMoney(remaining)}</strong>`;
+            openModal('payInvoiceModal');
+        }
+
+        async function payInvoiceSubmit(e) {
+            e.preventDefault();
+            const invoiceId = document.getElementById('payInvoiceId').value;
+            const projectId = document.getElementById('payInvoiceProjectId').value;
+            const amount = parseFloat(document.getElementById('payInvoiceAmount').value);
+            if (!isFinite(amount) || amount <= 0) {
+                showToast('Enter a valid payment amount', 'warning');
+                return;
+            }
+            const btn = document.getElementById('payInvoiceBtn');
+            btn.disabled = true;
+            btn.textContent = 'Recording...';
+            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}/pay`, 'POST', { amount });
+            btn.disabled = false;
+            btn.textContent = 'Record Payment';
+            if (data && data.success) {
+                showToast(data.message || 'Payment recorded');
+                closeModal('payInvoiceModal');
+                await loadInvoices(projectId);
+            } else {
+                showToast(data?.message || 'Failed to record payment', 'error');
+            }
+        }
+
+        async function deleteInvoice(projectId, invoiceId) {
+            if (!(await confirmAction('Delete this RA bill? This cannot be undone.'))) return;
+            const data = await apiCall(`/project-invoices/${projectId}/${invoiceId}`, 'DELETE');
+            if (data && data.success) {
+                showToast('RA bill deleted');
+                await loadInvoices(projectId);
+            } else {
+                showToast(data?.message || 'Failed to delete bill', 'error');
             }
         }
 

@@ -60,6 +60,7 @@ app.use('/api/projects', require('./routes/projects'));
 app.use('/api/project-sets', require('./routes/project-sets'));
 app.use('/api/daily-work-counts', require('./routes/daily-work-counts'));
 app.use('/api/project-reports', require('./routes/project-reports'));
+app.use('/api/project-invoices', require('./routes/project-invoices'));
 
 // Static files (mounted after API routes so API paths always take precedence)
 app.use(express.static(path.join(__dirname, '../public')));
@@ -225,6 +226,12 @@ async function runMigrations() {
             client VARCHAR(255),
             description TEXT,
             status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'paused', 'terminated', 'on_hold', 'completed', 'cancelled')),
+            start_date DATE,
+            end_date DATE,
+            contract_value DECIMAL(14,2) DEFAULT 0,
+            location VARCHAR(255),
+            project_type VARCHAR(50) DEFAULT 'other',
+            phase VARCHAR(30) DEFAULT 'planning',
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
         )`);
@@ -269,6 +276,49 @@ async function runMigrations() {
         await query(`ALTER TABLE project_sets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
         console.log('[Migration] Projects module tables ensured.');
     } catch (e) { console.warn('[Migration] Projects module tables skipped:', e.message); }
+
+    // Phase 1 - project lifecycle columns. Pre-existing projects tables created
+    // before this release need explicit ALTERs (CREATE TABLE IF NOT EXISTS only
+    // helps new databases). All idempotent and additive.
+    try {
+        await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date DATE`);
+        await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE`);
+        await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS contract_value DECIMAL(14,2) DEFAULT 0`);
+        await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS location VARCHAR(255)`);
+        await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_type VARCHAR(50) DEFAULT 'other'`);
+        await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS phase VARCHAR(30) DEFAULT 'planning'`);
+        console.log('[Migration] projects lifecycle columns ensured.');
+    } catch (e) { console.warn('[Migration] projects lifecycle columns skipped:', e.message); }
+
+    // Phase 1 - RA bills table (draft -> submitted -> approved -> paid).
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS project_invoices (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            invoice_no VARCHAR(30) NOT NULL,
+            period_start DATE,
+            period_end DATE,
+            remarks TEXT,
+            gross_value DECIMAL(14,2) NOT NULL DEFAULT 0,
+            retention_pct DECIMAL(5,2) NOT NULL DEFAULT 7.5,
+            retention_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+            net_value DECIMAL(14,2) NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'submitted', 'approved', 'paid')),
+            rejected_note TEXT,
+            approved_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            approved_at TIMESTAMP,
+            payment_received DECIMAL(14,2) NOT NULL DEFAULT 0,
+            paid_at TIMESTAMP,
+            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE (project_id, invoice_no)
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_invoices_project ON project_invoices(project_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_invoices_status ON project_invoices(status)`);
+        console.log('[Migration] project_invoices table ensured.');
+    } catch (e) { console.warn('[Migration] project_invoices table skipped:', e.message); }
 
     // Rename customer → client: add the new column, copy existing data,
     // then use `client` everywhere. The old `customer` column is kept for

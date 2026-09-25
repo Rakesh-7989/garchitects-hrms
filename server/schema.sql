@@ -652,6 +652,12 @@ CREATE TABLE IF NOT EXISTS projects (
     client VARCHAR(255),
     description TEXT,
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'paused', 'terminated', 'on_hold', 'completed', 'cancelled')),
+    start_date DATE,
+    end_date DATE,
+    contract_value DECIMAL(14,2) DEFAULT 0,
+    location VARCHAR(255),
+    project_type VARCHAR(50) DEFAULT 'other',
+    phase VARCHAR(30) DEFAULT 'planning',
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -715,7 +721,36 @@ CREATE INDEX IF NOT EXISTS idx_daily_work_counts_date ON daily_work_counts(work_
 CREATE INDEX IF NOT EXISTS idx_daily_work_counts_unique ON daily_work_counts(project_id, set_id, employee_id, work_date);
 
 -- ============================================================
--- 24. PROJECT SETTINGS (for holiday config, etc.)
+-- 24. PROJECT INVOICES (RA bills with retention, Indian billing practice)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS project_invoices (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    invoice_no VARCHAR(30) NOT NULL,
+    period_start DATE,
+    period_end DATE,
+    remarks TEXT,
+    gross_value DECIMAL(14,2) NOT NULL DEFAULT 0,
+    retention_pct DECIMAL(5,2) NOT NULL DEFAULT 7.5,
+    retention_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+    net_value DECIMAL(14,2) NOT NULL DEFAULT 0,
+    status VARCHAR(20) NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'submitted', 'approved', 'paid')),
+    rejected_note TEXT,
+    approved_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    approved_at TIMESTAMP,
+    payment_received DECIMAL(14,2) NOT NULL DEFAULT 0,
+    paid_at TIMESTAMP,
+    created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE (project_id, invoice_no)
+);
+CREATE INDEX IF NOT EXISTS idx_project_invoices_project ON project_invoices(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_invoices_status ON project_invoices(status);
+
+-- ============================================================
+-- PROJECT SETTINGS (for holiday config, etc.)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS project_settings (
     id SERIAL PRIMARY KEY,

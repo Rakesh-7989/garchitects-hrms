@@ -69,7 +69,14 @@ const PROJECT_ALTER_COLUMNS = {
     client: 'VARCHAR(255)',
     description: 'TEXT',
     created_at: 'TIMESTAMP DEFAULT NOW()',
-    updated_at: 'TIMESTAMP DEFAULT NOW()'
+    updated_at: 'TIMESTAMP DEFAULT NOW()',
+    // Phase 1 - project lifecycle
+    start_date: 'DATE',
+    end_date: 'DATE',
+    contract_value: 'DECIMAL(14,2) DEFAULT 0',
+    location: 'VARCHAR(255)',
+    project_type: "VARCHAR(50) DEFAULT 'other'",
+    phase: "VARCHAR(30) DEFAULT 'planning'"
 };
 
 // Announcements table columns that may be missing on a live database created
@@ -202,6 +209,37 @@ const ENSURE_TABLE_DDL = {
         `CREATE INDEX IF NOT EXISTS idx_project_employees_project ON project_employees(project_id)`,
         `CREATE INDEX IF NOT EXISTS idx_project_employees_employee ON project_employees(employee_id)`
     ],
+    // Phase 1 - RA (running account) bills against a project, following Indian
+    // construction billing: each bill has a certified gross value, a retention
+    // % held against defects liability, and a lifecycle
+    // draft -> submitted -> approved -> paid.
+    project_invoices: [
+        `CREATE TABLE IF NOT EXISTS project_invoices (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            invoice_no VARCHAR(30) NOT NULL,
+            period_start DATE,
+            period_end DATE,
+            remarks TEXT,
+            gross_value DECIMAL(14,2) NOT NULL DEFAULT 0,
+            retention_pct DECIMAL(5,2) NOT NULL DEFAULT 7.5,
+            retention_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+            net_value DECIMAL(14,2) NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'submitted', 'approved', 'paid')),
+            rejected_note TEXT,
+            approved_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            approved_at TIMESTAMP,
+            payment_received DECIMAL(14,2) NOT NULL DEFAULT 0,
+            paid_at TIMESTAMP,
+            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE (project_id, invoice_no)
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_project_invoices_project ON project_invoices(project_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_project_invoices_status ON project_invoices(status)`
+    ],
     project_sets: [
         `CREATE TABLE IF NOT EXISTS project_sets (
             id SERIAL PRIMARY KEY,
@@ -313,6 +351,28 @@ const PROJECT_MODULE_ALTER_COLUMNS = {
     },
     'project_employees': {
         status: 'VARCHAR(20) DEFAULT \'active\'',
+    },
+    // Phase 1 - RA bills. If a live DB has the table but misses a column (e.g. a
+    // partially-applied migration), heal by column name on 42703 like the rest.
+    'project_invoices': {
+        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
+        invoice_no: 'VARCHAR(30) NOT NULL',
+        period_start: 'DATE',
+        period_end: 'DATE',
+        remarks: 'TEXT',
+        gross_value: 'DECIMAL(14,2) NOT NULL DEFAULT 0',
+        retention_pct: 'DECIMAL(5,2) NOT NULL DEFAULT 7.5',
+        retention_amount: 'DECIMAL(14,2) NOT NULL DEFAULT 0',
+        net_value: 'DECIMAL(14,2) NOT NULL DEFAULT 0',
+        status: "VARCHAR(20) NOT NULL DEFAULT 'draft'",
+        rejected_note: 'TEXT',
+        approved_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        approved_at: 'TIMESTAMP',
+        payment_received: 'DECIMAL(14,2) NOT NULL DEFAULT 0',
+        paid_at: 'TIMESTAMP',
+        created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        created_at: 'TIMESTAMP DEFAULT NOW()',
+        updated_at: 'TIMESTAMP DEFAULT NOW()',
     }
 };
 
@@ -355,8 +415,11 @@ async function runWithSchemaRepair(fn) {
                         healed = miss.column && await ensureProjectColumn(miss.column);
                     } else if (table === 'project_sets' || table === 'ps') {
                         healed = miss.column && await ensureProjectSetColumn(miss.column);
-                    } else if (table === 'daily_work_counts' || table === 'dwc' || table === 'project_employees' || table === 'pe') {
-                        healed = miss.column && await ensureProjectModuleColumn(table === 'dwc' ? 'daily_work_counts' : table === 'pe' ? 'project_employees' : table, miss.column);
+                    } else if (table === 'daily_work_counts' || table === 'dwc' || table === 'project_employees' || table === 'pe' || table === 'project_invoices' || table === 'pi') {
+                        healed = miss.column && await ensureProjectModuleColumn(
+                            table === 'dwc' ? 'daily_work_counts' : table === 'pe' ? 'project_employees' : table === 'pi' ? 'project_invoices' : table,
+                            miss.column
+                        );
                     } else if (table === 'employees' || table === 'e') {
                         healed = miss.column && await ensureEmployeeColumn(miss.column);
                     } else if (table === 'announcements' || table === 'a') {
@@ -368,6 +431,7 @@ async function runWithSchemaRepair(fn) {
                             || await ensureProjectSetColumn(miss.column)
                             || await ensureProjectModuleColumn('daily_work_counts', miss.column)
                             || await ensureProjectModuleColumn('project_employees', miss.column)
+                            || await ensureProjectModuleColumn('project_invoices', miss.column)
                             || await ensureEmployeeColumn(miss.column)
                             || await ensureAnnouncementsColumn(miss.column);
                     }

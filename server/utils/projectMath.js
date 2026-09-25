@@ -86,4 +86,19 @@ function achievementPercent(actual, target) {
     return Math.round((a / t) * 1000) / 10;
 }
 
-module.exports = { workingDays, perEmployeeTarget, dailyPerEmployeeTarget, achievementPercent, toYMD, dateKey };
+// RA-bill retention (Indian practice: 5-10% held against defects liability).
+// Money is rounded to 2 decimals (cents) on every step so the server-computed
+// retention/net exactly matches what the client preview shows.
+function retentionAmount(grossValue, retentionPct) {
+    const g = Number(grossValue) || 0;
+    const p = Number(retentionPct) || 0;
+    if (g <= 0 || p <= 0) return 0;
+    return Math.round(g * Math.min(p, 100) / 100 * 100) / 100;
+}
+
+function netValue(grossValue, retentionPct) {
+    const g = Number(grossValue) || 0;
+    return Math.round((g - retentionAmount(g, retentionPct)) * 100) / 100;
+}
+
+module.exports = { workingDays, perEmployeeTarget, dailyPerEmployeeTarget, achievementPercent, retentionAmount, netValue, toYMD, dateKey };
