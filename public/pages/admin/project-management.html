@@ -83,11 +83,16 @@
                 <button class="btn btn-primary" onclick="openCreateProjectModal()">
                     <i class="fas fa-plus"></i> Create Project
                 </button>
+                <button class="btn btn-secondary" onclick="toggleOverview()" id="overviewToggleBtn">
+                    <i class="fas fa-chart-pie"></i> Overview
+                </button>
                 <div style="position:relative;flex:1;max-width:400px;">
                     <i class="fas fa-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-tertiary);"></i>
                     <input type="text" id="searchInput" class="form-control" style="padding-left:36px;" placeholder="Search projects..." oninput="filterProjects()">
                 </div>
             </div>
+
+            <div id="overviewSection" class="mb-3" style="display:none;"></div>
 
             <div id="projectsGrid" class="grid grid-2 mb-3" style="gap:16px;"></div>
             <div id="modalsContainer"></div>
@@ -1189,6 +1194,315 @@
                     `).join('')}
                 </div>
             `;
+        }
+
+        // ===================== PROJECT OVERVIEW (DASHBOARD) =====================
+        // Consolidated dashboard: financial rollups, phase distribution, RA
+        // collection focus, recent DPRs/invoices, the monthly labour report and
+        // the module activity feed. One overview fetch + one activity fetch.
+        let overviewLoaded = false;
+
+        async function toggleOverview() {
+            const sec = document.getElementById('overviewSection');
+            const btn = document.getElementById('overviewToggleBtn');
+            if (sec.style.display === 'block') {
+                sec.style.display = 'none';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-secondary');
+                return;
+            }
+            sec.style.display = 'block';
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-primary');
+            if (!overviewLoaded) {
+                overviewLoaded = true;
+                sec.innerHTML = '<div style="text-align:center;padding:32px;"><div class="spinner" style="margin:0 auto;width:28px;height:28px;"></div><p style="color:var(--text-secondary);font-size:0.85rem;margin-top:8px;">Building project overview...</p></div>';
+                await loadOverview();
+            }
+        }
+
+        // Overview cards get real numbers from /project-reports/overview.
+        function overviewStatCards(s) {
+            const cards = [
+                { label: 'Total Contract', value: fmtMoney(s.total_contract), icon: 'fa-file-contract', tint: 'primary' },
+                { label: 'Billed (Net)', value: fmtMoney(s.total_billed_net), icon: 'fa-file-invoice-dollar', tint: 'primary' },
+                { label: 'Received', value: fmtMoney(s.total_received), icon: 'fa-hand-holding-usd', tint: 'success' },
+                { label: 'Retention Held', value: fmtMoney(s.total_retention), icon: 'fa-vault', tint: 'warning' },
+                { label: 'Outstanding RA', value: fmtMoney(s.total_outstanding) + ` <span class="badge badge-warning">${s.approved_unpaid_count || 0}</span>`, icon: 'fa-hourglass-half', tint: 'danger' },
+                { label: 'Man-days Logged', value: fmtQty(s.total_man_days), icon: 'fa-hard-hat', tint: 'primary' }
+            ];
+            return cards.map(c => `
+                <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:14px 16px;background:var(--bg-card,#fff);display:flex;gap:12px;align-items:center;">
+                    <div style="width:40px;height:40px;border-radius:10px;background:var(--${c.tint === 'success' ? 'success-50,#dcfce7' : c.tint === 'warning' ? 'warning-50,#fef3c7' : c.tint === 'danger' ? 'danger-50,#fee2e2' : 'primary-50,#eff6ff'});display:flex;align-items:center;justify-content:center;color:var(--${c.tint === 'success' ? 'success,#16a34a' : c.tint === 'warning' ? 'warning,#d97706' : c.tint === 'danger' ? 'danger,#dc2626' : 'primary,#4f46e5'});flex-shrink:0;">
+                        <i class="fas ${c.icon}" style="font-size:0.95rem;"></i>
+                    </div>
+                    <div style="min-width:0;">
+                        <div style="font-size:0.7rem;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">${c.label}</div>
+                        <div style="font-size:1.05rem;font-weight:700;color:var(--text-primary);white-space:nowrap;">${c.value}</div>
+                    </div>
+                </div>`).join('');
+        }
+
+        function phaseChips(phaseDist) {
+            const order = [
+                ['planning', 'Planning'], ['preconstruction', 'Preconstruction'], ['construction', 'Construction'],
+                ['snagging', 'Snagging'], ['closeout', 'Closeout']
+            ];
+            const chips = [];
+            for (const [key, label] of order) {
+                const c = (phaseDist && phaseDist[key]) || 0;
+                if (c > 0) chips.push(`<span class="badge badge-primary">${label}: ${c}</span>`);
+            }
+            const others = Object.entries(phaseDist || {}).filter(([k]) => !order.some(o => o[0] === k) && k !== 'other');
+            const otherCount = (phaseDist && phaseDist.other) || 0;
+            if (otherCount > 0) chips.push(`<span class="badge badge-secondary">Other: ${otherCount}</span>`);
+            for (const [k, c] of others) chips.push(`<span class="badge badge-secondary">${esc(k)}: ${c}</span>`);
+            return chips.join('') || '<span style="font-size:0.82rem;color:var(--text-tertiary);">No projects yet</span>';
+        }
+
+        async function loadOverview() {
+            const sec = document.getElementById('overviewSection');
+            const data = await apiCall('/project-reports/overview');
+            if (!data || !data.success) {
+                sec.innerHTML = `<div style="padding:20px;color:var(--text-secondary);"><i class="fas fa-exclamation-triangle" style="color:var(--danger, #dc2626);"></i> Failed to load overview.${data && data.message ? ' ' + esc(data.message) : ''}</div>`;
+                return;
+            }
+            const s = data.summary || {};
+            const focus = data.collectionFocus || [];
+            const recentInv = data.recentInvoices || [];
+            const recentDprs = data.recentDprs || [];
+            const activeProjects = (data.projects || []).filter(p => p.status === 'active' && p.name && p.name !== 'Travel Management' && p.name !== 'Medical Billing' && p.name !== 'KYC');
+            const totalActiveProjects = activeProjects.length || s.active_projects;
+
+            const focusRows = focus.length
+                ? focus.map(f => `
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:8px 6px;font-weight:600;white-space:nowrap;">${esc(f.invoice_no)}</td>
+                        <td style="padding:8px 6px;">${esc(f.project_name)}</td>
+                        <td style="padding:8px 6px;text-align:right;">${fmtMoney(f.net_value)}</td>
+                        <td style="padding:8px 6px;text-align:right;">${fmtMoney(f.payment_received)}</td>
+                        <td style="padding:8px 6px;text-align:right;font-weight:700;color:var(--danger, #dc2626);">${fmtMoney(f.outstanding)}</td>
+                        <td style="padding:8px 6px;white-space:nowrap;color:var(--text-tertiary);font-size:0.78rem;">${timeAgo(f.updated_at)}</td>
+                    </tr>`).join('')
+                : '<tr><td colspan="6" style="padding:14px 6px;color:var(--text-tertiary);font-size:0.85rem;">No approved bills awaiting payment — collection is up to date.</td></tr>';
+
+            const dprRows = recentDprs.length
+                ? recentDprs.map(d => `
+                    <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border);align-items:flex-start;">
+                        <i class="fas fa-clipboard-list" style="color:var(--primary);margin-top:2px;"></i>
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:0.84rem;"><strong>${esc(d.project_name)}</strong> <span style="color:var(--text-tertiary);">· ${String(d.report_date).slice(0, 10)}</span>${d.weather ? ` <span class="badge badge-primary">${esc(d.weather)}</span>` : ''}</div>
+                            ${d.work_summary ? `<div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(d.work_summary)}</div>` : ''}
+                            <div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:2px;">${d.activity_count || 0} activity line${(d.activity_count || 0) === 1 ? '' : 's'}</div>
+                        </div>
+                    </div>`).join('')
+                : '<div style="padding:10px 0;color:var(--text-tertiary);font-size:0.85rem;">No DPRs yet.</div>';
+
+            const invRows = recentInv.length
+                ? recentInv.map(i => `
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:8px 6px;font-weight:600;white-space:nowrap;">${esc(i.invoice_no)}</td>
+                        <td style="padding:8px 6px;">${esc(i.project_name)}</td>
+                        <td style="padding:8px 6px;text-align:right;">${fmtMoney(i.net_value)}</td>
+                        <td style="padding:8px 6px;text-align:right;">${fmtMoney(i.payment_received)}</td>
+                        <td style="padding:8px 6px;">${statusBadge(i.status)}</td>
+                    </tr>`).join('')
+                : '<tr><td colspan="5" style="padding:14px 6px;color:var(--text-tertiary);font-size:0.85rem;">No RA bills yet.</td></tr>';
+
+            sec.innerHTML = `
+                <div class="card" style="padding:20px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+                        <h3 style="font-size:1rem;font-weight:600;"><i class="fas fa-chart-pie" style="color:var(--primary);margin-right:8px;"></i>Projects Overview</h3>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.8rem;color:var(--text-secondary);">
+                            <span class="badge badge-secondary">${totalActiveProjects} active</span>
+                            <span class="badge badge-secondary">${s.total_projects || 0} total</span>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px;">
+                        ${overviewStatCards(s)}
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:18px;">
+                        <span style="font-size:0.75rem;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;font-weight:600;">Phases</span>
+                        ${phaseChips(s.phase_distribution)}
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+                        <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:14px;">
+                            <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">RA Collection Focus <span class="badge badge-warning">${focus.length}</span></div>
+                            <div style="overflow-x:auto;">
+                                <table style="width:100%;border-collapse:collapse;font-size:0.82rem;min-width:340px;">
+                                    <thead><tr style="text-align:left;border-bottom:2px solid var(--border);">
+                                        <th style="padding:6px;">Bill</th><th style="padding:6px;">Project</th>
+                                        <th style="padding:6px;text-align:right;">Net</th><th style="padding:6px;text-align:right;">Received</th>
+                                        <th style="padding:6px;text-align:right;">Due</th><th style="padding:6px;">When</th>
+                                    </tr></thead><tbody>${focusRows}</tbody></table>
+                            </div>
+                        </div>
+                        <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:14px;">
+                            <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">Latest Daily Reports</div>
+                            <div>${dprRows}</div>
+                        </div>
+                        <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:14px;">
+                            <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">Recent RA Bills</div>
+                            <div style="overflow-x:auto;">
+                                <table style="width:100%;border-collapse:collapse;font-size:0.82rem;min-width:300px;">
+                                    <thead><tr style="text-align:left;border-bottom:2px solid var(--border);">
+                                        <th style="padding:6px;">Bill</th><th style="padding:6px;">Project</th>
+                                        <th style="padding:6px;text-align:right;">Net</th><th style="padding:6px;text-align:right;">Received</th><th style="padding:6px;">Status</th>
+                                    </tr></thead><tbody>${invRows}</tbody></table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+                            <div style="font-size:0.85rem;font-weight:600;">Monthly Labour Report</div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <select id="labourMonthSel" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.8rem;background:var(--bg-card,#fff);color:var(--text-primary);">
+                                    ${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][i]}</option>`).join('')}
+                                </select>
+                                <select id="labourYearSel" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.8rem;background:var(--bg-card,#fff);color:var(--text-primary);">
+                                    ${labourYearOptions()}
+                                </select>
+                                <button class="btn btn-primary btn-sm" onclick="loadLabourMonthly()"><i class="fas fa-redo" style="font-size:0.7rem;"></i> Load</button>
+                            </div>
+                        </div>
+                        <div id="labourMonthlyResult"></div>
+                    </div>
+
+                    <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px;">
+                        <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;"><i class="fas fa-bell" style="color:var(--primary);margin-right:6px;"></i>Recent Activity</div>
+                        <div id="projectActivityFeed" style="max-height:320px;overflow-y:auto;">Loading activity...</div>
+                    </div>
+                </div>`;
+
+            // Default selectors to the current month/year, then load both.
+            const now = new Date();
+            const ms = document.getElementById('labourMonthSel');
+            const ys = document.getElementById('labourYearSel');
+            ms.value = String(now.getMonth() + 1);
+            if (Array.prototype.some.call(ys.options, o => o.value === String(now.getFullYear()))) ys.value = String(now.getFullYear());
+            await Promise.all([loadLabourMonthly(), loadProjectActivity()]);
+        }
+
+        function labourYearOptions() {
+            const year = new Date().getFullYear();
+            let html = '';
+            for (let y = year; y >= year - 4; y--) html += `<option value="${y}">${y}</option>`;
+            return html;
+        }
+
+        async function loadLabourMonthly() {
+            const holder = document.getElementById('labourMonthlyResult');
+            const month = document.getElementById('labourMonthSel').value;
+            const year = document.getElementById('labourYearSel').value;
+            holder.innerHTML = '<div style="padding:10px;color:var(--text-tertiary);font-size:0.82rem;">Loading...</div>';
+            const data = await apiCall(`/project-reports/labour-monthly?month=${month}&year=${year}`);
+            if (!data || !data.success) {
+                holder.innerHTML = `<span style="font-size:0.82rem;color:var(--danger,#dc2626);">Failed to load: ${esc((data && data.message) || 'unknown error')}</span>`;
+                return;
+            }
+            const cats = data.categories || [];
+            const rows = (data.projects || []).map(p => `
+                <tr style="border-bottom:1px solid var(--border);">
+                    <td style="padding:6px;font-weight:600;">${esc(p.project_name)}</td>
+                    <td style="padding:6px;text-align:center;">${p.dayCount}</td>
+                    ${cats.map(c => `<td style="padding:6px;text-align:right;">${p.byCategory[c] || 0}</td>`).join('')}
+                    <td style="padding:6px;text-align:right;font-weight:700;">${p.grandTotal}</td>
+                </tr>`).join('');
+            const headRow = `<tr style="text-align:left;border-bottom:2px solid var(--border);">
+                    <th style="padding:6px;">Project</th><th style="padding:6px;text-align:center;">Days</th>
+                    ${cats.map(c => `<th style="padding:6px;text-align:right;">${esc(c.replace(/_/g, ' '))}</th>`).join('')}
+                    <th style="padding:6px;text-align:right;">Total Man-days</th>
+                </tr>`;
+            holder.innerHTML = `
+                <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;min-width:460px;">
+                        <thead>${headRow}</thead>
+                        <tbody>${rows || '<tr><td colspan="' + (cats.length + 3) + '" style="padding:10px;color:var(--text-tertiary);">No labour recorded for this month.</td></tr>'}</tbody>
+                        ${data.projects && data.projects.length ? `<tfoot><tr style="border-top:2px solid var(--border);font-weight:700;">
+                            <td style="padding:6px;">Total</td><td style="padding:6px;text-align:center;">${data.projects.reduce((s, p) => s + p.dayCount, 0)}</td>
+                            ${cats.map(c => `<td style="padding:6px;text-align:right;">${data.projects.reduce((s, p) => s + (p.byCategory[c] || 0), 0)}</td>`).join('')}
+                            <td style="padding:6px;text-align:right;">${data.grandTotal}</td>
+                        </tr></tfoot>` : ''}
+                    </table>
+                </div>`;
+        }
+
+        // --- Activity feed ---
+        const ACT_LABELS = {
+            'project.create': ['fa-folder-plus', 'created project'],
+            'project.update': ['fa-pen', 'updated project'],
+            'project.delete': ['fa-trash', 'deleted project'],
+            'project_set.create': ['fa-layer-group', 'created set'],
+            'project_set.update': ['fa-pen', 'updated set'],
+            'project_set.delete': ['fa-trash', 'deleted set'],
+            'project_set.restore': ['fa-undo', 'restored set'],
+            'project.daily_count.create': ['fa-plus-circle', 'logged daily count'],
+            'project.daily_count.update': ['fa-pen', 'updated daily count'],
+            'project.daily_count.delete': ['fa-trash', 'deleted daily count'],
+            'invoice.create': ['fa-file-invoice-dollar', 'added RA bill'],
+            'invoice.update': ['fa-pen', 'edited RA bill'],
+            'invoice.submit': ['fa-paper-plane', 'submitted RA bill'],
+            'invoice.approve': ['fa-check', 'approved RA bill'],
+            'invoice.reject': ['fa-undo', 'rejected RA bill'],
+            'invoice.paid': ['fa-hand-holding-usd', 'marked RA bill paid'],
+            'invoice.partial_payment': ['fa-coins', 'recorded partial payment'],
+            'invoice.delete': ['fa-trash', 'deleted RA bill'],
+            'dpr.create': ['fa-clipboard-list', 'posted DPR'],
+            'dpr.update': ['fa-pen', 'edited DPR'],
+            'dpr.delete': ['fa-trash', 'deleted DPR'],
+            'labour.upsert': ['fa-hard-hat', 'saved labour register'],
+            'labour.delete': ['fa-trash', 'removed labour entry'],
+            'material.create': ['fa-boxes', 'added material'],
+            'material.update': ['fa-pen', 'edited material'],
+            'material.delete': ['fa-trash', 'removed material']
+        };
+
+        function activityMeta(action) {
+            const found = ACT_LABELS[action];
+            if (found) return found;
+            const parts = String(action || 'activity').split('.');
+            const verb = parts[parts.length - 1] || 'updated';
+            return ['fa-bolt', verb.replace(/_/g, ' ')];
+        }
+
+        function timeAgo(iso) {
+            if (!iso) return '';
+            const t = new Date(iso).getTime();
+            if (isNaN(t)) return '';
+            const diff = Date.now() - t;
+            const m = Math.floor(diff / 60000);
+            if (m < 1) return 'just now';
+            if (m < 60) return `${m}m ago`;
+            const h = Math.floor(m / 60);
+            if (h < 24) return `${h}h ago`;
+            const d = Math.floor(h / 24);
+            if (d < 30) return `${d}d ago`;
+            return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        }
+
+        async function loadProjectActivity() {
+            const feed = document.getElementById('projectActivityFeed');
+            if (!feed) return;
+            const data = await apiCall('/project-reports/activity?limit=20');
+            if (!data || !data.success || !data.items || !data.items.length) {
+                feed.innerHTML = '<div style="padding:10px 0;color:var(--text-tertiary);font-size:0.82rem;">No project activity yet.</div>';
+                return;
+            }
+            feed.innerHTML = data.items.map(it => {
+                const [icon, verb] = activityMeta(it.action);
+                const details = it.details || {};
+                const extra = details.invoiceNo ? ` · ${esc(details.invoiceNo)}` : details.reportDate ? ` · ${esc(details.reportDate)}` : '';
+                return `
+                    <div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px dashed var(--border);align-items:flex-start;">
+                        <div style="width:30px;height:30px;border-radius:50%;background:var(--primary-50,#eff6ff);display:flex;align-items:center;justify-content:center;color:var(--primary);flex-shrink:0;"><i class="fas ${icon}" style="font-size:0.75rem;"></i></div>
+                        <div style="flex:1;min-width:0;font-size:0.82rem;">
+                            <span style="font-weight:600;">${esc(it.actor_name)}</span> ${esc(verb)}${extra}
+                            <div style="font-size:0.73rem;color:var(--text-tertiary);">${timeAgo(it.created_at)}</div>
+                        </div>
+                    </div>`;
+            }).join('');
         }
 
         // ===================== CREATE PROJECT =====================
