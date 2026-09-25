@@ -60,13 +60,8 @@ app.use('/api/projects', require('./routes/projects'));
 app.use('/api/project-sets', require('./routes/project-sets'));
 app.use('/api/daily-work-counts', require('./routes/daily-work-counts'));
 app.use('/api/project-reports', require('./routes/project-reports'));
-app.use('/api/project-invoices', require('./routes/project-invoices'));
-app.use('/api/project-dpr', require('./routes/project-dpr'));
-app.use('/api/project-labour', require('./routes/project-labour'));
-app.use('/api/project-materials', require('./routes/project-materials'));
+app.use('/api/project-updates', require('./routes/project-updates'));
 app.use('/api/project-documents', require('./routes/project-documents'));
-app.use('/api/project-snags', require('./routes/project-snags'));
-app.use('/api/project-closeout', require('./routes/project-closeout'));
 
 // Static files (mounted after API routes so API paths always take precedence)
 app.use(express.static(path.join(__dirname, '../public')));
@@ -234,10 +229,8 @@ async function runMigrations() {
             status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'paused', 'terminated', 'on_hold', 'completed', 'cancelled')),
             start_date DATE,
             end_date DATE,
-            contract_value DECIMAL(14,2) DEFAULT 0,
             location VARCHAR(255),
             project_type VARCHAR(50) DEFAULT 'other',
-            phase VARCHAR(30) DEFAULT 'planning',
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
         )`);
@@ -289,109 +282,14 @@ async function runMigrations() {
     try {
         await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date DATE`);
         await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE`);
-        await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS contract_value DECIMAL(14,2) DEFAULT 0`);
         await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS location VARCHAR(255)`);
         await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_type VARCHAR(50) DEFAULT 'other'`);
-        await query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS phase VARCHAR(30) DEFAULT 'planning'`);
         console.log('[Migration] projects lifecycle columns ensured.');
     } catch (e) { console.warn('[Migration] projects lifecycle columns skipped:', e.message); }
 
-    // Phase 1 - RA bills table (draft -> submitted -> approved -> paid).
-    try {
-        await query(`CREATE TABLE IF NOT EXISTS project_invoices (
-            id SERIAL PRIMARY KEY,
-            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            invoice_no VARCHAR(30) NOT NULL,
-            period_start DATE,
-            period_end DATE,
-            remarks TEXT,
-            gross_value DECIMAL(14,2) NOT NULL DEFAULT 0,
-            retention_pct DECIMAL(5,2) NOT NULL DEFAULT 7.5,
-            retention_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
-            net_value DECIMAL(14,2) NOT NULL DEFAULT 0,
-            status VARCHAR(20) NOT NULL DEFAULT 'draft'
-                CHECK (status IN ('draft', 'submitted', 'approved', 'paid')),
-            rejected_note TEXT,
-            approved_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            approved_at TIMESTAMP,
-            payment_received DECIMAL(14,2) NOT NULL DEFAULT 0,
-            paid_at TIMESTAMP,
-            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE (project_id, invoice_no)
-        )`);
-        await query(`CREATE INDEX IF NOT EXISTS idx_project_invoices_project ON project_invoices(project_id)`);
-        await query(`CREATE INDEX IF NOT EXISTS idx_project_invoices_status ON project_invoices(status)`);
-        console.log('[Migration] project_invoices table ensured.');
-    } catch (e) { console.warn('[Migration] project_invoices table skipped:', e.message); }
-
-    // Phase 2 - site ops tables: DPR + activities, labour register, materials.
-    try {
-        await query(`CREATE TABLE IF NOT EXISTS project_daily_reports (
-            id SERIAL PRIMARY KEY,
-            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            report_date DATE NOT NULL,
-            weather VARCHAR(50),
-            work_summary TEXT,
-            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(project_id, report_date)
-        )`);
-        await query(`CREATE TABLE IF NOT EXISTS dpr_activities (
-            id SERIAL PRIMARY KEY,
-            dpr_id INT NOT NULL REFERENCES project_daily_reports(id) ON DELETE CASCADE,
-            work_item VARCHAR(255) NOT NULL,
-            description TEXT,
-            qty_done DECIMAL(12,2),
-            unit VARCHAR(20),
-            remarks TEXT,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`);
-        await query(`CREATE INDEX IF NOT EXISTS idx_dpr_project_date ON project_daily_reports(project_id, report_date DESC)`);
-        await query(`CREATE INDEX IF NOT EXISTS idx_dpr_activities_dpr ON dpr_activities(dpr_id)`);
-        console.log('[Migration] project_daily_reports + dpr_activities tables ensured.');
-    } catch (e) { console.warn('[Migration] DPR tables skipped:', e.message); }
-
-    try {
-        await query(`CREATE TABLE IF NOT EXISTS project_labour_register (
-            id SERIAL PRIMARY KEY,
-            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            report_date DATE NOT NULL,
-            category VARCHAR(50) NOT NULL,
-            count INT NOT NULL DEFAULT 0,
-            notes TEXT,
-            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(project_id, report_date, category)
-        )`);
-        await query(`CREATE INDEX IF NOT EXISTS idx_labour_register_project_date ON project_labour_register(project_id, report_date DESC)`);
-        console.log('[Migration] project_labour_register table ensured.');
-    } catch (e) { console.warn('[Migration] labour register table skipped:', e.message); }
-
-    try {
-        await query(`CREATE TABLE IF NOT EXISTS project_materials (
-            id SERIAL PRIMARY KEY,
-            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            material VARCHAR(255) NOT NULL,
-            unit VARCHAR(20) DEFAULT 'nos',
-            quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
-            qty_used DECIMAL(12,2) NOT NULL DEFAULT 0,
-            received_on DATE,
-            vendor VARCHAR(255),
-            purpose TEXT,
-            notes TEXT,
-            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW()
-        )`);
-        await query(`CREATE INDEX IF NOT EXISTS idx_project_materials_project ON project_materials(project_id)`);
-        console.log('[Migration] project_materials table ensured.');
-    } catch (e) { console.warn('[Migration] project_materials table skipped:', e.message); }
-
-    // Phase 4 - documents, snags and closeout checklist.
+    // Phase 4 - project documents repository (drawings, contracts, approvals).
+    // Kept in the HRMS model; the other Phase 4 tables (snags, closeout) were
+    // construction-specific and are dropped below.
     try {
         await query(`CREATE TABLE IF NOT EXISTS project_documents (
             id SERIAL PRIMARY KEY,
@@ -408,49 +306,39 @@ async function runMigrations() {
         console.log('[Migration] project_documents table ensured.');
     } catch (e) { console.warn('[Migration] project_documents table skipped:', e.message); }
 
+    // HRMS reshape: drop the SiteTrack-Pro construction tables (RA bills, DPR,
+    // labour register, materials, snags, closeout) and the financial lifecycle
+    // columns (contract_value, phase) bolted onto the projects module. They are
+    // replaced by a single plain architecture-studio daily-update table.
+    // Destructive by design (user-approved); runs once after the routes that
+    // used these tables are gone.
     try {
-        await query(`CREATE TABLE IF NOT EXISTS project_snags (
+        await query(`DROP TABLE IF EXISTS project_closeout_items`);
+        await query(`DROP TABLE IF EXISTS project_snags`);
+        await query(`DROP TABLE IF EXISTS project_materials`);
+        await query(`DROP TABLE IF EXISTS project_labour_register`);
+        await query(`DROP TABLE IF EXISTS dpr_activities`);
+        await query(`DROP TABLE IF EXISTS project_daily_reports`);
+        await query(`DROP TABLE IF EXISTS project_invoices`);
+        await query(`ALTER TABLE projects DROP COLUMN IF EXISTS contract_value`);
+        await query(`ALTER TABLE projects DROP COLUMN IF EXISTS phase`);
+        await query(`CREATE TABLE IF NOT EXISTS project_daily_updates (
             id SERIAL PRIMARY KEY,
             project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            title VARCHAR(255) NOT NULL,
-            description TEXT,
-            category VARCHAR(50) DEFAULT 'quality',
-            severity VARCHAR(20) DEFAULT 'medium'
-                CHECK (severity IN ('low', 'medium', 'high', 'critical')),
-            status VARCHAR(20) DEFAULT 'open'
-                CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
-            assigned_to INT REFERENCES employees(id) ON DELETE SET NULL,
-            due_date DATE,
-            resolved_at TIMESTAMP,
-            resolved_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            closed_at TIMESTAMP,
-            closed_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW()
-        )`);
-        await query(`CREATE INDEX IF NOT EXISTS idx_project_snags_project ON project_snags(project_id)`);
-        await query(`CREATE INDEX IF NOT EXISTS idx_project_snags_status ON project_snags(status)`);
-        console.log('[Migration] project_snags table ensured.');
-    } catch (e) { console.warn('[Migration] project_snags table skipped:', e.message); }
-
-    try {
-        await query(`CREATE TABLE IF NOT EXISTS project_closeout_items (
-            id SERIAL PRIMARY KEY,
-            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            item_name VARCHAR(255) NOT NULL,
-            category VARCHAR(50) DEFAULT 'handover',
-            is_completed BOOLEAN DEFAULT false,
-            completed_at TIMESTAMP,
-            completed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            update_date DATE NOT NULL,
+            task_cat VARCHAR(30) NOT NULL CHECK (task_cat IN ('design', 'drafting', 'site_visit', 'coordination', 'approvals', 'documentation', 'meeting', 'other')),
+            description TEXT NOT NULL,
+            hours NUMERIC(4,1) DEFAULT 0,
             notes TEXT,
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(project_id, item_name)
+            UNIQUE(project_id, employee_id, update_date)
         )`);
-        await query(`CREATE INDEX IF NOT EXISTS idx_project_closeout_project ON project_closeout_items(project_id)`);
-        console.log('[Migration] project_closeout_items table ensured.');
-    } catch (e) { console.warn('[Migration] project_closeout_items table skipped:', e.message); }
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_daily_updates_project_date ON project_daily_updates(project_id, update_date DESC)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_daily_updates_employee_date ON project_daily_updates(employee_id, update_date DESC)`);
+        console.log('[Migration] construction tables dropped; project_daily_updates ensured.');
+    } catch (e) { console.warn('[Migration] HRMS project reshape skipped:', e.message); }
 
     // Rename customer → client: add the new column, copy existing data,
     // then use `client` everywhere. The old `customer` column is kept for

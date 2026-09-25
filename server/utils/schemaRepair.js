@@ -73,10 +73,8 @@ const PROJECT_ALTER_COLUMNS = {
     // Phase 1 - project lifecycle
     start_date: 'DATE',
     end_date: 'DATE',
-    contract_value: 'DECIMAL(14,2) DEFAULT 0',
     location: 'VARCHAR(255)',
-    project_type: "VARCHAR(50) DEFAULT 'other'",
-    phase: "VARCHAR(30) DEFAULT 'planning'"
+    project_type: "VARCHAR(50) DEFAULT 'other'"
 };
 
 // Announcements table columns that may be missing on a live database created
@@ -209,100 +207,9 @@ const ENSURE_TABLE_DDL = {
         `CREATE INDEX IF NOT EXISTS idx_project_employees_project ON project_employees(project_id)`,
         `CREATE INDEX IF NOT EXISTS idx_project_employees_employee ON project_employees(employee_id)`
     ],
-    // Phase 1 - RA (running account) bills against a project, following Indian
-    // construction billing: each bill has a certified gross value, a retention
-    // % held against defects liability, and a lifecycle
-    // draft -> submitted -> approved -> paid.
-    project_invoices: [
-        `CREATE TABLE IF NOT EXISTS project_invoices (
-            id SERIAL PRIMARY KEY,
-            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            invoice_no VARCHAR(30) NOT NULL,
-            period_start DATE,
-            period_end DATE,
-            remarks TEXT,
-            gross_value DECIMAL(14,2) NOT NULL DEFAULT 0,
-            retention_pct DECIMAL(5,2) NOT NULL DEFAULT 7.5,
-            retention_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
-            net_value DECIMAL(14,2) NOT NULL DEFAULT 0,
-            status VARCHAR(20) NOT NULL DEFAULT 'draft'
-                CHECK (status IN ('draft', 'submitted', 'approved', 'paid')),
-            rejected_note TEXT,
-            approved_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            approved_at TIMESTAMP,
-            payment_received DECIMAL(14,2) NOT NULL DEFAULT 0,
-            paid_at TIMESTAMP,
-            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE (project_id, invoice_no)
-        )`,
-        `CREATE INDEX IF NOT EXISTS idx_project_invoices_project ON project_invoices(project_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_project_invoices_status ON project_invoices(status)`
-    ],
-    // Phase 2 - daily progress reports + activity line items.
-    project_daily_reports: [
-        `CREATE TABLE IF NOT EXISTS project_daily_reports (
-            id SERIAL PRIMARY KEY,
-            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            report_date DATE NOT NULL,
-            weather VARCHAR(50),
-            work_summary TEXT,
-            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(project_id, report_date)
-        )`,
-        `CREATE TABLE IF NOT EXISTS dpr_activities (
-            id SERIAL PRIMARY KEY,
-            dpr_id INT NOT NULL REFERENCES project_daily_reports(id) ON DELETE CASCADE,
-            work_item VARCHAR(255) NOT NULL,
-            description TEXT,
-            qty_done DECIMAL(12,2),
-            unit VARCHAR(20),
-            remarks TEXT,
-            created_at TIMESTAMP DEFAULT NOW()
-        )`,
-        `CREATE INDEX IF NOT EXISTS idx_dpr_project_date ON project_daily_reports(project_id, report_date DESC)`,
-        `CREATE INDEX IF NOT EXISTS idx_dpr_activities_dpr ON dpr_activities(dpr_id)`
-    ],
-    // Phase 2 - labour register (daily headcount by category).
-    project_labour_register: [
-        `CREATE TABLE IF NOT EXISTS project_labour_register (
-            id SERIAL PRIMARY KEY,
-            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            report_date DATE NOT NULL,
-            category VARCHAR(50) NOT NULL,
-            count INT NOT NULL DEFAULT 0,
-            notes TEXT,
-            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(project_id, report_date, category)
-        )`,
-        `CREATE INDEX IF NOT EXISTS idx_labour_register_project_date ON project_labour_register(project_id, report_date DESC)`
-    ],
-    // Phase 2 - materials register (receipts + usage, running balance).
-    project_materials: [
-        `CREATE TABLE IF NOT EXISTS project_materials (
-            id SERIAL PRIMARY KEY,
-            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            material VARCHAR(255) NOT NULL,
-            unit VARCHAR(20) DEFAULT 'nos',
-            quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
-            qty_used DECIMAL(12,2) NOT NULL DEFAULT 0,
-            received_on DATE,
-            vendor VARCHAR(255),
-            purpose TEXT,
-            notes TEXT,
-            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW()
-        )`,
-        `CREATE INDEX IF NOT EXISTS idx_project_materials_project ON project_materials(project_id)`
-    ],
-    // Phase 4 - documents, snags and closeout checklist. Fully self-contained
-    // so an older live DB heals itself on first contact with these routes.
+    // Phase 4 - project documents repository (kept) + the HRMS daily-update
+    // table that replaced the construction tables (RA bills, DPR, labour,
+    // materials, snags, closeout) which the 2026 reshape dropped.
     project_documents: [
         `CREATE TABLE IF NOT EXISTS project_documents (
             id SERIAL PRIMARY KEY,
@@ -317,45 +224,22 @@ const ENSURE_TABLE_DDL = {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_project_documents_project ON project_documents(project_id)`
     ],
-    project_snags: [
-        `CREATE TABLE IF NOT EXISTS project_snags (
+    project_daily_updates: [
+        `CREATE TABLE IF NOT EXISTS project_daily_updates (
             id SERIAL PRIMARY KEY,
             project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            title VARCHAR(255) NOT NULL,
-            description TEXT,
-            category VARCHAR(50) DEFAULT 'quality',
-            severity VARCHAR(20) DEFAULT 'medium'
-                CHECK (severity IN ('low', 'medium', 'high', 'critical')),
-            status VARCHAR(20) DEFAULT 'open'
-                CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
-            assigned_to INT REFERENCES employees(id) ON DELETE SET NULL,
-            due_date DATE,
-            resolved_at TIMESTAMP,
-            resolved_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            closed_at TIMESTAMP,
-            closed_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW()
-        )`,
-        `CREATE INDEX IF NOT EXISTS idx_project_snags_project ON project_snags(project_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_project_snags_status ON project_snags(status)`
-    ],
-    project_closeout_items: [
-        `CREATE TABLE IF NOT EXISTS project_closeout_items (
-            id SERIAL PRIMARY KEY,
-            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            item_name VARCHAR(255) NOT NULL,
-            category VARCHAR(50) DEFAULT 'handover',
-            is_completed BOOLEAN DEFAULT false,
-            completed_at TIMESTAMP,
-            completed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            update_date DATE NOT NULL,
+            task_cat VARCHAR(30) NOT NULL CHECK (task_cat IN ('design', 'drafting', 'site_visit', 'coordination', 'approvals', 'documentation', 'meeting', 'other')),
+            description TEXT NOT NULL,
+            hours NUMERIC(4,1) DEFAULT 0,
             notes TEXT,
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(project_id, item_name)
+            UNIQUE(project_id, employee_id, update_date)
         )`,
-        `CREATE INDEX IF NOT EXISTS idx_project_closeout_project ON project_closeout_items(project_id)`
+        `CREATE INDEX IF NOT EXISTS idx_project_daily_updates_project_date ON project_daily_updates(project_id, update_date DESC)`,
+        `CREATE INDEX IF NOT EXISTS idx_project_daily_updates_employee_date ON project_daily_updates(employee_id, update_date DESC)`
     ],
     project_sets: [
         `CREATE TABLE IF NOT EXISTS project_sets (
@@ -469,72 +353,8 @@ const PROJECT_MODULE_ALTER_COLUMNS = {
     'project_employees': {
         status: 'VARCHAR(20) DEFAULT \'active\'',
     },
-    // Phase 1 - RA bills. If a live DB has the table but misses a column (e.g. a
-    // partially-applied migration), heal by column name on 42703 like the rest.
-    'project_invoices': {
-        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
-        invoice_no: 'VARCHAR(30) NOT NULL',
-        period_start: 'DATE',
-        period_end: 'DATE',
-        remarks: 'TEXT',
-        gross_value: 'DECIMAL(14,2) NOT NULL DEFAULT 0',
-        retention_pct: 'DECIMAL(5,2) NOT NULL DEFAULT 7.5',
-        retention_amount: 'DECIMAL(14,2) NOT NULL DEFAULT 0',
-        net_value: 'DECIMAL(14,2) NOT NULL DEFAULT 0',
-        status: "VARCHAR(20) NOT NULL DEFAULT 'draft'",
-        rejected_note: 'TEXT',
-        approved_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
-        approved_at: 'TIMESTAMP',
-        payment_received: 'DECIMAL(14,2) NOT NULL DEFAULT 0',
-        paid_at: 'TIMESTAMP',
-        created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
-        created_at: 'TIMESTAMP DEFAULT NOW()',
-        updated_at: 'TIMESTAMP DEFAULT NOW()',
-    },
-    // Phase 2 - DPR body, its activity line items, labour register, materials.
-    'project_daily_reports': {
-        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
-        report_date: 'DATE NOT NULL',
-        weather: 'VARCHAR(50)',
-        work_summary: 'TEXT',
-        created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
-        created_at: 'TIMESTAMP DEFAULT NOW()',
-        updated_at: 'TIMESTAMP DEFAULT NOW()',
-    },
-    'dpr_activities': {
-        dpr_id: 'INT NOT NULL REFERENCES project_daily_reports(id) ON DELETE CASCADE',
-        work_item: 'VARCHAR(255) NOT NULL',
-        description: 'TEXT',
-        qty_done: 'DECIMAL(12,2)',
-        unit: 'VARCHAR(20)',
-        remarks: 'TEXT',
-        created_at: 'TIMESTAMP DEFAULT NOW()',
-    },
-    'project_labour_register': {
-        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
-        report_date: 'DATE NOT NULL',
-        category: 'VARCHAR(50) NOT NULL',
-        count: 'INT NOT NULL DEFAULT 0',
-        notes: 'TEXT',
-        created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
-        created_at: 'TIMESTAMP DEFAULT NOW()',
-        updated_at: 'TIMESTAMP DEFAULT NOW()',
-    },
-    'project_materials': {
-        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
-        material: 'VARCHAR(255) NOT NULL',
-        unit: "VARCHAR(20) DEFAULT 'nos'",
-        quantity: 'DECIMAL(12,2) NOT NULL DEFAULT 0',
-        qty_used: 'DECIMAL(12,2) NOT NULL DEFAULT 0',
-        received_on: 'DATE',
-        vendor: 'VARCHAR(255)',
-        purpose: 'TEXT',
-        notes: 'TEXT',
-        created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
-        created_at: 'TIMESTAMP DEFAULT NOW()',
-        updated_at: 'TIMESTAMP DEFAULT NOW()',
-    },
-    // Phase 4 - documents, snags and closeout checklist column maps.
+    // Phase 4 - documents + the HRMS daily-update table column maps (the rest of
+    // the old construction tables were dropped in the 2026 reshape).
     'project_documents': {
         project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
         title: 'VARCHAR(255) NOT NULL',
@@ -545,30 +365,13 @@ const PROJECT_MODULE_ALTER_COLUMNS = {
         uploader_id: 'INT REFERENCES employees(id) ON DELETE SET NULL',
         created_at: 'TIMESTAMP DEFAULT NOW()',
     },
-    'project_snags': {
+    'project_daily_updates': {
         project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
-        title: 'VARCHAR(255) NOT NULL',
-        description: 'TEXT',
-        category: "VARCHAR(50) DEFAULT 'quality'",
-        severity: "VARCHAR(20) DEFAULT 'medium'",
-        status: "VARCHAR(20) DEFAULT 'open'",
-        assigned_to: 'INT REFERENCES employees(id) ON DELETE SET NULL',
-        due_date: 'DATE',
-        resolved_at: 'TIMESTAMP',
-        resolved_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
-        closed_at: 'TIMESTAMP',
-        closed_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
-        created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
-        created_at: 'TIMESTAMP DEFAULT NOW()',
-        updated_at: 'TIMESTAMP DEFAULT NOW()',
-    },
-    'project_closeout_items': {
-        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
-        item_name: 'VARCHAR(255) NOT NULL',
-        category: "VARCHAR(50) DEFAULT 'handover'",
-        is_completed: 'BOOLEAN DEFAULT false',
-        completed_at: 'TIMESTAMP',
-        completed_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        employee_id: 'INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE',
+        update_date: 'DATE NOT NULL',
+        task_cat: `VARCHAR(30) NOT NULL CHECK (task_cat IN ('design', 'drafting', 'site_visit', 'coordination', 'approvals', 'documentation', 'meeting', 'other'))`,
+        description: 'TEXT NOT NULL',
+        hours: 'NUMERIC(4,1) DEFAULT 0',
         notes: 'TEXT',
         created_at: 'TIMESTAMP DEFAULT NOW()',
         updated_at: 'TIMESTAMP DEFAULT NOW()',
@@ -614,15 +417,11 @@ async function runWithSchemaRepair(fn) {
                         healed = miss.column && await ensureProjectColumn(miss.column);
                     } else if (table === 'project_sets' || table === 'ps') {
                         healed = miss.column && await ensureProjectSetColumn(miss.column);
-                    } else if (table === 'daily_work_counts' || table === 'dwc' || table === 'project_employees' || table === 'pe' || table === 'project_invoices' || table === 'pi'
-                            || table === 'project_daily_reports' || table === 'pdr' || table === 'dpr_activities' || table === 'da'
-                            || table === 'project_labour_register' || table === 'plr' || table === 'project_materials' || table === 'pm'
-                            || table === 'project_documents' || table === 'pdoc' || table === 'project_snags' || table === 'psnag'
-                            || table === 'project_closeout_items' || table === 'pci') {
+                    } else if (table === 'daily_work_counts' || table === 'dwc' || table === 'project_employees' || table === 'pe'
+                            || table === 'project_documents' || table === 'pdoc' || table === 'project_daily_updates' || table === 'pdu') {
                         const resolved = {
-                            dwc: 'daily_work_counts', pe: 'project_employees', pi: 'project_invoices',
-                            pdr: 'project_daily_reports', da: 'dpr_activities', plr: 'project_labour_register', pm: 'project_materials',
-                            pdoc: 'project_documents', psnag: 'project_snags', pci: 'project_closeout_items'
+                            dwc: 'daily_work_counts', pe: 'project_employees',
+                            pdoc: 'project_documents', pdu: 'project_daily_updates'
                         }[table] || table;
                         healed = miss.column && await ensureProjectModuleColumn(resolved, miss.column);
                     } else if (table === 'employees' || table === 'e') {
@@ -636,14 +435,8 @@ async function runWithSchemaRepair(fn) {
                             || await ensureProjectSetColumn(miss.column)
                             || await ensureProjectModuleColumn('daily_work_counts', miss.column)
                             || await ensureProjectModuleColumn('project_employees', miss.column)
-                            || await ensureProjectModuleColumn('project_invoices', miss.column)
-                            || await ensureProjectModuleColumn('project_daily_reports', miss.column)
-                            || await ensureProjectModuleColumn('dpr_activities', miss.column)
-                            || await ensureProjectModuleColumn('project_labour_register', miss.column)
-                            || await ensureProjectModuleColumn('project_materials', miss.column)
                             || await ensureProjectModuleColumn('project_documents', miss.column)
-                            || await ensureProjectModuleColumn('project_snags', miss.column)
-                            || await ensureProjectModuleColumn('project_closeout_items', miss.column)
+                            || await ensureProjectModuleColumn('project_daily_updates', miss.column)
                             || await ensureEmployeeColumn(miss.column)
                             || await ensureAnnouncementsColumn(miss.column);
                     }

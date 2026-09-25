@@ -654,10 +654,8 @@ CREATE TABLE IF NOT EXISTS projects (
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'paused', 'terminated', 'on_hold', 'completed', 'cancelled')),
     start_date DATE,
     end_date DATE,
-    contract_value DECIMAL(14,2) DEFAULT 0,
     location VARCHAR(255),
     project_type VARCHAR(50) DEFAULT 'other',
-    phase VARCHAR(30) DEFAULT 'planning',
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -721,33 +719,25 @@ CREATE INDEX IF NOT EXISTS idx_daily_work_counts_date ON daily_work_counts(work_
 CREATE INDEX IF NOT EXISTS idx_daily_work_counts_unique ON daily_work_counts(project_id, set_id, employee_id, work_date);
 
 -- ============================================================
--- 24. PROJECT INVOICES (RA bills with retention, Indian billing practice)
+-- 24. PROJECT DAILY UPDATES (architecture-studio daily text updates)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS project_invoices (
+-- One plain update per employee per project per day: what was worked on,
+-- which studio category it falls under, hours spent, and any notes.
+CREATE TABLE IF NOT EXISTS project_daily_updates (
     id SERIAL PRIMARY KEY,
     project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    invoice_no VARCHAR(30) NOT NULL,
-    period_start DATE,
-    period_end DATE,
-    remarks TEXT,
-    gross_value DECIMAL(14,2) NOT NULL DEFAULT 0,
-    retention_pct DECIMAL(5,2) NOT NULL DEFAULT 7.5,
-    retention_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
-    net_value DECIMAL(14,2) NOT NULL DEFAULT 0,
-    status VARCHAR(20) NOT NULL DEFAULT 'draft'
-        CHECK (status IN ('draft', 'submitted', 'approved', 'paid')),
-    rejected_note TEXT,
-    approved_by INT REFERENCES employees(id) ON DELETE SET NULL,
-    approved_at TIMESTAMP,
-    payment_received DECIMAL(14,2) NOT NULL DEFAULT 0,
-    paid_at TIMESTAMP,
-    created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    update_date DATE NOT NULL,
+    task_cat VARCHAR(30) NOT NULL CHECK (task_cat IN ('design', 'drafting', 'site_visit', 'coordination', 'approvals', 'documentation', 'meeting', 'other')),
+    description TEXT NOT NULL,
+    hours NUMERIC(4,1) DEFAULT 0,
+    notes TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE (project_id, invoice_no)
+    UNIQUE(project_id, employee_id, update_date)
 );
-CREATE INDEX IF NOT EXISTS idx_project_invoices_project ON project_invoices(project_id);
-CREATE INDEX IF NOT EXISTS idx_project_invoices_status ON project_invoices(status);
+CREATE INDEX IF NOT EXISTS idx_project_daily_updates_project_date ON project_daily_updates(project_id, update_date DESC);
+CREATE INDEX IF NOT EXISTS idx_project_daily_updates_employee_date ON project_daily_updates(employee_id, update_date DESC);
 
 -- ============================================================
 -- PROJECT SETTINGS (for holiday config, etc.)
@@ -763,71 +753,7 @@ CREATE TABLE IF NOT EXISTS project_settings (
 );
 
 -- ============================================================
--- 25. DAILY PROGRESS REPORTS (DPR) + activity line items
--- ============================================================
-CREATE TABLE IF NOT EXISTS project_daily_reports (
-    id SERIAL PRIMARY KEY,
-    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    report_date DATE NOT NULL,
-    weather VARCHAR(50),
-    work_summary TEXT,
-    created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(project_id, report_date)
-);
-CREATE TABLE IF NOT EXISTS dpr_activities (
-    id SERIAL PRIMARY KEY,
-    dpr_id INT NOT NULL REFERENCES project_daily_reports(id) ON DELETE CASCADE,
-    work_item VARCHAR(255) NOT NULL,
-    description TEXT,
-    qty_done DECIMAL(12,2),
-    unit VARCHAR(20),
-    remarks TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_dpr_project_date ON project_daily_reports(project_id, report_date DESC);
-CREATE INDEX IF NOT EXISTS idx_dpr_activities_dpr ON dpr_activities(dpr_id);
-
--- ============================================================
--- 26. LABOUR REGISTER (daily labour attendance by category)
--- ============================================================
-CREATE TABLE IF NOT EXISTS project_labour_register (
-    id SERIAL PRIMARY KEY,
-    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    report_date DATE NOT NULL,
-    category VARCHAR(50) NOT NULL,
-    count INT NOT NULL DEFAULT 0,
-    notes TEXT,
-    created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(project_id, report_date, category)
-);
-CREATE INDEX IF NOT EXISTS idx_labour_register_project_date ON project_labour_register(project_id, report_date DESC);
-
--- ============================================================
--- 27. MATERIALS REGISTER (receipts + usage, running balance)
--- ============================================================
-CREATE TABLE IF NOT EXISTS project_materials (
-    id SERIAL PRIMARY KEY,
-    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    material VARCHAR(255) NOT NULL,
-    unit VARCHAR(20) DEFAULT 'nos',
-    quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
-    qty_used DECIMAL(12,2) NOT NULL DEFAULT 0,
-    received_on DATE,
-    vendor VARCHAR(255),
-    purpose TEXT,
-    notes TEXT,
-    created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_project_materials_project ON project_materials(project_id);
-
--- ============================================================
--- 28. PROJECT DOCUMENTS (repository for drawings, contracts, approvals...)
+-- 25. PROJECT DOCUMENTS (repository for drawings, contracts, approvals...)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS project_documents (
     id SERIAL PRIMARY KEY,
@@ -841,50 +767,6 @@ CREATE TABLE IF NOT EXISTS project_documents (
     created_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_project_documents_project ON project_documents(project_id);
-
--- ============================================================
--- 29. PROJECT SNAGS (issue / deficiency log through closeout)
--- ============================================================
-CREATE TABLE IF NOT EXISTS project_snags (
-    id SERIAL PRIMARY KEY,
-    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    category VARCHAR(50) DEFAULT 'quality',
-    severity VARCHAR(20) DEFAULT 'medium'
-        CHECK (severity IN ('low', 'medium', 'high', 'critical')),
-    status VARCHAR(20) DEFAULT 'open'
-        CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
-    assigned_to INT REFERENCES employees(id) ON DELETE SET NULL,
-    due_date DATE,
-    resolved_at TIMESTAMP,
-    resolved_by INT REFERENCES employees(id) ON DELETE SET NULL,
-    closed_at TIMESTAMP,
-    closed_by INT REFERENCES employees(id) ON DELETE SET NULL,
-    created_by INT REFERENCES employees(id) ON DELETE SET NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_project_snags_project ON project_snags(project_id);
-CREATE INDEX IF NOT EXISTS idx_project_snags_status ON project_snags(status);
-
--- ============================================================
--- 30. PROJECT CLOSEOUT CHECKLIST (handover items per project)
--- ============================================================
-CREATE TABLE IF NOT EXISTS project_closeout_items (
-    id SERIAL PRIMARY KEY,
-    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    item_name VARCHAR(255) NOT NULL,
-    category VARCHAR(50) DEFAULT 'handover',
-    is_completed BOOLEAN DEFAULT false,
-    completed_at TIMESTAMP,
-    completed_by INT REFERENCES employees(id) ON DELETE SET NULL,
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(project_id, item_name)
-);
-CREATE INDEX IF NOT EXISTS idx_project_closeout_project ON project_closeout_items(project_id);
 
 -- ============================================================
 -- SEED DATA for projects (optional - admin can add later)
