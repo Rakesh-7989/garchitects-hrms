@@ -124,42 +124,35 @@ async function purgeExpiredPhotos() {
     }
 }
 
-// One-time repair: recompute payroll net_salary where it does not match the current
-// formula net = gross(A) + bonus(C) - deductions(B) - employer(D).
-// Fixes rows corrupted by the old string-concatenation bug (e.g. "30000" + "400" = "30000400").
+// Payroll repair must reuse the exact /generate math - never a second copy of
+// the formula. computeTotals lives in routes/payroll.js and is the verified
+// source of truth (mirrored by ppCompute on the client).
+const { computeTotals } = require('./routes/payroll');
+
+// One-time repair: recompute payroll net_salary where it does not match the
+// generate-time formula used when payslips were processed. Fixes rows corrupted
+// by the old string-concatenation bug (e.g. "30000" + "400" = "30000400").
+// Net = A (earnings) + C (bonus) - B (deductions) - LOP deduction.
+// Employer contributions (D) are informational - never deducted from net.
 async function repairPayrollNetSalaries() {
     try {
         const rows = await query(
             `SELECT id,
-                COALESCE(CAST(basic_salary AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(hra AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(conveyance AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(medical AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(special_allowance AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(other_allowance AS DOUBLE PRECISION), 0) AS gross,
-                COALESCE(CAST(pf AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(esi AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(professional_tax AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(income_tax AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(loan_deduction AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(advance_salary AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(other_deduction AS DOUBLE PRECISION), 0) AS deductions,
-                COALESCE(CAST(bonus AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(incentive AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(extra_work AS DOUBLE PRECISION), 0) AS bonus,
-                COALESCE(CAST(employer_pf AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(employer_esi AS DOUBLE PRECISION), 0)
-                  + COALESCE(CAST(employer_contribution AS DOUBLE PRECISION), 0) AS employer,
+                basic_salary, hra, conveyance, special_allowance, other_allowance, medical,
+                pf, esi, professional_tax, income_tax, loan_deduction, advance_salary, other_deduction,
+                bonus, incentive, extra_work,
+                employer_pf, employer_esi, employer_contribution,
+                working_days, lop_days,
                 net_salary FROM payroll`
         );
         let fixed = 0;
         for (const r of rows.rows) {
-            const net = Number(r.gross || 0) + Number(r.bonus || 0) - Number(r.deductions || 0) - Number(r.employer || 0);
+            const net = computeTotals(r).net;
             if (Number(r.net_salary) === net) continue;
             await query('UPDATE payroll SET net_salary = $1 WHERE id = $2', [net, r.id]);
             fixed++;
         }
-        if (fixed > 0) console.log(`[Payroll] Recomputed net_salary for ${fixed} corrupted payslip row(s).`);
+        if (fixed > 0) console.log(`[Payroll] Recomputed net_salary for ${fixed} row(s) to match the /generate formula.`);
     } catch (e) {
         console.error('Payroll repair error:', e.message);
     }

@@ -97,7 +97,12 @@ function amountToWords(amount) {
 
 // Compute totals matching the payslip layout:
 //   A = Earnings (basic + allowances), B = Deductions, C = Bonus (incl. extra work),
-//   D = Employer contributions, Net = Gross - LOP deduction + C - (B + D).
+//   D = Employer contributions - shown separately on the payslip as an employer
+//       cost and NEVER deducted from the employee's net pay.
+//   Net = A + C - B - (per-day LOP deduction). ppCompute (client) mirrors this
+//   exactly so the live preview always equals the generated PDF, and
+//   server/index.js::repairPayrollNetSalaries reuses it so boot-time recomputes
+//   can never drift from the /generate formula again.
 function computeTotals(v) {
     const componentGross = num(v.basic_salary) + num(v.hra) + num(v.conveyance)
         + num(v.special_allowance) + num(v.other_allowance);
@@ -1507,3 +1512,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 module.exports = router;
+// computeTotals is the single source of truth for payroll net-pay math. It is
+// reused by server/index.js::repairPayrollNetSalaries so the boot-time recompute
+// can never drift from the /generate formula again.
+module.exports.computeTotals = computeTotals;

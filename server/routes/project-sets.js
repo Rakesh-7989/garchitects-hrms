@@ -15,6 +15,8 @@ const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
  */
 router.get('/single/:id', verifyToken, async (req, res) => {
     try {
+        const hasDeletedAt = await hasColumn('project_sets', 'deleted_at');
+        const deletedFilter = hasDeletedAt ? 'AND ps.deleted_at IS NULL' : '';
         const result = await q(
             `SELECT ps.*, p.name as project_name, COALESCE(p.client, p.customer) as project_client,
              (
@@ -28,7 +30,7 @@ router.get('/single/:id', verifyToken, async (req, res) => {
              ) as submission_count
              FROM project_sets ps
              JOIN projects p ON ps.project_id = p.id
-             WHERE ps.id = $1 AND ps.deleted_at IS NULL`,
+             WHERE ps.id = $1 ${deletedFilter}`,
             [req.params.id]
         );
         if (result.rows.length === 0) {
@@ -107,22 +109,54 @@ router.post('/:projectId', verifyToken, isAdmin, async (req, res) => {
 
 /**
  * DELETE /api/project-sets/:id
- * Hard-delete a set (permanently removes it and cascades to daily_work_counts).
- * Since daily_work_counts has ON DELETE CASCADE on set_id, all daily counts
- * for this set will be automatically removed.
+ * Soft-delete a set (marks deleted_at) whenever the column exists - this is what
+ * the GET routes filter on, and it lets the admin UI's "undo delete set" restore
+ * the set. Hard-delete fallback only for legacy databases that predate the
+ * deleted_at column (there the cascade to daily_work_counts still applies).
  */
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
-        const result = await q(
-            `DELETE FROM project_sets WHERE id = $1 RETURNING id, name, project_id`,
-            [req.params.id]
-        );
+        const hasDeletedAt = await hasColumn('project_sets', 'deleted_at');
+        const result = hasDeletedAt
+            ? await q(
+                `UPDATE project_sets SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL
+                 RETURNING id, name, project_id`,
+                [req.params.id]
+            )
+            : await q(
+                `DELETE FROM project_sets WHERE id = $1 RETURNING id, name, project_id`,
+                [req.params.id]
+            );
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Set not found' });
         }
         res.json({ success: true, message: 'Set deleted successfully', set: result.rows[0] });
     } catch (error) {
         console.error(`Error deleting set ${req.params.id}:`, error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: (error && error.message) || r.message });
+    }
+});
+
+/**
+ * POST /api/project-sets/:id/restore
+ * Restore a soft-deleted set - backs the admin "undo delete" toast in
+ * project-management.html (restoreSet()). Registered after POST /:projectId, but
+ * /:projectId matches a single path segment only, so there is no conflict.
+ */
+router.post('/:id/restore', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const result = await q(
+            `UPDATE project_sets SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL
+             RETURNING id, name, project_id`,
+            [req.params.id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Set not found or not deleted' });
+        }
+        res.json({ success: true, message: 'Set restored successfully', set: result.rows[0] });
+    } catch (error) {
+        console.error(`Error restoring set ${req.params.id}:`, error);
         const r = pgErrorResponse(error);
         res.status(r.status).json({ success: false, message: (error && error.message) || r.message });
     }
