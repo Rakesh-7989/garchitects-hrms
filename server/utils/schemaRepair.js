@@ -240,6 +240,67 @@ const ENSURE_TABLE_DDL = {
         `CREATE INDEX IF NOT EXISTS idx_project_invoices_project ON project_invoices(project_id)`,
         `CREATE INDEX IF NOT EXISTS idx_project_invoices_status ON project_invoices(status)`
     ],
+    // Phase 2 - daily progress reports + activity line items.
+    project_daily_reports: [
+        `CREATE TABLE IF NOT EXISTS project_daily_reports (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            report_date DATE NOT NULL,
+            weather VARCHAR(50),
+            work_summary TEXT,
+            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(project_id, report_date)
+        )`,
+        `CREATE TABLE IF NOT EXISTS dpr_activities (
+            id SERIAL PRIMARY KEY,
+            dpr_id INT NOT NULL REFERENCES project_daily_reports(id) ON DELETE CASCADE,
+            work_item VARCHAR(255) NOT NULL,
+            description TEXT,
+            qty_done DECIMAL(12,2),
+            unit VARCHAR(20),
+            remarks TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_dpr_project_date ON project_daily_reports(project_id, report_date DESC)`,
+        `CREATE INDEX IF NOT EXISTS idx_dpr_activities_dpr ON dpr_activities(dpr_id)`
+    ],
+    // Phase 2 - labour register (daily headcount by category).
+    project_labour_register: [
+        `CREATE TABLE IF NOT EXISTS project_labour_register (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            report_date DATE NOT NULL,
+            category VARCHAR(50) NOT NULL,
+            count INT NOT NULL DEFAULT 0,
+            notes TEXT,
+            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(project_id, report_date, category)
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_labour_register_project_date ON project_labour_register(project_id, report_date DESC)`
+    ],
+    // Phase 2 - materials register (receipts + usage, running balance).
+    project_materials: [
+        `CREATE TABLE IF NOT EXISTS project_materials (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            material VARCHAR(255) NOT NULL,
+            unit VARCHAR(20) DEFAULT 'nos',
+            quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
+            qty_used DECIMAL(12,2) NOT NULL DEFAULT 0,
+            received_on DATE,
+            vendor VARCHAR(255),
+            purpose TEXT,
+            notes TEXT,
+            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_project_materials_project ON project_materials(project_id)`
+    ],
     project_sets: [
         `CREATE TABLE IF NOT EXISTS project_sets (
             id SERIAL PRIMARY KEY,
@@ -373,6 +434,49 @@ const PROJECT_MODULE_ALTER_COLUMNS = {
         created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
         created_at: 'TIMESTAMP DEFAULT NOW()',
         updated_at: 'TIMESTAMP DEFAULT NOW()',
+    },
+    // Phase 2 - DPR body, its activity line items, labour register, materials.
+    'project_daily_reports': {
+        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
+        report_date: 'DATE NOT NULL',
+        weather: 'VARCHAR(50)',
+        work_summary: 'TEXT',
+        created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        created_at: 'TIMESTAMP DEFAULT NOW()',
+        updated_at: 'TIMESTAMP DEFAULT NOW()',
+    },
+    'dpr_activities': {
+        dpr_id: 'INT NOT NULL REFERENCES project_daily_reports(id) ON DELETE CASCADE',
+        work_item: 'VARCHAR(255) NOT NULL',
+        description: 'TEXT',
+        qty_done: 'DECIMAL(12,2)',
+        unit: 'VARCHAR(20)',
+        remarks: 'TEXT',
+        created_at: 'TIMESTAMP DEFAULT NOW()',
+    },
+    'project_labour_register': {
+        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
+        report_date: 'DATE NOT NULL',
+        category: 'VARCHAR(50) NOT NULL',
+        count: 'INT NOT NULL DEFAULT 0',
+        notes: 'TEXT',
+        created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        created_at: 'TIMESTAMP DEFAULT NOW()',
+        updated_at: 'TIMESTAMP DEFAULT NOW()',
+    },
+    'project_materials': {
+        project_id: 'INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE',
+        material: 'VARCHAR(255) NOT NULL',
+        unit: "VARCHAR(20) DEFAULT 'nos'",
+        quantity: 'DECIMAL(12,2) NOT NULL DEFAULT 0',
+        qty_used: 'DECIMAL(12,2) NOT NULL DEFAULT 0',
+        received_on: 'DATE',
+        vendor: 'VARCHAR(255)',
+        purpose: 'TEXT',
+        notes: 'TEXT',
+        created_by: 'INT REFERENCES employees(id) ON DELETE SET NULL',
+        created_at: 'TIMESTAMP DEFAULT NOW()',
+        updated_at: 'TIMESTAMP DEFAULT NOW()',
     }
 };
 
@@ -415,11 +519,14 @@ async function runWithSchemaRepair(fn) {
                         healed = miss.column && await ensureProjectColumn(miss.column);
                     } else if (table === 'project_sets' || table === 'ps') {
                         healed = miss.column && await ensureProjectSetColumn(miss.column);
-                    } else if (table === 'daily_work_counts' || table === 'dwc' || table === 'project_employees' || table === 'pe' || table === 'project_invoices' || table === 'pi') {
-                        healed = miss.column && await ensureProjectModuleColumn(
-                            table === 'dwc' ? 'daily_work_counts' : table === 'pe' ? 'project_employees' : table === 'pi' ? 'project_invoices' : table,
-                            miss.column
-                        );
+                    } else if (table === 'daily_work_counts' || table === 'dwc' || table === 'project_employees' || table === 'pe' || table === 'project_invoices' || table === 'pi'
+                            || table === 'project_daily_reports' || table === 'pdr' || table === 'dpr_activities' || table === 'da'
+                            || table === 'project_labour_register' || table === 'plr' || table === 'project_materials' || table === 'pm') {
+                        const resolved = {
+                            dwc: 'daily_work_counts', pe: 'project_employees', pi: 'project_invoices',
+                            pdr: 'project_daily_reports', da: 'dpr_activities', plr: 'project_labour_register', pm: 'project_materials'
+                        }[table] || table;
+                        healed = miss.column && await ensureProjectModuleColumn(resolved, miss.column);
                     } else if (table === 'employees' || table === 'e') {
                         healed = miss.column && await ensureEmployeeColumn(miss.column);
                     } else if (table === 'announcements' || table === 'a') {
@@ -432,6 +539,10 @@ async function runWithSchemaRepair(fn) {
                             || await ensureProjectModuleColumn('daily_work_counts', miss.column)
                             || await ensureProjectModuleColumn('project_employees', miss.column)
                             || await ensureProjectModuleColumn('project_invoices', miss.column)
+                            || await ensureProjectModuleColumn('project_daily_reports', miss.column)
+                            || await ensureProjectModuleColumn('dpr_activities', miss.column)
+                            || await ensureProjectModuleColumn('project_labour_register', miss.column)
+                            || await ensureProjectModuleColumn('project_materials', miss.column)
                             || await ensureEmployeeColumn(miss.column)
                             || await ensureAnnouncementsColumn(miss.column);
                     }

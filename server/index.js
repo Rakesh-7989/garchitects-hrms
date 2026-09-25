@@ -61,6 +61,9 @@ app.use('/api/project-sets', require('./routes/project-sets'));
 app.use('/api/daily-work-counts', require('./routes/daily-work-counts'));
 app.use('/api/project-reports', require('./routes/project-reports'));
 app.use('/api/project-invoices', require('./routes/project-invoices'));
+app.use('/api/project-dpr', require('./routes/project-dpr'));
+app.use('/api/project-labour', require('./routes/project-labour'));
+app.use('/api/project-materials', require('./routes/project-materials'));
 
 // Static files (mounted after API routes so API paths always take precedence)
 app.use(express.static(path.join(__dirname, '../public')));
@@ -319,6 +322,71 @@ async function runMigrations() {
         await query(`CREATE INDEX IF NOT EXISTS idx_project_invoices_status ON project_invoices(status)`);
         console.log('[Migration] project_invoices table ensured.');
     } catch (e) { console.warn('[Migration] project_invoices table skipped:', e.message); }
+
+    // Phase 2 - site ops tables: DPR + activities, labour register, materials.
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS project_daily_reports (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            report_date DATE NOT NULL,
+            weather VARCHAR(50),
+            work_summary TEXT,
+            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(project_id, report_date)
+        )`);
+        await query(`CREATE TABLE IF NOT EXISTS dpr_activities (
+            id SERIAL PRIMARY KEY,
+            dpr_id INT NOT NULL REFERENCES project_daily_reports(id) ON DELETE CASCADE,
+            work_item VARCHAR(255) NOT NULL,
+            description TEXT,
+            qty_done DECIMAL(12,2),
+            unit VARCHAR(20),
+            remarks TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_dpr_project_date ON project_daily_reports(project_id, report_date DESC)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_dpr_activities_dpr ON dpr_activities(dpr_id)`);
+        console.log('[Migration] project_daily_reports + dpr_activities tables ensured.');
+    } catch (e) { console.warn('[Migration] DPR tables skipped:', e.message); }
+
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS project_labour_register (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            report_date DATE NOT NULL,
+            category VARCHAR(50) NOT NULL,
+            count INT NOT NULL DEFAULT 0,
+            notes TEXT,
+            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(project_id, report_date, category)
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_labour_register_project_date ON project_labour_register(project_id, report_date DESC)`);
+        console.log('[Migration] project_labour_register table ensured.');
+    } catch (e) { console.warn('[Migration] labour register table skipped:', e.message); }
+
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS project_materials (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            material VARCHAR(255) NOT NULL,
+            unit VARCHAR(20) DEFAULT 'nos',
+            quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
+            qty_used DECIMAL(12,2) NOT NULL DEFAULT 0,
+            received_on DATE,
+            vendor VARCHAR(255),
+            purpose TEXT,
+            notes TEXT,
+            created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_materials_project ON project_materials(project_id)`);
+        console.log('[Migration] project_materials table ensured.');
+    } catch (e) { console.warn('[Migration] project_materials table skipped:', e.message); }
 
     // Rename customer → client: add the new column, copy existing data,
     // then use `client` everywhere. The old `customer` column is kept for

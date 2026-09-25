@@ -763,6 +763,70 @@ CREATE TABLE IF NOT EXISTS project_settings (
 );
 
 -- ============================================================
+-- 25. DAILY PROGRESS REPORTS (DPR) + activity line items
+-- ============================================================
+CREATE TABLE IF NOT EXISTS project_daily_reports (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    report_date DATE NOT NULL,
+    weather VARCHAR(50),
+    work_summary TEXT,
+    created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(project_id, report_date)
+);
+CREATE TABLE IF NOT EXISTS dpr_activities (
+    id SERIAL PRIMARY KEY,
+    dpr_id INT NOT NULL REFERENCES project_daily_reports(id) ON DELETE CASCADE,
+    work_item VARCHAR(255) NOT NULL,
+    description TEXT,
+    qty_done DECIMAL(12,2),
+    unit VARCHAR(20),
+    remarks TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_dpr_project_date ON project_daily_reports(project_id, report_date DESC);
+CREATE INDEX IF NOT EXISTS idx_dpr_activities_dpr ON dpr_activities(dpr_id);
+
+-- ============================================================
+-- 26. LABOUR REGISTER (daily labour attendance by category)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS project_labour_register (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    report_date DATE NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    count INT NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(project_id, report_date, category)
+);
+CREATE INDEX IF NOT EXISTS idx_labour_register_project_date ON project_labour_register(project_id, report_date DESC);
+
+-- ============================================================
+-- 27. MATERIALS REGISTER (receipts + usage, running balance)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS project_materials (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    material VARCHAR(255) NOT NULL,
+    unit VARCHAR(20) DEFAULT 'nos',
+    quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
+    qty_used DECIMAL(12,2) NOT NULL DEFAULT 0,
+    received_on DATE,
+    vendor VARCHAR(255),
+    purpose TEXT,
+    notes TEXT,
+    created_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_project_materials_project ON project_materials(project_id);
+
+-- ============================================================
 -- SEED DATA for projects (optional - admin can add later)
 -- ============================================================
 

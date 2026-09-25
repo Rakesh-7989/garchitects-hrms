@@ -454,6 +454,146 @@
         </div>
     </div>
 
+    <div class="modal" id="dprModal">
+        <div class="modal-content" style="max-width:680px;">
+            <div class="modal-header">
+                <h2 id="dprModalTitle">Daily Progress Report</h2>
+                <button onclick="closeModal('dprModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="dprForm" onsubmit="saveDpr(event)">
+                    <input type="hidden" id="dprEditId">
+                    <input type="hidden" id="dprProjectId">
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Report Date *</label>
+                            <input type="date" class="form-control" name="report_date" required>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Weather</label>
+                            <select class="form-control" name="weather">
+                                <option value="">—</option>
+                                <option value="Sunny">Sunny</option>
+                                <option value="Cloudy">Cloudy</option>
+                                <option value="Rainy">Rainy</option>
+                                <option value="Windy">Windy</option>
+                                <option value="Hot">Hot</option>
+                                <option value="Cold">Cold</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Work Summary</label>
+                        <textarea class="form-control" name="work_summary" rows="3" placeholder="Narrative of the day's progress..."></textarea>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <label style="font-size:0.85rem;font-weight:600;">Activity Lines</label>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="addDprActivityRow()"><i class="fas fa-plus"></i> Add Activity</button>
+                    </div>
+                    <div id="dprActivities"></div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('dprModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="dprSaveBtn">Save Report</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="labourModal">
+        <div class="modal-content" style="max-width:560px;">
+            <div class="modal-header">
+                <h2>Labour Register</h2>
+                <button onclick="closeModal('labourModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="labourForm" onsubmit="saveLabour(event)">
+                    <input type="hidden" id="labourProjectId">
+                    <div class="form-group">
+                        <label>Report Date *</label>
+                        <input type="date" class="form-control" id="labourReportDate" required>
+                    </div>
+                    <div id="labourCategoryGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;"></div>
+                    <div class="form-group">
+                        <label>Notes (for the whole day)</label>
+                        <input type="text" class="form-control" id="labourNotes" placeholder="e.g. overtime, absenteeism, deployment note">
+                    </div>
+                    <div id="labourTotalLine" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;">Total on site: <strong id="labourTotalValue" style="color:var(--text-primary);">0</strong></div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('labourModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="labourSaveBtn">Save Register</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="materialModal">
+        <div class="modal-content" style="max-width:560px;">
+            <div class="modal-header">
+                <h2 id="materialModalTitle">Materials Entry</h2>
+                <button onclick="closeModal('materialModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="materialForm" onsubmit="saveMaterial(event)">
+                    <input type="hidden" id="materialEditId">
+                    <input type="hidden" id="materialProjectId">
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1.6;">
+                            <label>Material *</label>
+                            <input type="text" class="form-control" name="material" required placeholder="e.g. Cement (OPC 53)">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Unit</label>
+                            <input type="text" class="form-control" name="unit" placeholder="bags / kg / nos / sqft" list="materialUnits">
+                            <datalist id="materialUnits">
+                                <option value="bags"><option value="kg"><option value="tonnes"><option value="nos"><option value="sqft"><option value="cft"><option value="litres"><option value="rolls">
+                            </datalist>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Quantity Received *</label>
+                            <input type="number" class="form-control" name="quantity" min="0" step="0.01" required oninput="updateMaterialBalance()">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Quantity Used</label>
+                            <input type="number" class="form-control" name="qty_used" min="0" step="0.01" value="0" oninput="updateMaterialBalance()">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Received On</label>
+                            <input type="date" class="form-control" name="received_on">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Vendor</label>
+                            <input type="text" class="form-control" name="vendor" placeholder="Supplier name">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Purpose</label>
+                            <input type="text" class="form-control" name="purpose" placeholder="Stage / work item">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Notes</label>
+                            <input type="text" class="form-control" name="notes">
+                        </div>
+                    </div>
+                    <div id="materialBalancePanel" style="display:none;background:var(--primary-50, #eff6ff);border:1px solid var(--primary-200, #bfdbfe);border-radius:var(--radius, 8px);padding:12px;margin-top:8px;">
+                        <div style="font-size:0.72rem;color:var(--text-tertiary);margin-bottom:8px;font-weight:600;">RUNNING BALANCE</div>
+                        <div style="font-size:0.85rem;color:var(--text-secondary);" id="materialBalanceText">-</div>
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('materialModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="materialSaveBtn">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="modal" id="assignEmployeesModal">
         <div class="modal-content" style="max-width:520px;">
             <div class="modal-header">
@@ -712,6 +852,18 @@
                             const inv = document.getElementById(`expand-invoices-${p.id}`);
                             if (inv) { inv.style.display = 'block'; loadInvoices(p.id); }
                         }
+                        if (expandedSections[`${p.id}-dpr`]) {
+                            const dp = document.getElementById(`expand-dpr-${p.id}`);
+                            if (dp) { dp.style.display = 'block'; loadDprs(p.id); }
+                        }
+                        if (expandedSections[`${p.id}-labour`]) {
+                            const lb = document.getElementById(`expand-labour-${p.id}`);
+                            if (lb) { lb.style.display = 'block'; loadLabour(p.id); }
+                        }
+                        if (expandedSections[`${p.id}-materials`]) {
+                            const mt = document.getElementById(`expand-materials-${p.id}`);
+                            if (mt) { mt.style.display = 'block'; loadMaterials(p.id); }
+                        }
                         if (expandedSections[`${p.id}-employees`]) {
                             const e = document.getElementById(`expand-employees-${p.id}`);
                             if (e) { e.style.display = 'block'; loadEmployeesForProject(p.id); }
@@ -778,6 +930,15 @@
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'invoices')">
                                 <i class="fas fa-file-invoice-dollar"></i> RA Bills
                             </button>
+                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'dpr')">
+                                <i class="fas fa-clipboard-list"></i> Daily Reports
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'labour')">
+                                <i class="fas fa-hard-hat"></i> Labour
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'materials')">
+                                <i class="fas fa-boxes"></i> Materials
+                            </button>
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'employees')">
                                 <i class="fas fa-users"></i> Employees
                             </button>
@@ -794,6 +955,15 @@
                     </div>
                     <div id="expand-invoices-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="invoices-content-${p.id}"></div>
+                    </div>
+                    <div id="expand-dpr-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
+                        <div id="dpr-content-${p.id}"></div>
+                    </div>
+                    <div id="expand-labour-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
+                        <div id="labour-content-${p.id}"></div>
+                    </div>
+                    <div id="expand-materials-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
+                        <div id="materials-content-${p.id}"></div>
                     </div>
                     <div id="expand-employees-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="employees-content-${p.id}"></div>
@@ -854,6 +1024,16 @@
             return div.innerHTML;
         }
 
+        // esc() leaves `"` unescaped (innerHTML only entity-escapes < > &), so
+        // this variant is for embedding user text into HTML attribute values.
+        function escAttr(str) {
+            return String(str == null ? '' : str)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
         // ===================== EXPAND / COLLAPSE =====================
         let expandedSections = {};
 
@@ -872,6 +1052,9 @@
             expandedSections[key] = true;
             if (type === 'sets') await loadSets(projectId);
             else if (type === 'invoices') await loadInvoices(projectId);
+            else if (type === 'dpr') await loadDprs(projectId);
+            else if (type === 'labour') await loadLabour(projectId);
+            else if (type === 'materials') await loadMaterials(projectId);
             else await loadEmployeesForProject(projectId);
         }
 
@@ -1743,6 +1926,503 @@
                 await loadInvoices(projectId);
             } else {
                 showToast(data?.message || 'Failed to delete bill', 'error');
+            }
+        }
+
+        // ===================== DAILY PROGRESS REPORTS (DPR) =====================
+        // Light per-project caches so edit modals can pre-fill without a refetch.
+        let dprCache = {}, labourCache = {}, materialsCache = {};
+
+        async function loadDprs(projectId) {
+            const container = document.getElementById(`dpr-content-${projectId}`);
+            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
+            const data = await apiCall(`/project-dpr/${projectId}`);
+            if (!data || !data.success) {
+                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load DPRs.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
+                return;
+            }
+            const dprs = data.dprs || [];
+            dprCache[projectId] = dprs;
+            const header = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                    <h4 style="font-size:0.9rem;font-weight:600;">Daily Progress Reports (${dprs.length})</h4>
+                    <button class="btn btn-primary btn-sm" onclick="openCreateDprModal(${projectId})">
+                        <i class="fas fa-plus"></i> Add DPR
+                    </button>
+                </div>`;
+            if (!dprs.length) {
+                container.innerHTML = header + '<p style="color:var(--text-secondary);font-size:0.85rem;">No daily reports yet. Add the first one to start the site log.</p>';
+                return;
+            }
+            container.innerHTML = header + `<div style="display:flex;flex-direction:column;gap:10px;">${dprs.map(dprBlock).join('')}</div>`;
+        }
+
+        function dprBlock(dpr) {
+            const weather = dpr.weather ? `<span class="badge badge-primary">${esc(dpr.weather)}</span>` : '';
+            const acts = (dpr.activities || []).map(a => `
+                <div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px dashed var(--border);font-size:0.82rem;">
+                    <span style="font-weight:600;min-width:150px;">${esc(a.work_item)}</span>
+                    ${a.description ? `<span style="color:var(--text-secondary);flex:1;">${esc(a.description)}</span>` : '<span style="flex:1;"></span>'}
+                    <span style="color:var(--text-tertiary);white-space:nowrap;min-width:70px;text-align:right;">${a.qty_done != null ? `<strong>${fmtQty(a.qty_done)}</strong> ${esc(a.unit || '')}` : ''}</span>
+                    ${a.remarks ? `<span style="color:var(--text-tertiary);white-space:nowrap;">${esc(a.remarks)}</span>` : ''}
+                </div>`).join('');
+            const summary = dpr.work_summary ? `<div style="font-size:0.84rem;color:var(--text-secondary);margin-bottom:8px;line-height:1.5;">${esc(dpr.work_summary)}</div>` : '';
+            return `
+                <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:12px;background:var(--bg-card, #fff);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <strong style="font-size:0.9rem;">${String(dpr.report_date).slice(0, 10)}</strong>
+                            ${weather}
+                            <span style="font-size:0.75rem;color:var(--text-tertiary);">by ${esc(dpr.created_by_name || '—')}</span>
+                        </div>
+                        <div style="display:inline-flex;gap:4px;">
+                            <button class="btn btn-secondary btn-sm" onclick="openEditDprModal(${dpr.project_id}, ${dpr.id})" title="Edit"><i class="fas fa-pen" style="font-size:0.7rem;"></i></button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteDpr(${dpr.project_id}, ${dpr.id})" title="Delete"><i class="fas fa-trash" style="font-size:0.7rem;"></i></button>
+                        </div>
+                    </div>
+                    ${summary}
+                    ${acts ? `<div>${acts}</div>` : ''}
+                </div>`;
+        }
+
+        function openCreateDprModal(projectId) {
+            const form = document.getElementById('dprForm');
+            form.reset();
+            document.getElementById('dprEditId').value = '';
+            document.getElementById('dprProjectId').value = projectId;
+            document.getElementById('dprModalTitle').textContent = 'Daily Progress Report';
+            document.getElementById('dprActivities').innerHTML = '';
+            form.report_date.value = localDateStr(new Date());
+            addDprActivityRow();
+            openModal('dprModal');
+        }
+
+        function localDateStr(d) {
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        async function openEditDprModal(projectId, dprId) {
+            const cached = (dprCache[projectId] || []).find(d => d.id === dprId);
+            const dpr = cached || (await apiCall(`/project-dpr/${projectId}/${dprId}`))?.dpr;
+            if (!dpr) {
+                showToast('Could not load DPR', 'error');
+                return;
+            }
+            const form = document.getElementById('dprForm');
+            form.reset();
+            document.getElementById('dprEditId').value = dpr.id;
+            document.getElementById('dprProjectId').value = dpr.project_id;
+            document.getElementById('dprModalTitle').textContent = 'Edit DPR — ' + String(dpr.report_date).slice(0, 10);
+            form.report_date.value = String(dpr.report_date).slice(0, 10);
+            if (dpr.weather) form.weather.value = dpr.weather;
+            form.work_summary.value = dpr.work_summary || '';
+            const actsContainer = document.getElementById('dprActivities');
+            actsContainer.innerHTML = '';
+            (dpr.activities || []).forEach(a => addDprActivityRow(a));
+            if (!(dpr.activities || []).length) addDprActivityRow();
+            openModal('dprModal');
+        }
+
+        function addDprActivityRow(act) {
+            act = act || {};
+            const container = document.getElementById('dprActivities');
+            const div = document.createElement('div');
+            div.className = 'dpr-activity-row';
+            div.style.cssText = 'display:flex;gap:8px;align-items:flex-end;margin-bottom:8px;';
+            const v = (k, def) => (act[k] !== undefined && act[k] !== null ? act[k] : def);
+            div.innerHTML = `
+                <div style="flex:1.4;min-width:0;">
+                    <input type="text" class="form-control" placeholder="Work item *" value="${escAttr(v('work_item', ''))}">
+                </div>
+                <div style="flex:1.8;min-width:0;">
+                    <input type="text" class="form-control" placeholder="What was done" value="${escAttr(v('description', ''))}">
+                </div>
+                <div style="width:86px;">
+                    <input type="number" class="form-control" placeholder="Qty" min="0" step="0.01" value="${v('qty_done', '')}">
+                </div>
+                <div style="width:78px;">
+                    <input type="text" class="form-control" placeholder="Unit" value="${escAttr(v('unit', ''))}">
+                </div>
+                <div style="width:90px;">
+                    <input type="text" class="form-control" placeholder="Remarks" value="${escAttr(v('remarks', ''))}">
+                </div>
+                <button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" title="Remove line"><i class="fas fa-times" style="font-size:0.7rem;"></i></button>`;
+            container.appendChild(div);
+        }
+
+        function collectDprActivities() {
+            const out = [];
+            document.querySelectorAll('#dprActivities .dpr-activity-row').forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                const work_item = (inputs[0].value || '').trim();
+                if (!work_item) return;
+                const qty = inputs[2].value === '' ? null : Number(inputs[2].value);
+                out.push({
+                    work_item,
+                    description: (inputs[1].value || '').trim() || null,
+                    qty_done: Number.isFinite(qty) ? qty : null,
+                    unit: (inputs[3].value || '').trim() || null,
+                    remarks: (inputs[4].value || '').trim() || null
+                });
+            });
+            return out;
+        }
+
+        async function saveDpr(e) {
+            e.preventDefault();
+            const form = e.target;
+            const editId = document.getElementById('dprEditId').value;
+            const projectId = document.getElementById('dprProjectId').value;
+            const reportDate = form.report_date.value;
+            if (!reportDate) { showToast('Report date is required', 'warning'); return; }
+            const activities = collectDprActivities();
+            if (!(form.work_summary.value || '').trim() && !activities.length) {
+                showToast('Add a work summary or at least one activity line', 'warning');
+                return;
+            }
+            const btn = document.getElementById('dprSaveBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            const body = {
+                report_date: reportDate,
+                weather: form.weather.value || null,
+                work_summary: (form.work_summary.value || '').trim() || null,
+                activities
+            };
+            const data = editId
+                ? await apiCall(`/project-dpr/${projectId}/${editId}`, 'PUT', body)
+                : await apiCall(`/project-dpr/${projectId}`, 'POST', body);
+            btn.disabled = false;
+            btn.textContent = 'Save Report';
+            if (data && data.success) {
+                showToast(editId ? 'DPR updated' : 'DPR saved');
+                closeModal('dprModal');
+                await loadDprs(projectId);
+            } else {
+                showToast(data?.message || 'Failed to save DPR', 'error');
+            }
+        }
+
+        async function deleteDpr(projectId, dprId) {
+            if (!(await confirmAction('Delete this daily report? This cannot be undone.'))) return;
+            const data = await apiCall(`/project-dpr/${projectId}/${dprId}`, 'DELETE');
+            if (data && data.success) {
+                showToast('DPR deleted');
+                await loadDprs(projectId);
+            } else {
+                showToast(data?.message || 'Failed to delete DPR', 'error');
+            }
+        }
+
+        // ===================== LABOUR REGISTER =====================
+        const LABOUR_CATEGORIES = [
+            { key: 'mason', label: 'Mason' },
+            { key: 'carpenter', label: 'Carpenter' },
+            { key: 'steel_fixer', label: 'Steel Fixer' },
+            { key: 'electrician', label: 'Electrician' },
+            { key: 'plumber', label: 'Plumber' },
+            { key: 'painter', label: 'Painter' },
+            { key: 'helper', label: 'Helper' },
+            { key: 'general', label: 'General' }
+        ];
+
+        function labourLabel(key) {
+            const found = LABOUR_CATEGORIES.find(c => c.key === key);
+            return found ? found.label : key.replace(/_/g, ' ');
+        }
+
+        async function loadLabour(projectId) {
+            const container = document.getElementById(`labour-content-${projectId}`);
+            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
+            const data = await apiCall(`/project-labour/${projectId}`);
+            if (!data || !data.success) {
+                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load the labour register.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
+                return;
+            }
+            const dates = data.dates || [];
+            labourCache[projectId] = dates;
+            const header = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                    <h4 style="font-size:0.9rem;font-weight:600;">Labour Register (${dates.length} day${dates.length === 1 ? '' : 's'})</h4>
+                    <button class="btn btn-primary btn-sm" onclick="openSaveLabourModal(${projectId}, null)">
+                        <i class="fas fa-plus"></i> Add Day
+                    </button>
+                </div>`;
+            if (!dates.length) {
+                container.innerHTML = header + '<p style="color:var(--text-secondary);font-size:0.85rem;">No labour register entries yet. Record the day\'s headcount by trade (mason, carpenter, steel fixer...).</p>';
+                return;
+            }
+            container.innerHTML = header + `<div style="display:flex;flex-direction:column;gap:10px;">${dates.map(d => labourDayBlock(projectId, d)).join('')}</div>`;
+        }
+
+        function labourDayBlock(projectId, day) {
+            const chips = day.entries.map(en => `
+                <span style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:0.8rem;margin:3px 4px 3px 0;background:var(--bg-card,#fff);">
+                    ${esc(labourLabel(en.category))}: <strong>${en.count}</strong>
+                    <button style="background:none;border:none;color:var(--text-tertiary);cursor:pointer;font-size:0.8rem;padding:0;line-height:1;" onclick="deleteLabourEntry(${projectId}, ${en.id})" title="Remove category">&times;</button>
+                </span>`).join('');
+            const dayNote = day.entries.reduce((acc, en) => acc || (en.notes || null), null);
+            return `
+                <div style="border:1px solid var(--border);border-radius:var(--radius,8px);padding:12px;background:var(--bg-card, #fff);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <strong style="font-size:0.9rem;">${esc(day.report_date)}</strong>
+                            <span class="badge badge-primary">Total ${day.total} on site</span>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" onclick="openSaveLabourModal(${projectId}, '${escAttr(day.report_date)}')">
+                            <i class="fas fa-pen" style="font-size:0.7rem;"></i> Edit Day
+                        </button>
+                    </div>
+                    <div>${chips}</div>
+                    ${dayNote ? `<div style="font-size:0.78rem;color:var(--text-tertiary);margin-top:8px;">&#128221; ${esc(dayNote)}</div>` : ''}
+                </div>`;
+        }
+
+        function openSaveLabourModal(projectId, dateKey) {
+            document.getElementById('labourProjectId').value = projectId;
+            const grid = document.getElementById('labourCategoryGrid');
+            grid.innerHTML = '';
+            let existingMap = {};
+            let note = '';
+            if (dateKey) {
+                const day = (labourCache[projectId] || []).find(d => d.report_date === dateKey);
+                if (day) {
+                    day.entries.forEach(en => { existingMap[en.category] = en; });
+                    note = day.entries.reduce((acc, en) => acc || (en.notes || ''), '');
+                    document.getElementById('labourReportDate').value = day.report_date;
+                }
+            } else {
+                document.getElementById('labourReportDate').value = localDateStr(new Date());
+            }
+            document.getElementById('labourNotes').value = note;
+            LABOUR_CATEGORIES.forEach(cat => {
+                const en = existingMap[cat.key];
+                const count = en ? en.count : 0;
+                grid.innerHTML += `
+                    <div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;display:flex;gap:8px;align-items:center;background:var(--bg-card,#fff);">
+                        <div style="flex:1;font-size:0.85rem;font-weight:500;">${cat.label}</div>
+                        <input type="number" min="0" step="1" value="${count}" data-category="${cat.key}" oninput="updateLabourTotal()" style="width:70px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg-card,#fff);color:var(--text-primary);">
+                    </div>`;
+            });
+            updateLabourTotal();
+            openModal('labourModal');
+        }
+
+        function updateLabourTotal() {
+            let total = 0;
+            document.querySelectorAll('#labourCategoryGrid input[data-category]').forEach(inp => {
+                total += parseInt(inp.value || '0', 10) || 0;
+            });
+            document.getElementById('labourTotalValue').textContent = total;
+        }
+
+        async function saveLabour(e) {
+            e.preventDefault();
+            const projectId = document.getElementById('labourProjectId').value;
+            const reportDate = document.getElementById('labourReportDate').value;
+            if (!reportDate) { showToast('Report date is required', 'warning'); return; }
+            const notes = document.getElementById('labourNotes').value.trim();
+            const entries = [];
+            LABOUR_CATEGORIES.forEach(cat => {
+                const input = document.querySelector(`#labourCategoryGrid input[data-category="${cat.key}"]`);
+                const count = input ? (parseInt(input.value || '0', 10) || 0) : 0;
+                if (count > 0) entries.push({ category: cat.key, count, notes: null });
+            });
+            if (!entries.length) {
+                showToast('Enter at least one trade count', 'warning');
+                return;
+            }
+            if (notes) entries[0].notes = notes;
+            const btn = document.getElementById('labourSaveBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            const data = await apiCall(`/project-labour/${projectId}`, 'POST', { report_date: reportDate, entries });
+            btn.disabled = false;
+            btn.textContent = 'Save Register';
+            if (data && data.success) {
+                showToast(data.message || 'Labour register saved');
+                closeModal('labourModal');
+                await loadLabour(projectId);
+            } else {
+                showToast(data?.message || 'Failed to save labour register', 'error');
+            }
+        }
+
+        async function deleteLabourEntry(projectId, id) {
+            if (!(await confirmAction('Remove this trade from the register?'))) return;
+            const data = await apiCall(`/project-labour/${projectId}/${id}`, 'DELETE');
+            if (data && data.success) {
+                showToast('Entry removed');
+                await loadLabour(projectId);
+            } else {
+                showToast(data?.message || 'Failed to remove entry', 'error');
+            }
+        }
+
+        // ===================== MATERIALS REGISTER =====================
+        async function loadMaterials(projectId) {
+            const container = document.getElementById(`materials-content-${projectId}`);
+            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
+            const data = await apiCall(`/project-materials/${projectId}`);
+            if (!data || !data.success) {
+                container.innerHTML = `<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load materials.${data && data.message ? ' (' + esc(data.message) + ')' : ''}</p>`;
+                return;
+            }
+            const materials = data.materials || [];
+            const summary = data.summary || {};
+            materialsCache[projectId] = materials;
+            const header = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                    <h4 style="font-size:0.9rem;font-weight:600;">Materials Register (${materials.length})</h4>
+                    <button class="btn btn-primary btn-sm" onclick="openCreateMaterialModal(${projectId})">
+                        <i class="fas fa-plus"></i> Add Material
+                    </button>
+                </div>
+                <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:0.82rem;color:var(--text-secondary);">
+                    <span>Received: <strong style="color:var(--text-primary);">${fmtQty(summary.total_quantity)}</strong></span>
+                    <span>Used: <strong>${fmtQty(summary.total_used)}</strong></span>
+                    <span>Balance: <strong style="color:var(--text-success,#28a745);">${fmtQty(summary.total_balance)}</strong></span>
+                </div>`;
+            if (!materials.length) {
+                container.innerHTML = header + '<p style="color:var(--text-secondary);font-size:0.85rem;">No materials recorded yet. Track receipts and usage with a running balance.</p>';
+                return;
+            }
+            container.innerHTML = header + `
+                <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.84rem;min-width:820px;">
+                        <thead>
+                            <tr style="text-align:left;border-bottom:2px solid var(--border);">
+                                <th style="padding:8px 6px;">Material</th>
+                                <th style="padding:8px 6px;text-align:right;">Received</th>
+                                <th style="padding:8px 6px;text-align:right;">Used</th>
+                                <th style="padding:8px 6px;text-align:right;">Balance</th>
+                                <th style="padding:8px 6px;">Received On</th>
+                                <th style="padding:8px 6px;">Vendor</th>
+                                <th style="padding:8px 6px;text-align:right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${materials.map(m => materialRow(m)).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+        }
+
+        function materialRow(m) {
+            const bal = Math.round((Number(m.quantity) - Number(m.qty_used)) * 100) / 100;
+            const meta = [
+                m.purpose ? `<div style="font-size:0.75rem;color:var(--text-tertiary);">${esc(m.purpose)}</div>` : '',
+                m.notes ? `<div style="font-size:0.75rem;color:var(--text-tertiary);">${esc(m.notes)}</div>` : ''
+            ].join('');
+            return `
+                <tr style="border-bottom:1px solid var(--border);">
+                    <td style="padding:8px 6px;font-weight:600;">${esc(m.material)}${meta}</td>
+                    <td style="padding:8px 6px;text-align:right;white-space:nowrap;">${fmtQty(m.quantity)} ${esc(m.unit || '')}</td>
+                    <td style="padding:8px 6px;text-align:right;white-space:nowrap;">${fmtQty(m.qty_used)}</td>
+                    <td style="padding:8px 6px;text-align:right;white-space:nowrap;font-weight:600;color:${bal > 0 ? 'var(--text-success,#28a745)' : bal < 0 ? 'var(--text-danger,#dc3545)' : 'var(--text-tertiary)'};">${fmtQty(bal)}</td>
+                    <td style="padding:8px 6px;white-space:nowrap;">${m.received_on ? String(m.received_on).slice(0, 10) : '—'}</td>
+                    <td style="padding:8px 6px;white-space:nowrap;">${esc(m.vendor || '—')}</td>
+                    <td style="padding:8px 6px;text-align:right;white-space:nowrap;">
+                        <div style="display:inline-flex;gap:4px;">
+                            <button class="btn btn-secondary btn-sm" onclick="openEditMaterialModal(${m.project_id}, ${m.id})" title="Edit"><i class="fas fa-pen" style="font-size:0.7rem;"></i></button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteMaterial(${m.project_id}, ${m.id})" title="Delete"><i class="fas fa-trash" style="font-size:0.7rem;"></i></button>
+                        </div>
+                    </td>
+                </tr>`;
+        }
+
+        function fmtQty(n) {
+            const v = Number(n) || 0;
+            return v % 1 === 0 ? String(v) : v.toFixed(2);
+        }
+
+        function updateMaterialBalance() {
+            const qty = parseFloat(document.querySelector('#materialForm [name="quantity"]').value);
+            const used = parseFloat(document.querySelector('#materialForm [name="qty_used"]').value);
+            if (!isFinite(qty)) { document.getElementById('materialBalancePanel').style.display = 'none'; return; }
+            const q = isFinite(qty) ? qty : 0;
+            const u = isFinite(used) ? used : 0;
+            const bal = Math.round((q - u) * 100) / 100;
+            const unit = (document.querySelector('#materialForm [name="unit"]').value || '').trim();
+            document.getElementById('materialBalancePanel').style.display = 'block';
+            document.getElementById('materialBalanceText').innerHTML =
+                `Received <strong>${fmtQty(q)}</strong> · Used <strong>${fmtQty(u)}</strong> · Balance <strong style="color:${bal < 0 ? 'var(--text-danger,#dc3545)' : 'var(--text-success,#28a745)'};">${fmtQty(bal)}</strong> ${esc(unit)}`;
+        }
+
+        function openCreateMaterialModal(projectId) {
+            const form = document.getElementById('materialForm');
+            form.reset();
+            document.getElementById('materialEditId').value = '';
+            document.getElementById('materialProjectId').value = projectId;
+            document.getElementById('materialModalTitle').textContent = 'Materials Entry';
+            document.getElementById('materialBalancePanel').style.display = 'none';
+            openModal('materialModal');
+        }
+
+        function openEditMaterialModal(projectId, materialId) {
+            const m = (materialsCache[projectId] || []).find(x => x.id === materialId);
+            if (!m) { showToast('Could not load material entry', 'error'); return; }
+            const form = document.getElementById('materialForm');
+            form.reset();
+            document.getElementById('materialEditId').value = m.id;
+            document.getElementById('materialProjectId').value = m.project_id;
+            document.getElementById('materialModalTitle').textContent = 'Edit — ' + m.material;
+            form.material.value = m.material || '';
+            form.unit.value = m.unit || 'nos';
+            form.quantity.value = m.quantity;
+            form.qty_used.value = m.qty_used;
+            form.received_on.value = m.received_on ? String(m.received_on).slice(0, 10) : '';
+            form.vendor.value = m.vendor || '';
+            form.purpose.value = m.purpose || '';
+            form.notes.value = m.notes || '';
+            updateMaterialBalance();
+            openModal('materialModal');
+        }
+
+        async function saveMaterial(e) {
+            e.preventDefault();
+            const form = e.target;
+            const editId = document.getElementById('materialEditId').value;
+            const projectId = document.getElementById('materialProjectId').value;
+            const quantity = parseFloat(form.quantity.value);
+            const qtyUsed = parseFloat(form.qty_used.value || '0');
+            if (!isFinite(quantity) || quantity < 0) { showToast('Enter a valid quantity received', 'warning'); return; }
+            if (isFinite(qtyUsed) && qtyUsed > quantity) { showToast('Quantity used cannot exceed quantity received', 'warning'); return; }
+            const btn = document.getElementById('materialSaveBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            const body = {
+                material: form.material.value.trim(),
+                unit: form.unit.value.trim() || 'nos',
+                quantity,
+                qty_used: isFinite(qtyUsed) ? qtyUsed : 0,
+                received_on: form.received_on.value || null,
+                vendor: form.vendor.value.trim() || null,
+                purpose: form.purpose.value.trim() || null,
+                notes: form.notes.value.trim() || null
+            };
+            const data = editId
+                ? await apiCall(`/project-materials/${projectId}/${editId}`, 'PUT', body)
+                : await apiCall(`/project-materials/${projectId}`, 'POST', body);
+            btn.disabled = false;
+            btn.textContent = 'Save';
+            if (data && data.success) {
+                showToast(editId ? 'Material entry updated' : 'Material entry added');
+                closeModal('materialModal');
+                await loadMaterials(projectId);
+            } else {
+                showToast(data?.message || 'Failed to save material entry', 'error');
+            }
+        }
+
+        async function deleteMaterial(projectId, materialId) {
+            if (!(await confirmAction('Delete this material entry? The audit log keeps a record.'))) return;
+            const data = await apiCall(`/project-materials/${projectId}/${materialId}`, 'DELETE');
+            if (data && data.success) {
+                showToast('Material entry removed');
+                await loadMaterials(projectId);
+            } else {
+                showToast(data?.message || 'Failed to remove entry', 'error');
             }
         }
 
