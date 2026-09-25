@@ -528,15 +528,16 @@ router.get('/monthly', verifyToken, isManager, async (req, res) => {
             }
         });
 
-        // Paid/LOP classification: the FIRST approved leave day of the month is
-        // paid ('onleave'); any extra leave days beyond it are LOP ('absent').
+        // Paid/LOP classification: the first `monthly_leave_quota` approved
+        // leave days of the month are paid ('onleave'); any extra leave days
+        // beyond the quota are LOP ('absent'). Matches payroll.
         const leaveClassByEmp = {};
         Object.keys(leaveByEmp).forEach(empId => {
             const days = Array.from(leaveByEmp[empId]).sort();
             const cls = {};
             let leaveCount = 0;
             days.forEach(ds => {
-                cls[ds] = leaveCount < 1 ? 'paid' : 'lop';
+                cls[ds] = leaveCount < wcfg.monthlyLeaveQuota ? 'paid' : 'lop';
                 if (cls[ds] === 'paid') leaveCount++;
             });
             leaveClassByEmp[empId] = cls;

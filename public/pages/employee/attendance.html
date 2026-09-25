@@ -251,19 +251,23 @@
             const summaryEl = document.getElementById('summaryBar');
 
             // Month counters - SINGLE PASS over calendar days (no double count).
-            // Policy (matches payroll): first approved leave day each month is
-            // PAID; anything beyond that is LOP and lands under Absent.
+            // Policy (matches payroll): the first `monthly_leave_quota` approved
+            // leave days each month are PAID; anything beyond that is LOP and
+            // lands under Absent.
             const counts = { present: 0, late: 0, 'half-day': 0, absent: 0, weekoff: 0, holiday: 0, leave: 0 };
             const holidayMap = {};
             (lastHolidays || []).forEach(h => { const k = (h.date || '').split('T')[0]; if (k) holidayMap[k] = h.name; });
             const statusByDate = {};
             records.forEach(a => { statusByDate[(a.date || '').split('T')[0]] = a; });
 
-            // Classify only this month's approved leave days: first day 'paid', rest 'lop'.
+            // Classify only this month's approved leave days: first `quota`
+            // days 'paid', rest 'lop'. Quota comes from the configured
+            // monthly_leave_quota (default 1), matching payroll.
             const monthPrefix = year + '-' + String(month).padStart(2, '0') + '-';
+            const quota = window.workWeek ? window.workWeek.monthlyLeaveQuota : 1;
             leaveClass = {};
             Array.from(lastLeaveDays).filter(k => k.startsWith(monthPrefix)).sort().forEach(k => {
-                leaveClass[k] = counts.leave < 1 ? 'paid' : 'lop';
+                leaveClass[k] = counts.leave < quota ? 'paid' : 'lop';
                 if (leaveClass[k] === 'paid') counts.leave++;
             });
 

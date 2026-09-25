@@ -6,6 +6,8 @@
 (function () {
     // 0=Sunday .. 6=Saturday
     let weekoffDay = 0;
+    let weeklyWorkingDays = 6;
+    let monthlyLeaveQuota = 1;
     let loaded = false;
 
     async function ensureLoaded() {
@@ -15,6 +17,10 @@
             if (d && d.success && d.settings) {
                 const v = parseInt(d.settings.weekoff_day, 10);
                 if (v >= 0 && v <= 6) weekoffDay = v;
+                const w = parseInt(d.settings.weekly_working_days, 10);
+                if (w >= 1 && w <= 7) weeklyWorkingDays = w;
+                const q = parseInt(d.settings.monthly_leave_quota, 10);
+                if (q >= 1) monthlyLeaveQuota = q;
             }
         } catch (e) { /* keep default */ }
         loaded = true;
@@ -48,6 +54,8 @@
         ensureLoaded,
         isWeekOff,
         businessDaysBetween,
-        get weekoffDay() { return weekoffDay; }
+        get weekoffDay() { return weekoffDay; },
+        get weeklyWorkingDays() { return weeklyWorkingDays; },
+        get monthlyLeaveQuota() { return monthlyLeaveQuota; }
     };
 })();

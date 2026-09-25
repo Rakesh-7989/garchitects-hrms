@@ -529,6 +529,7 @@
             const holMap = {};
             (data.holidays || []).forEach(h => { holMap[(h.date || '').split('T')[0]] = h.name; });
             const leaveMap = {};
+            const lvQuota = window.workWeek ? window.workWeek.monthlyLeaveQuota : 1;
             (data.leaves || []).forEach(l => {
                 if (l.status !== 'approved') return;
                 const s = (l.start_date || '').split('T')[0];
@@ -542,7 +543,7 @@
                     const mk = dk.substring(0, 7);
                     if (!empPaid[mk]) { empPaid[mk] = 0; }
                     const lk = l.employee_id + '|' + dk;
-                    leaveMap[lk] = empPaid[mk] < 1 ? 'paid' : 'lop';
+                    leaveMap[lk] = empPaid[mk] < lvQuota ? 'paid' : 'lop';
                     empPaid[mk]++;
                     cur.setUTCDate(cur.getUTCDate() + 1);
                 }
