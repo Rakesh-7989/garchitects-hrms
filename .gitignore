@@ -1,8 +1,9 @@
 # Dependencies
 node_modules/
 
-# Environment variables
+# Environment variables (keep .env.example tracked)
 .env
+.env.*
 !.env.example
 
 # Logs
@@ -32,7 +33,6 @@ backups/
 session-history.json
 
 .vercel
-.env*
 
 # Runtime pid file written by the local launcher script
 *.pid

@@ -7,7 +7,8 @@
     "start": "node server/index.js",
     "dev": "nodemon server/index.js",
     "db:init": "node server/scripts/init-db.js",
-    "db:migrate": "node server/scripts/migrate.js"
+    "db:migrate": "node server/scripts/migrate.js",
+    "test:smtp": "node server/scripts/test-smtp.js"
   },
   "keywords": [
     "hrms",
