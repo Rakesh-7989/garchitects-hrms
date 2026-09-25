@@ -324,7 +324,7 @@ router.put('/approve/:id', verifyToken, isAdmin, async (req, res) => {
             const start = new Date(app.start_date);
             const end = new Date(app.end_date);
 
-            // Fetch holidays once for the range so weekend/holiday days are not
+            // Fetch holidays once for the range so week off/holiday days are not
             // back-filled as absent (they are not counted in total_days either).
             const holidayRows = await query(
                 `SELECT to_char(date, 'YYYY-MM-DD') as d FROM holidays WHERE date BETWEEN $1 AND $2`,

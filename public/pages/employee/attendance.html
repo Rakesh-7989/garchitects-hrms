@@ -429,8 +429,8 @@
                 } else if (isFuture) {
                     cls = 'future';
                 } else if (holidayDates[dateStr]) {
-                    // Holidays must win over weekends: a Sunday holiday should
-                    // show its name, not "Week Off".
+                    // Holidays must win over the weekly off: a holiday on the
+                    // week off day should show its name, not "Week Off".
                     cls = 'cal-holiday'; tag = holidayDates[dateStr]; counts.holiday++;
                 } else if (window.workWeek ? window.workWeek.isWeekOff(date) : (dayOfWeek === 0 || dayOfWeek === 6)) {
                     cls = 'cal-weekoff'; tag = 'Week Off'; counts.weekoff++;

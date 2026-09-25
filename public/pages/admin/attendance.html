@@ -402,7 +402,7 @@
                     html += '<td class="' + cls + '" data-emp="' + emp.id + '" data-day="' + d + '" data-status="' + escapeHtml((isLopLeave ? 'absent' : cell.status) || '') + '" data-in="' + escapeHtml(cell.check_in || '') + '" data-out="' + escapeHtml(cell.check_out || '') + '" data-loc="' + escapeHtml(cell.check_in_location || '') + '" data-name="' + escapeHtml(emp.first_name + ' ' + (emp.last_name || '')) + '">' + label + '</td>';
                 }
                 grandPresent += p; grandLate += l; grandHalf += h; grandAbsent += a; grandWeekoff += w; grandLeave += lv; grandHoliday += hv;
-                // Weekends (week offs), paid leave and holidays are included in
+                // Week offs, paid leave and holidays are included in
                 // Total Days.
                 const totalDays = p + l + (h * 0.5) + lv + w + hv;
                 html += '<td style="font-weight:600;font-size:0.7rem;text-align:center;white-space:nowrap;">' + (p + l) + ' / ' + l + ' / ' + h + ' / ' + a + ' / ' + lv + '</td>';
@@ -496,8 +496,9 @@
                 return;
             }
             if (status === 'weekoff') {
-                // Admin may mark a week end as absent (e.g. someone didn't work
-                // the weekend). Confirms before writing; clicking it again (when
+                // Admin may mark a weekly off day as absent (e.g. someone didn't
+                // work on the weekly off day). Confirms before writing; clicking
+                // it again (when
                 // shown as Absent) undoes it / restores the week off.
                 showConfirmDialog('Mark Absent', 'Mark ' + dateStr + ' (week end) as absent?', 'Mark Absent', 'btn-danger', function() {
                     apiCall('/attendance/mark-absent', 'POST', { employee_id: empId, date: dateStr }).then(() => loadMatrix());

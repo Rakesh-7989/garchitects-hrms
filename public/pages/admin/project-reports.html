@@ -36,8 +36,8 @@
         .report-table td.name-col { text-align:left; font-weight:500; }
         .report-table tbody tr:hover { background:var(--primary-50); }
         .report-table tfoot td { background:var(--bg-light); font-weight:700; border-top:2px solid var(--primary); }
-        .sunday-col { background:rgba(239,68,68,0.08) !important; }
-        .sunday-col-header { background:rgba(239,68,68,0.85) !important; }
+        .weekoff-col { background:rgba(239,68,68,0.08) !important; }
+        .weekoff-col-header { background:rgba(239,68,68,0.85) !important; }
         .status-achieved { color:var(--success); font-weight:600; }
         .status-below { color:var(--danger); font-weight:600; }
         .grand-total-card { margin-top:24px; border-top:4px solid var(--primary); }
@@ -408,7 +408,7 @@
                 if (view === 'daily') {
                     const d = new Date(currentDate);
                     const isSun = window.workWeek ? window.workWeek.isWeekOff(d) : d.getDay() === 0;
-                    html += `<th class="${isSun ? 'sunday-col-header' : ''}" style="min-width:100px;">${formatShortDate(d)}<br><span style="font-weight:400;font-size:0.65rem;">${DAY_NAMES[d.getDay()]}</span></th>`;
+                    html += `<th class="${isSun ? 'weekoff-col-header' : ''}" style="min-width:100px;">${formatShortDate(d)}<br><span style="font-weight:400;font-size:0.65rem;">${DAY_NAMES[d.getDay()]}</span></th>`;
                     html += `<th>STATUS</th>`;
                 } else if (view === 'weekly') {
                     const weekStart = new Date(currentWeekStart);
@@ -416,7 +416,7 @@
                         const d = new Date(weekStart);
                         d.setDate(d.getDate() + i);
                         const isSun = window.workWeek ? window.workWeek.isWeekOff(d) : d.getDay() === 0;
-                        html += `<th class="${isSun ? 'sunday-col-header' : ''}" style="min-width:70px;">${DAY_NAMES[d.getDay()]}<br><span style="font-weight:400;font-size:0.65rem;">${formatShortDate(d)}</span></th>`;
+                        html += `<th class="${isSun ? 'weekoff-col-header' : ''}" style="min-width:70px;">${DAY_NAMES[d.getDay()]}<br><span style="font-weight:400;font-size:0.65rem;">${formatShortDate(d)}</span></th>`;
                     }
                     html += `<th>TOTAL</th><th>STATUS</th>`;
                 } else if (view === 'monthly') {
@@ -424,7 +424,7 @@
                     for (let d = 1; d <= daysInMonth; d++) {
                         const dateObj = new Date(currentYear, currentMonth - 1, d);
                         const isSun = window.workWeek ? window.workWeek.isWeekOff(dateObj) : dateObj.getDay() === 0;
-                        html += `<th class="${isSun ? 'sunday-col-header' : ''}" style="min-width:50px;font-size:0.65rem;">${String(d).padStart(2, '0')}<br>${DAY_NAMES[dateObj.getDay()]}</th>`;
+                        html += `<th class="${isSun ? 'weekoff-col-header' : ''}" style="min-width:50px;font-size:0.65rem;">${String(d).padStart(2, '0')}<br>${DAY_NAMES[dateObj.getDay()]}</th>`;
                     }
                     html += `<th>TOTAL</th><th>STATUS</th>`;
                 }
@@ -448,7 +448,7 @@
                         const isSun = window.workWeek ? window.workWeek.isWeekOff(d) : d.getDay() === 0;
                         const val = emp.actualCounts.today || 0;
                         empTotal = val;
-                        html += `<td class="${isSun ? 'sunday-col' : ''}" style="font-weight:600;">${isSun ? '—' : (val > 0 ? val : '—')}</td>`;
+                        html += `<td class="${isSun ? 'weekoff-col' : ''}" style="font-weight:600;">${isSun ? '—' : (val > 0 ? val : '—')}</td>`;
                         const statusClass = val >= set.dailyTargetPerEmployee ? 'status-achieved' : 'status-below';
                         html += `<td class="${statusClass}">${val >= set.dailyTargetPerEmployee ? 'ACHIEVED' : 'BELOW'}</td>`;
                     } else if (view === 'weekly') {
@@ -462,7 +462,7 @@
                             empTotal += val;
                             if (!teamActualByDay[dayKey]) teamActualByDay[dayKey] = 0;
                             teamActualByDay[dayKey] += val;
-                            html += `<td class="${isSun ? 'sunday-col' : ''}" style="font-weight:500;">${isSun ? '—' : (val > 0 ? val : '—')}</td>`;
+                            html += `<td class="${isSun ? 'weekoff-col' : ''}" style="font-weight:500;">${isSun ? '—' : (val > 0 ? val : '—')}</td>`;
                         }
                         html += `<td style="font-weight:700;">${empTotal}</td>`;
                         const statusClass = empTotal >= set.targetPerEmployee ? 'status-achieved' : 'status-below';
@@ -477,7 +477,7 @@
                             empTotal += val;
                             if (!teamActualByDay[dayKey]) teamActualByDay[dayKey] = 0;
                             teamActualByDay[dayKey] += val;
-                            html += `<td class="${isSun ? 'sunday-col' : ''}" style="font-size:0.75rem;">${isSun ? '—' : (val > 0 ? val : '—')}</td>`;
+                            html += `<td class="${isSun ? 'weekoff-col' : ''}" style="font-size:0.75rem;">${isSun ? '—' : (val > 0 ? val : '—')}</td>`;
                         }
                         html += `<td style="font-weight:700;">${empTotal}</td>`;
                         const statusClass = empTotal >= set.targetPerEmployee ? 'status-achieved' : 'status-below';
@@ -495,7 +495,7 @@
                 if (view === 'daily') {
                     const d = new Date(currentDate);
                     const isSun = window.workWeek ? window.workWeek.isWeekOff(d) : d.getDay() === 0;
-                    html += `<td class="${isSun ? 'sunday-col' : ''}" style="font-weight:700;">${isSun ? '—' : (setTotalActual || 0)}</td>`;
+                    html += `<td class="${isSun ? 'weekoff-col' : ''}" style="font-weight:700;">${isSun ? '—' : (setTotalActual || 0)}</td>`;
                     html += `<td></td>`;
                 } else if (view === 'weekly') {
                     const weekStart = new Date(currentWeekStart);
@@ -504,7 +504,7 @@
                         d.setDate(d.getDate() + i);
                         const dayKey = formatDateStr(d);
                         const isSun = window.workWeek ? window.workWeek.isWeekOff(d) : d.getDay() === 0;
-                        html += `<td class="${isSun ? 'sunday-col' : ''}" style="font-weight:700;">${isSun ? '—' : (teamActualByDay[dayKey] || 0)}</td>`;
+                        html += `<td class="${isSun ? 'weekoff-col' : ''}" style="font-weight:700;">${isSun ? '—' : (teamActualByDay[dayKey] || 0)}</td>`;
                     }
                     html += `<td style="font-weight:700;">${setTotalActual}</td>`;
                     html += `<td></td>`;
@@ -514,7 +514,7 @@
                         const dayKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                         const dateObj = new Date(currentYear, currentMonth - 1, d);
                         const isSun = window.workWeek ? window.workWeek.isWeekOff(dateObj) : dateObj.getDay() === 0;
-                        html += `<td class="${isSun ? 'sunday-col' : ''}" style="font-weight:700;font-size:0.75rem;">${isSun ? '—' : (teamActualByDay[dayKey] || 0)}</td>`;
+                        html += `<td class="${isSun ? 'weekoff-col' : ''}" style="font-weight:700;font-size:0.75rem;">${isSun ? '—' : (teamActualByDay[dayKey] || 0)}</td>`;
                     }
                     html += `<td style="font-weight:700;">${setTotalActual}</td>`;
                     html += `<td></td>`;

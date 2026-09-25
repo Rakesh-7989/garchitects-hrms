@@ -11,7 +11,7 @@ router.get('/company', verifyToken, async (req, res) => {
         // monthly paid leave). Idempotent - never touches existing rows.
         await query(
             `INSERT INTO company_settings (setting_key, setting_value, description) VALUES
-            ('weekoff_day', '0', 'Weekly off day (0=Sunday .. 6=Saturday); the ONLY weekly off day'),
+            ('weekoff_day', '0', 'Weekly off day (0=Sunday .. 6=Saturday), the ONLY weekly off day'),
             ('weekly_working_days', '6', 'Expected working days per week'),
             ('monthly_leave_quota', '1', 'Paid leave days an employee earns per month')
             ON CONFLICT (setting_key) DO NOTHING`
