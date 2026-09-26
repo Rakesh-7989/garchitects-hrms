@@ -350,6 +350,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const link = document.getElementById('teamWorkLink');
             if (link) link.style.display = 'flex';
         }
+        // Team Projects link: same roles — assign employees into projects/units.
+        if (u && (u.role === 'admin' || u.role === 'manager' || u.role === 'team_lead' || u.role === 'hr')) {
+            const link = document.getElementById('teamProjectsLink');
+            if (link) link.style.display = 'flex';
+        }
     } catch (e) {}
 });
 

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query, getClient } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdmin, isManager } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
 
@@ -123,6 +123,36 @@ router.get('/stats', verifyToken, isAdmin, async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching project stats:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
+    }
+});
+
+/**
+ * GET /api/projects/options
+ * Minimal project picker for manager-level UIs (Team Projects): each project
+ * with its units embedded. D3-unrestricted: any manager/team_lead/hr/admin may
+ * assign any active employee into any project/unit.
+ * MUST be before /:id so 'options' is not parsed as an id.
+ */
+router.get('/options', verifyToken, isManager, async (req, res) => {
+    try {
+        const result = await q(
+            `SELECT p.id, p.name, p.status,
+                    COALESCE(json_agg(json_build_object('id', u.id, 'name', u.name))
+                        FILTER (WHERE u.id IS NOT NULL), '[]') AS units
+             FROM projects p
+             LEFT JOIN project_units u ON u.project_id = p.id
+             GROUP BY p.id, p.name, p.status
+             ORDER BY p.name`
+        );
+        result.rows.forEach(r => {
+            try { r.units = typeof r.units === 'string' ? JSON.parse(r.units) : (r.units || []); }
+            catch (e) { r.units = []; }
+        });
+        res.json({ success: true, projects: result.rows });
+    } catch (error) {
+        console.error('Error listing project options:', error);
         const r = pgErrorResponse(error);
         res.status(r.status).json({ success: false, message: r.message });
     }
@@ -291,7 +321,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
  * GET /api/projects/:projectId/employees
  * Get employees assigned to a project
  */
-router.get('/:projectId/employees', verifyToken, isAdmin, async (req, res) => {
+router.get('/:projectId/employees', verifyToken, isManager, async (req, res) => {
     try {
         const result = await q(
             `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.email, e.phone, 
@@ -315,7 +345,7 @@ router.get('/:projectId/employees', verifyToken, isAdmin, async (req, res) => {
  * POST /api/projects/:projectId/employees
  * Assign employees to a project
  */
-router.post('/:projectId/employees', verifyToken, isAdmin, async (req, res) => {
+router.post('/:projectId/employees', verifyToken, isManager, async (req, res) => {
     try {
         const { employeeIds, assignments } = req.body;
         // Backwards compatible: `{ employeeIds: [1, 2] }` → no-unit assignments.
@@ -426,7 +456,7 @@ router.post('/:projectId/employees', verifyToken, isAdmin, async (req, res) => {
  * DELETE /api/projects/:projectId/employees/:employeeId
  * Remove employee from project
  */
-router.delete('/:projectId/employees/:employeeId', verifyToken, isAdmin, async (req, res) => {
+router.delete('/:projectId/employees/:employeeId', verifyToken, isManager, async (req, res) => {
     try {
         // Do NOT delete historical daily update data
         const result = await q(

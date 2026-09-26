@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Projects - G-Architects HRMS</title>
+    <link rel="icon" type="image/png" href="../../assets/images/fav-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#4F46E5">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="apple-touch-icon" href="/assets/images/apple-touch-icon.png">
+    <link rel="stylesheet" href="../../css/main.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .tp-stat { padding: 18px 20px; background: var(--bg-card); border-radius: var(--radius-md); box-shadow: var(--shadow); border: 1px solid transparent; }
+        .tp-stat .tp-stat-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; margin-bottom: 10px; }
+        .tp-stat .tp-stat-num { font-size: 1.5rem; font-weight: 700; }
+        .tp-stat .tp-stat-label { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
+        .emp-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--primary-50); border: 1px solid var(--border-light); border-radius: 999px; padding: 6px 12px; font-size: 0.8rem; font-weight: 500; }
+        .emp-chip button { background: none; border: none; cursor: pointer; color: var(--danger); font-size: 0.85rem; padding: 0 2px; }
+        .employee-option { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+        .employee-option:hover { background: var(--bg-secondary); }
+        .employee-option.selected { background: var(--primary-50); }
+        @media (max-width: 768px) {
+            .grid.grid-4 { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        }
+    </style>
+</head>
+<body class="employee-app">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo"><i class="fas fa-building" style="color:var(--primary-light);font-size:1.5rem;"></i><span style="font-size:1rem;font-weight:700;">G-Architects HRMS</span></div>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section-title">Main</div>
+            <a href="/employee/dashboard" class="nav-item"><i class="fas fa-tachometer-alt"></i><span class="nav-text">Dashboard</span></a>
+            <a href="/manager/my-team" id="myTeamLink" style="display:none;" class="nav-item"><i class="fas fa-users"></i><span class="nav-text">My Team</span></a>
+            <a href="/manager/team-work" id="teamWorkLink" style="display:none;" class="nav-item"><i class="fas fa-tasks"></i><span class="nav-text">Team Work</span></a>
+            <a href="/manager/team-projects" id="teamProjectsLink" style="display:none;" class="nav-item active"><i class="fas fa-project-diagram"></i><span class="nav-text">Team Projects</span></a>
+            <div class="nav-section-title">My Info</div>
+            <a href="/employee/profile" class="nav-item"><i class="fas fa-user"></i><span class="nav-text">My Profile</span></a>
+            <a href="/employee/onboarding" class="nav-item"><i class="fas fa-user-plus"></i><span class="nav-text">My Onboarding</span></a>
+            <a href="/employee/my-projects" class="nav-item"><i class="fas fa-project-diagram"></i><span class="nav-text">My Projects</span></a>
+            <a href="/employee/my-work" class="nav-item"><i class="fas fa-list-check"></i><span class="nav-text">My Work</span></a>
+            <a href="/employee/attendance" class="nav-item"><i class="fas fa-clock"></i><span class="nav-text">Attendance</span></a>
+            <a href="/employee/regularization" class="nav-item"><i class="fas fa-clock-rotate-left"></i><span class="nav-text">Regularization</span></a>
+            <a href="/employee/leave" class="nav-item"><i class="fas fa-calendar-times"></i><span class="nav-text">Leave</span></a>
+            <a href="/employee/wfh" class="nav-item"><i class="fas fa-home"></i><span class="nav-text">WFH</span></a>
+            <a href="/employee/payslips" class="nav-item"><i class="fas fa-indian-rupee-sign"></i><span class="nav-text">Payslips</span></a>
+            <div class="nav-section-title">Company</div>
+            <a href="/employee/documents" class="nav-item"><i class="fas fa-file-alt"></i><span class="nav-text">Documents</span></a>
+            <a href="/employee/announcements" class="nav-item"><i class="fas fa-bullhorn"></i><span class="nav-text">Announcements</span></a>
+            <div class="nav-section-title">Support</div>
+            <a href="/employee/holidays" class="nav-item"><i class="fas fa-calendar-check"></i><span class="nav-text">Holidays</span></a>
+            <div class="nav-section-title">Resources</div>
+            <a href="/employee/directory" class="nav-item"><i class="fas fa-address-book"></i><span class="nav-text">Directory</span></a>
+            <a href="/employee/tickets" class="nav-item"><i class="fas fa-ticket-alt"></i><span class="nav-text">My Queries</span></a>
+        </nav>
+    </aside>
+
+    <main class="main-content" id="mainContent">
+        <header class="header">
+            <div class="header-left">
+                <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+                <h2 style="font-size:1.25rem;font-weight:600;">Team Projects</h2>
+            </div>
+            <div class="header-right">
+                <button type="button" class="notification-btn" title="Notifications"><i class="fas fa-bell"></i><span class="notification-badge" id="notifBadge" style="display:none;"></span></button>
+                <button class="notification-btn" onclick="toggleDarkMode()" title="Toggle dark mode"><i class="fas fa-moon" id="themeIcon"></i></button>
+                <div style="position:relative">
+                    <button class="profile-btn" onclick="toggleProfileMenu()">
+                        <span class="profile-photo" id="profilePhoto" style="display:inline-flex;align-items:center;justify-content:center;background:var(--primary);color:white;border-radius:50%;width:36px;height:36px;font-size:0.8rem;font-weight:600;"></span>
+                        <span id="profileName" style="margin-left:8px;font-weight:500;"></span>
+                        <i class="fas fa-chevron-down" style="margin-left:4px;font-size:0.7rem;"></i>
+                    </button>
+                    <div class="profile-menu" id="profileMenu" style="display:none;">
+                        <a href="/employee/profile" class="profile-menu-item"><i class="fas fa-user"></i> My Profile</a>
+                        <div class="profile-menu-divider"></div>
+                        <a href="#" class="profile-menu-item danger" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div style="padding:30px;">
+            <div class="card" style="padding:20px;margin-bottom:24px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+                    <div style="font-weight:600;font-size:0.95rem;"><i class="fas fa-project-diagram" style="color:var(--primary);margin-right:8px;"></i>Assign Team Members to Projects &amp; Units</div>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <select class="form-control" id="tpProject" style="min-width:220px;" onchange="onProjectChange()">
+                            <option value="">— Select a project —</option>
+                        </select>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="openAssignModal()" id="assignBtn" disabled><i class="fas fa-user-plus"></i> Assign Employees</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="loadProjects(true)"><i class="fas fa-rotate-right"></i> Refresh</button>
+                    </div>
+                </div>
+                <div id="tpStats" style="display:none;">
+                    <div class="grid grid-4">
+                        <div class="tp-stat"><div class="tp-stat-icon" style="background:var(--primary-50);color:var(--primary);"><i class="fas fa-users"></i></div><div class="tp-stat-num" id="tpTotal">0</div><div class="tp-stat-label">Members</div></div>
+                        <div class="tp-stat"><div class="tp-stat-icon" style="background:#FEF3C7;color:#D97706;"><i class="fas fa-layer-group"></i></div><div class="tp-stat-num" id="tpUnits">0</div><div class="tp-stat-label">Units</div></div>
+                        <div class="tp-stat"><div class="tp-stat-icon" style="background:#DBEAFE;color:#1D4ED8;"><i class="fas fa-signature"></i></div><div class="tp-stat-num" id="tpInUnit">0</div><div class="tp-stat-label">In a unit</div></div>
+                        <div class="tp-stat"><div class="tp-stat-icon" style="background:#F3F4F6;color:#4B5563;"><i class="fas fa-minus-circle"></i></div><div class="tp-stat-num" id="tpNoUnit">0</div><div class="tp-stat-label">No unit</div></div>
+                    </div>
+                </div>
+                <div id="tpRoster" style="margin-top:16px;">
+                    <div style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.9rem;">Select a project to see who is assigned and assign team members into its units.</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="modal" id="assignModal">
+        <div class="modal-content" style="max-width:540px;">
+            <div class="modal-header">
+                <h2 id="assignModalTitle">Assign Employees</h2>
+                <button onclick="closeAssignModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Assign to Unit (optional)</label>
+                    <select class="form-control" id="assignUnit">
+                        <option value="">-- Unit (optional) --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Select Employees</label>
+                    <div style="position:relative;margin-bottom:8px;">
+                        <input type="text" class="form-control" id="empSearch" placeholder="Search by name or employee code..." oninput="renderEmployeeOptions()">
+                    </div>
+                    <div id="empList" style="border:1px solid var(--border-light);border-radius:8px;max-height:260px;overflow-y:auto;"></div>
+                </div>
+                <div id="selectedChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-height:24px;"></div>
+                <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeAssignModal()">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="assignSubmit" onclick="submitAssign()"><i class="fas fa-paper-plane"></i> Assign</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../../js/auth.js"></script>
+    <script src="../../js/dashboard.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!checkAuth()) throw new Error('Not authenticated');
+            const user = getCurrentUser();
+            if (!['admin', 'manager', 'team_lead', 'hr'].includes(user.role)) {
+                location.href = '/employee/dashboard';
+                return;
+            }
+            loadProjects();
+            loadEmployeesForPicker();
+        });
+
+        let projects = [];
+        let projectUnits = [];
+        let roster = [];
+        let allEmployees = [];
+        let selected = new Set();
+
+        async function loadProjects(manual) {
+            const data = await apiCall('/projects/options');
+            const sel = document.getElementById('tpProject');
+            if (!data || !data.success) {
+                sel.innerHTML = '<option value="">Failed to load projects</option>';
+                if (manual) showToast('Refresh failed', 'error');
+                return;
+            }
+            projects = data.projects || [];
+            const prev = sel.value;
+            sel.innerHTML = '<option value="">— Select a project —</option>' + projects.map(p =>
+                '<option value="' + p.id + '">' + escapeHtml(p.name) + (p.status && p.status !== 'active' ? ' (' + escapeHtml(String(p.status).replace('_', ' ')) + ')' : '') + '</option>'
+            ).join('');
+            if (prev && projects.some(p => String(p.id) === prev)) sel.value = prev;
+            else if (projects.length === 1) sel.value = projects[0].id;
+            document.getElementById('assignBtn').disabled = projects.length === 0;
+            if (sel.value) await onProjectChange();
+            if (manual) showToast('Projects loaded', 'success');
+        }
+
+        async function onProjectChange() {
+            const sel = document.getElementById('tpProject');
+            const pid = sel.value ? parseInt(sel.value, 10) : null;
+            document.getElementById('tpStats').style.display = 'none';
+            document.getElementById('assignBtn').disabled = !pid;
+            if (!pid) {
+                document.getElementById('tpRoster').innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.9rem;">Select a project to see who is assigned and assign team members into its units.</div>';
+                return;
+            }
+            const pr = projects.find(p => p.id === pid) || { units: [] };
+            projectUnits = pr.units || [];
+            document.getElementById('tpRoster').innerHTML = '<div class="spinner" style="margin:0 auto;"></div>';
+            const data = await apiCall('/projects/' + pid + '/employees');
+            if (!data || !data.success) {
+                document.getElementById('tpRoster').innerHTML = '<div style="text-align:center;padding:30px;color:var(--danger);font-size:0.9rem;">Failed to load members.</div>';
+                return;
+            }
+            roster = data.employees || (Array.isArray(data.data) ? data.data : []);
+            renderRoster(pr);
+        }
+
+        function unitName(unitId) {
+            const u = projectUnits.find(x => x.id === unitId);
+            return u ? u.name : null;
+        }
+
+        function renderRoster(pr) {
+            document.getElementById('tpTotal').textContent = roster.length;
+            document.getElementById('tpUnits').textContent = projectUnits.length;
+            let inUnit = 0;
+            roster.forEach(r => { if (r.unit_id) inUnit++; });
+            document.getElementById('tpInUnit').textContent = inUnit;
+            document.getElementById('tpNoUnit').textContent = roster.length - inUnit;
+            document.getElementById('tpStats').style.display = 'block';
+
+            const container = document.getElementById('tpRoster');
+            if (roster.length === 0) {
+                container.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.9rem;">No members assigned to this project yet — click <strong>Assign Employees</strong> to add team members' +
+                    (pr && pr.units && pr.units.length ? '' : ' (or create units in Project Management)') + '.</div>';
+                return;
+            }
+            const rows = roster.map(r => {
+                const initials = getInitials(r.first_name, r.last_name);
+                const un = unitName(r.unit_id);
+                return '<tr>' +
+                    '<td><div style="display:flex;align-items:center;gap:10px;"><div style="width:34px;height:34px;border-radius:50%;background:var(--primary);color:white;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:600;flex-shrink:0;">' + escapeHtml(initials) + '</div><div><div style="font-weight:500;">' + escapeHtml((r.first_name || '') + ' ' + (r.last_name || '')) + '</div><span style="font-size:0.72rem;color:var(--text-secondary);">' + escapeHtml(r.employee_id || '') + (r.department_name ? ' &middot; ' + escapeHtml(r.department_name) : '') + '</span></div></div></td>' +
+                    '<td>' + (un ? '<span class="badge badge-info" style="font-size:0.68rem;">' + escapeHtml(un) + '</span>' : '<span class="badge badge-secondary" style="font-size:0.68rem;">No unit</span>') + '</td>' +
+                    '<td>' + (r.created_at ? formatDate(r.created_at) : '—') + '</td>' +
+                    '<td><button class="btn btn-sm btn-danger" onclick="removeMember(' + r.id + ')"><i class="fas fa-user-minus"></i> Remove</button></td>' +
+                    '</tr>';
+            }).join('');
+            container.innerHTML = '<div class="table-container"><table><thead><tr><th>Employee</th><th>Unit</th><th>Assigned</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+        }
+
+        async function loadEmployeesForPicker() {
+            const data = await apiCall('/employees/directory');
+            if (!data || !data.success) return;
+            allEmployees = (data.directory || []).slice().sort((a, b) => String(a.first_name).localeCompare(String(b.first_name)));
+        }
+
+        function openAssignModal() {
+            const pid = document.getElementById('tpProject').value;
+            if (!pid) { showToast('Select a project first', 'error'); return; }
+            selected = new Set();
+            document.getElementById('assignUnit').innerHTML = '<option value="">-- Unit (optional) --</option>' +
+                projectUnits.map(u => '<option value="' + u.id + '">' + escapeHtml(u.name) + '</option>').join('');
+            document.getElementById('empSearch').value = '';
+            renderEmployeeOptions();
+            document.getElementById('assignModal').classList.add('active');
+        }
+
+        function closeAssignModal() {
+            document.getElementById('assignModal').classList.remove('active');
+        }
+
+        function filteredEmployees() {
+            const q = (document.getElementById('empSearch').value || '').trim().toLowerCase();
+            if (!q) return allEmployees;
+            return allEmployees.filter(e =>
+                String(e.first_name || '').toLowerCase().includes(q) ||
+                String(e.last_name || '').toLowerCase().includes(q) ||
+                String(e.first_name + ' ' + (e.last_name || '')).toLowerCase().includes(q) ||
+                String(e.employee_id || '').toLowerCase().includes(q));
+        }
+
+        function toggleEmployee(id) {
+            if (selected.has(id)) selected.delete(id); else selected.add(id);
+            renderEmployeeOptions();
+        }
+
+        function renderEmployeeOptions() {
+            const list = document.getElementById('empList');
+            const chosen = filteredEmployees();
+            if (chosen.length === 0) {
+                list.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:0.85rem;">No employees found.</div>';
+            } else {
+                list.innerHTML = chosen.map(e =>
+                    '<label class="employee-option' + (selected.has(e.id) ? ' selected' : '') + '" style="display:flex;align-items:center;gap:10px;padding:8px 10px;cursor:pointer;">' +
+                    '<input type="checkbox" style="accent-color:var(--primary);" ' + (selected.has(e.id) ? 'checked' : '') + ' onchange="toggleEmployee(' + e.id + ')">' +
+                    '<div style="min-width:0;"><div style="font-weight:500;font-size:0.85rem;">' + escapeHtml(e.first_name + ' ' + (e.last_name || '')) + '</div><div style="font-size:0.72rem;color:var(--text-secondary);">' + escapeHtml(e.employee_id || '') + (e.designation_name ? ' &middot; ' + escapeHtml(e.designation_name) : '') + '</div></div>' +
+                    '</label>'
+                ).join('');
+            }
+            const chips = document.getElementById('selectedChips');
+            const chosenArr = allEmployees.filter(e => selected.has(e.id));
+            chips.innerHTML = chosenArr.length
+                ? chosenArr.map(e => '<span class="emp-chip">' + escapeHtml(e.first_name + ' ' + (e.last_name || '')) + ' <button onclick="toggleEmployee(' + e.id + ')">&times;</button></span>').join('')
+                : '';
+        }
+
+        async function submitAssign() {
+            const pid = document.getElementById('tpProject').value;
+            const unitId = document.getElementById('assignUnit').value ? parseInt(document.getElementById('assignUnit').value, 10) : null;
+            if (!pid) { showToast('Select a project first', 'error'); return; }
+            if (selected.size === 0) { showToast('Select at least one employee', 'error'); return; }
+            const assignments = Array.from(selected).map(employeeId => ({ employeeId: parseInt(employeeId, 10), unitId: unitId }));
+            const btn = document.getElementById('assignSubmit');
+            btn.disabled = true;
+            const r = await apiCall('/projects/' + pid + '/employees', 'POST', { assignments: assignments });
+            btn.disabled = false;
+            if (r && r.success) {
+                showToast('Assigned ' + (r.assigned ? r.assigned.length : assignments.length) + ' employee(s)', 'success');
+                closeAssignModal();
+                await onProjectChange();
+            } else if (r && r.message) {
+                showToast(r.message, 'error');
+            } else {
+                showToast('Could not assign. Try again.', 'error');
+            }
+        }
+
+        async function removeMember(rowId) {
+            const pid = document.getElementById('tpProject').value;
+            const m = roster.find(x => x.id === rowId);
+            if (!m) return;
+            if (!confirm('Remove ' + (m.first_name || '') + ' ' + (m.last_name || '') + ' from this project?')) return;
+            const r = await apiCall('/projects/' + pid + '/employees/' + m.id, 'DELETE');
+            if (r && r.success) {
+                showToast('Member removed from project', 'success');
+                await onProjectChange();
+            } else if (r && r.message) {
+                showToast(r.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

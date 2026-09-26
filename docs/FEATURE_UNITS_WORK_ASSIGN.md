@@ -281,3 +281,26 @@ rejected (fix `dfd9c5a` drops the unused columns). Verifier confirms the complet
 (assigned→completed) is reflected in `byStatus` immediately after the PUT.
 
 No schema change (all reads reuse the existing `work_assignments` + `employees` + `projects`).
+
+## 8. Delegated project/unit assignment — "Team Projects" (P8)
+
+**Decision D5 (locked):** project/unit assignment is **D3-unrestricted** — any
+`team_lead` / `manager` / `hr` / `admin` may assign **any active employee** into **any
+project / any unit** (same freedom as Work Assignments). No hierarchy scope check.
+
+Previously `POST/DELETE/GET /api/projects/:projectId/employees` + units CRUD were
+**`isAdmin`-only** — team leads/managers had no way to place their people on projects.
+P8 opens the three project-employee endpoints to `isManager` and adds a dedicated
+manager-portal page. Project CRUD + units CRUD remain **admin-only** (structure stays
+admin-controlled; P8 delegates *membership/placement* only).
+
+| Piece | Detail |
+|---|---|
+| **Server** (`server/routes/projects.js`) | `GET/POST /:projectId/employees` + `DELETE /:projectId/employees/:employeeId` → `isAdmin` → `isManager`. New **`GET /api/projects/options`** (`isManager`, registered before `/:id`): minimal picker `[{id,name,status,units[]}]` via `json_agg` LEFT JOIN, so manager UIs get all projects + their units in one call. Audit `project.assign`/`project.unassign` unchanged. |
+| **New page** `/manager/team-projects` | `public/pages/manager/team-projects.html` (servePortalPage pattern). Project picker (options) → stat chips (members / units / in-unit / no-unit) → roster table (`GET /:projectId/employees`) with Remove; **Assign Employees** modal: unit dropdown (that project's units, optional) + employee multi-select + search (`/employees/directory`) → `POST {assignments:[{employeeId,unitId}]}`. Role-guarded to admin/manager/team_lead/hr. |
+| **Nav** | `#teamProjectsLink` added beside Team Work on `team-work.html`, `my-team.html`, `my-work.html` (auto-shown via `auth.js` for admin/manager/team_lead/hr) **and** on all 18 admin sidebar pages (always visible, like Team Work). |
+
+**Remove-membership note:** the DELETE route matches `project_employees.employee_id`
+(employee **row id**), while the roster exposes `employee_id` as the **code string** —
+the page must pass `m.id` (row id) to `/employees/:id`, not the code (caught during
+implementation).
