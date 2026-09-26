@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const { query } = require('../config/database');
-const { verifyToken, isAdmin, isManager } = require('../middleware/auth');
+const { verifyToken, isAdmin, isManager, isAdminOrHr } = require('../middleware/auth');
+const { myTreeIds } = require('./project-leads');
 const { istDateString, istTimeString, istMonth, istYear } = require('../utils/date');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
 const { logAudit } = require('../utils/audit');
@@ -283,6 +284,16 @@ router.post('/mark-present', verifyToken, isManager, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Employee ID and date are required' });
         }
 
+        // D11 (same rule as projects + work assignments): a team lead may only
+        // act on employees inside their own reporting tree. Managers/HR/admins
+        // keep full power.
+        if (req.user.role === 'team_lead') {
+            const tree = await myTreeIds(req.user.id);
+            if (!tree.has(parseInt(employee_id, 10))) {
+                return res.status(403).json({ success: false, message: 'You can only mark attendance for your own team' });
+            }
+        }
+
         const settings = await query(
             `SELECT setting_key, setting_value FROM company_settings WHERE setting_key IN ('office_start_time')`
         );
@@ -321,6 +332,16 @@ router.post('/mark-absent', verifyToken, isManager, async (req, res) => {
         if (!employee_id || !date) {
             return res.status(400).json({ success: false, message: 'Employee ID and date are required' });
         }
+
+        // D11: a team lead may only mark attendance for employees in their own
+        // reporting tree; managers/HR/admins keep full power.
+        if (req.user.role === 'team_lead') {
+            const tree = await myTreeIds(req.user.id);
+            if (!tree.has(parseInt(employee_id, 10))) {
+                return res.status(403).json({ success: false, message: 'You can only mark attendance for your own team' });
+            }
+        }
+
         const newStatus = status || 'absent';
         if (newStatus !== 'absent') {
             await query(
@@ -382,7 +403,7 @@ router.get('/my', verifyToken, async (req, res) => {
     }
 });
 
-router.get('/all', verifyToken, isAdmin, async (req, res) => {
+router.get('/all', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { date, month, year, department, limit } = req.query;
         let sqlQuery = `
@@ -425,7 +446,7 @@ router.get('/all', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-router.get('/late-count', verifyToken, isAdmin, async (req, res) => {
+router.get('/late-count', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const month = String(parseInt(req.query.month) || istMonth()).padStart(2, '0');
         const year = String(parseInt(req.query.year) || istYear());
@@ -456,16 +477,30 @@ router.get('/monthly', verifyToken, isManager, async (req, res) => {
         const lastDay = new Date(year, month, 0).getDate();
         const wcfg = await getWorkWeekConfig();
 
-        const employees = await query(
-            `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.department_id, d.name as department_name,
-                    des.name as designation_name, e.designation_id
-             FROM employees e
-             LEFT JOIN departments d ON e.department_id = d.id
-             LEFT JOIN designations des ON e.designation_id = des.id
-             WHERE e.status = $1 AND e.role != 'admin'
-             ORDER BY des.name NULLS LAST, e.first_name`,
-            ['active']
-        );
+        // D11: a team lead sees the monthly matrix only for their own reporting
+        // tree; managers/HR/admins see the whole company.
+        const tlScope = req.user.role === 'team_lead' ? Array.from(await myTreeIds(req.user.id)) : null;
+        const employees = tlScope
+            ? await query(
+                `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.department_id, d.name as department_name,
+                        des.name as designation_name, e.designation_id
+                 FROM employees e
+                 LEFT JOIN departments d ON e.department_id = d.id
+                 LEFT JOIN designations des ON e.designation_id = des.id
+                 WHERE e.status = $1 AND e.role != 'admin' AND e.id = ANY($2::int[])
+                 ORDER BY des.name NULLS LAST, e.first_name`,
+                ['active', tlScope]
+            )
+            : await query(
+                `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.department_id, d.name as department_name,
+                        des.name as designation_name, e.designation_id
+                 FROM employees e
+                 LEFT JOIN departments d ON e.department_id = d.id
+                 LEFT JOIN designations des ON e.designation_id = des.id
+                 WHERE e.status = $1 AND e.role != 'admin'
+                 ORDER BY des.name NULLS LAST, e.first_name`,
+                ['active']
+            );
 
         const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
         const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
@@ -599,7 +634,7 @@ router.get('/monthly', verifyToken, isManager, async (req, res) => {
 // @route   GET /api/attendance/export
 // @desc    Branded Excel month summary per employee (present/late/half/absent/WFH/leave)
 // @access  Private (Admin)
-router.get('/export', verifyToken, isAdmin, async (req, res) => {
+router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const month = parseInt(req.query.month) || istMonth();
         const year = parseInt(req.query.year) || istYear();

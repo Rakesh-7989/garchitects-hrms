@@ -3,7 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { query, getPool } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdmin, isAdminOrHr } = require('../middleware/auth');
 const { validateEmployee, collectFieldErrors } = require('../middleware/validation');
 const { deleteFile, deleteFileByUrl } = require('../services/storage');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
@@ -52,7 +52,7 @@ async function adminTargetGuard(targetId, requesterId) {
 // @route   GET /api/employees
 // @desc    Get all employees
 // @access  Private (Admin/HR)
-router.get('/', verifyToken, isAdmin, async (req, res) => {
+router.get('/', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { search, department, designation, status, page = 1, limit = 10 } = req.query;
         let sqlQuery = `
@@ -266,7 +266,7 @@ router.get('/birthdays', verifyToken, async (req, res) => {
 //          bank and salary component columns - admin-only download).
 // @access  Private (Admin)
 // NOTE: registered before GET /:id so "export" is never captured as an id.
-router.get('/export', verifyToken, isAdmin, async (req, res) => {
+router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await query(
             `SELECT e.*, d.name AS department_name, des.name AS designation_name,
@@ -431,7 +431,7 @@ router.get('/:id', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid employee id' });
         }
 
-        const isAdminUser = req.user.role === 'admin';
+        const isAdminUser = req.user.role === 'admin' || req.user.role === 'hr';
         if (!isAdminUser) {
             // Grant access only if the target employee sits inside the requester's
             // reporting subtree (requester is their manager, or higher up the chain).
@@ -603,7 +603,7 @@ async function createEmployeeRecord(body, req) {
     return { ok: true, employee: result.rows[0], tempPassword };
 }
 
-router.post('/', verifyToken, isAdmin, validateEmployee, async (req, res) => {
+router.post('/', verifyToken, isAdminOrHr, validateEmployee, async (req, res) => {
     try {
         const created = await createEmployeeRecord(req.body, req);
         if (!created.ok) {
@@ -673,7 +673,7 @@ router.post('/', verifyToken, isAdmin, validateEmployee, async (req, res) => {
 // @route   POST /api/employees/import
 // @desc    Bulk-create employees from parsed CSV rows (per-row error report)
 // @access  Private (Admin/HR)
-router.post('/import', verifyToken, isAdmin, async (req, res) => {
+router.post('/import', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const items = req.body.items;
         if (!Array.isArray(items) || items.length === 0) {
@@ -729,7 +729,7 @@ router.post('/import', verifyToken, isAdmin, async (req, res) => {
 // @route   PUT /api/employees/:id
 // @desc    Update employee
 // @access  Private (Admin/HR)
-router.put('/:id', verifyToken, isAdmin, async (req, res) => {
+router.put('/:id', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const fieldErrors = collectFieldErrors(req.body);
         if (fieldErrors.length > 0) {
@@ -907,7 +907,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/employees/:id/reset-password
 // @desc    Admin resets an employee password and forces change on next login
 // @access  Private (Admin/HR)
-router.post('/:id/reset-password', verifyToken, isAdmin, async (req, res) => {
+router.post('/:id/reset-password', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const adminGuardError = await adminTargetGuard(req.params.id, req.user.id);
         if (adminGuardError) {
@@ -948,7 +948,7 @@ router.post('/:id/reset-password', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/employees/:id/pause
 // @desc    Pause employee (blocks login, keeps all data)
 // @access  Private (Admin)
-router.post('/:id/pause', verifyToken, isAdmin, async (req, res) => {
+router.post('/:id/pause', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         if (parseInt(req.params.id) === parseInt(req.user.id)) {
             return res.status(400).json({ success: false, message: 'You cannot pause your own account' });
@@ -980,7 +980,7 @@ router.post('/:id/pause', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/employees/:id/resume
 // @desc    Resume a paused/on_hold/inactive employee back to active (legacy, kept for compatibility)
 // @access  Private (Admin)
-router.post('/:id/resume', verifyToken, isAdmin, async (req, res) => {
+router.post('/:id/resume', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await runWithSchemaRepair(() => query(
             `UPDATE employees SET status = 'active', status_reason = COALESCE($2, status_reason),
@@ -1066,7 +1066,7 @@ async function changeEmployeeStatus(targetId, newStatus, reason, lwd, actorId, i
 // @route   POST /api/employees/:id/hold
 // @desc    Put employee account on hold (reason + LWD mandatory, login blocked, data kept)
 // @access  Private (Admin)
-router.post('/:id/hold', verifyToken, isAdmin, async (req, res) => {
+router.post('/:id/hold', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         if (parseInt(req.params.id) === parseInt(req.user.id)) {
             return res.status(400).json({ success: false, message: 'You cannot hold your own account' });
@@ -1090,7 +1090,7 @@ router.post('/:id/hold', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/employees/:id/unhold
 // @desc    Release an on_hold/paused/inactive employee back to active (same employee_id)
 // @access  Private (Admin)
-router.post('/:id/unhold', verifyToken, isAdmin, async (req, res) => {
+router.post('/:id/unhold', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const cur = await query('SELECT id, employee_id, status FROM employees WHERE id = $1', [req.params.id]);
         if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found' });
@@ -1123,7 +1123,7 @@ router.post('/:id/unhold', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/employees/:id/abscond
 // @desc    Mark employee absconded (reason + LWD mandatory, login blocked, data kept)
 // @access  Private (Admin)
-router.post('/:id/abscond', verifyToken, isAdmin, async (req, res) => {
+router.post('/:id/abscond', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         if (parseInt(req.params.id) === parseInt(req.user.id)) {
             return res.status(400).json({ success: false, message: 'You cannot mark your own account absconded' });
@@ -1147,7 +1147,7 @@ router.post('/:id/abscond', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/employees/:id/terminate
 // @desc    Terminate with reason + LWD (same employee_id kept, reversible via rehire)
 // @access  Private (Admin)
-router.post('/:id/terminate', verifyToken, isAdmin, async (req, res) => {
+router.post('/:id/terminate', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const adminGuardError = await adminTargetGuard(req.params.id, req.user.id);
         if (adminGuardError) return res.status(403).json({ success: false, message: adminGuardError });
@@ -1168,7 +1168,7 @@ router.post('/:id/terminate', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/employees/:id/rehire
 // @desc    Rehire a terminated/absconded/on_hold employee (same employee_id, data kept)
 // @access  Private (Admin)
-router.post('/:id/rehire', verifyToken, isAdmin, async (req, res) => {
+router.post('/:id/rehire', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const cur = await query('SELECT id, employee_id, status FROM employees WHERE id = $1', [req.params.id]);
         if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found' });
@@ -1202,7 +1202,9 @@ router.post('/:id/rehire', verifyToken, isAdmin, async (req, res) => {
 // @route   DELETE /api/employees/:id
 // @desc    Delete employee (soft delete)
 // @access  Private (Admin)
-router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
+router.delete('/:id', verifyToken, isAdminOrHr, async (req, res) => {
+    // Soft-delete of an employee (marks inactive). HR may manage this;
+    // only the permanent purge below stays admin-only.
     try {
         const adminGuardError = await adminTargetGuard(req.params.id, req.user.id);
         if (adminGuardError) {

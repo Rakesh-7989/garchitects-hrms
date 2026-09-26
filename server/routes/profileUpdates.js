@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdminOrHr } = require('../middleware/auth');
 const { sendToUser } = require('../services/push');
 
 const EDITABLE_FIELDS = [
@@ -51,7 +51,7 @@ const FIELD_LABELS = {
 // @route   GET /api/profile-updates
 // @desc    List all pending profile update requests (optionally filtered by employee)
 // @access  Admin/HR
-router.get('/', verifyToken, isAdmin, async (req, res) => {
+router.get('/', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { employee_id, status } = req.query;
         let sqlQuery = `
@@ -96,7 +96,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/profile-updates/:id/approve
 // @desc    Approve a pending request and apply the change
 // @access  Admin/HR
-router.post('/:id/approve', verifyToken, isAdmin, async (req, res) => {
+router.post('/:id/approve', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await query(
             'SELECT * FROM profile_update_requests WHERE id = $1',
@@ -152,7 +152,7 @@ router.post('/:id/approve', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/profile-updates/:id/reject
 // @desc    Reject a pending request
 // @access  Admin/HR
-router.post('/:id/reject', verifyToken, isAdmin, async (req, res) => {
+router.post('/:id/reject', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { remarks } = req.body;
 

@@ -351,3 +351,54 @@ them."* Decision `D11`: **scope the team_lead** — managers/admin/hr keep D5 fu
 Consequence: a team_lead with **no** designated project can no longer assign anyone
 anywhere (previous D5 gap closed); once admin/manager designates them, the project
 appears in Team Projects + My Led Projects and they can place their team into it.
+
+---
+
+## 10. Phase A — Security & data-integrity hardening (professional audit, commit `813ea0c`)
+
+Full-module audit (2026-09-26) => prioritised fixes, live-QA'd 23/23:
+
+| Finding | Fix |
+|---|---|
+| `must_change_password` enforced client-side only; a temp password stayed usable via the API forever | **Server-side lock** in `verifyToken`: non-admin accounts flagged `must_change_password` may only reach the password/account surface (`/auth/me`, change/set-password, logout, profile-photo, profile-request); everything else → `403 code=PASSWORD_CHANGE_REQUIRED`. |
+| `POST /api/payroll/render-pdf` SSRF: any authenticated user could inject `company.logo_url` pointing at an internal address + unbounded download | Guard → `isManager`; company details always fetched from the DB (`getCompanyData()`), client-supplied company ignored; logo downloader gets a 3 MB sanity cap. |
+| `BEGIN/COMMIT` on the pool helper in leave/wfh cancel + regularization review → each statement could run on a different connection, silently breaking atomicity | Converted to a single checked-out `getClient()` connection with `ROLLBACK` on error + `release()` in `finally`. |
+| Hardcoded OTP pepper literal in source | `OTP_PEPPER || JWT_SECRET`, fails closed if neither set. |
+| Audit-log gaps on mutating routes | `logAudit` added for leave approve/reject/cancel, wfh approve/reject/cancel, regularization review. |
+
+## 11. Phase B — Role model: HR + team-lead scoping everywhere (audit follow-up)
+
+User decisions (2026-09-26): **HR = Manager + HR-modules** • **scope the team_lead
+everywhere (D11 rule)** → commit below is live-QA'd.
+
+### 11.1 New middleware `isAdminOrHr` (admin OR hr)
+
+HR now manages the people modules; money-write ops and structural settings stay admin-only:
+
+| Module | HR gets | Stays admin |
+|---|---|---|
+| employees | list, export, create, import, update, reset-password, pause/resume/hold/unhold/abscond/terminate/rehire, soft-delete, full PII incl. salary on `GET /:id` | **permanent delete** (`DELETE /:id/permanent`) |
+| payroll | VIEW: `GET /all`, `GET /:id`, `GET /:id/pdf`, `/export`, `/attendance-summary` | **generate, generate-bulk, delete**, render-pdf (elevated `isManager`) |
+| reports | dashboard/employees/attendance/work-assignments | — |
+| profile updates | list, approve, reject | — |
+| letters | generate | — |
+| onboarding | templates CRUD, process list/tasks, start, reopen, export | — |
+| documents | `GET /all`, admin delete | — |
+| attendance | `GET /all`, `/export`, `/late-count` | — |
+
+### 11.2 Team-lead scope extended to the remaining broad modules (D11 everywhere)
+
+| Endpoint | Change |
+|---|---|
+| `POST /api/attendance/mark-present`, `mark-absent` | For `team_lead`: target must be in own reporting tree (`myTreeIds`), else 403. |
+| `GET /api/attendance/monthly` | For `team_lead`: matrix covers only their reporting tree; managers/HR/admin see all. |
+| `GET /api/project-reports/overview`, `/activity` | For `team_lead`: only projects they lead (any project_leads row); recent updates/docs + activity scoped to those projects. Managers/HR/admin see all. |
+
+### 11.3 TOCTOU approvals closed + audit logging on the real approval flow
+
+Leave/WFH/ticket approvals now use a **conditional UPDATE** (`AND status = 'pending'` /
+`AND status IN ('open','in_progress')`) plus a row-count check → concurrent double-approval
+returns `409` instead of applying twice. Applied to `manager.js` leaves/wfh/tickets and the
+admin-path approve routes in `leave.js`/`wfh.js`. Also added the previously-missing
+`logAudit` calls to `manager.js` (leave/wfh approve+reject, ticket respond) — that is the
+real day-to-day approval flow and used to write zero audit rows.

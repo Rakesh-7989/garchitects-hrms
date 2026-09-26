@@ -269,9 +269,12 @@ router.put('/approve/:id', verifyToken, isAdmin, async (req, res) => {
         const result = await query(
             `UPDATE wfh_requests
             SET status = $1, approved_by = $2, approval_remarks = $3, updated_at = NOW()
-            WHERE id = $4 RETURNING *`,
+            WHERE id = $4 AND status = 'pending' RETURNING *`,
             [status, req.user.id, remarks, req.params.id]
         );
+        if (result.rows.length === 0) {
+            return res.status(409).json({ success: false, message: 'This request was already decided' });
+        }
         logAudit({ actorId: req.user.id, action: status === 'approved' ? 'wfh.approve' : 'wfh.reject', entityType: 'wfh_request', entityId: req.params.id, details: { employee_id: wfhApp.rows[0].employee_id, remarks: remarks || null }, ip: req.ip });
 
         if (status === 'approved') {

@@ -1,7 +1,7 @@
 const express = require('express');
 const PDFDocument = require('pdfkit');
 const { query } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdminOrHr } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
 
 const router = express.Router();
@@ -105,7 +105,7 @@ function renderLetterPdf(company, employee, letter) {
 // @route   POST /api/letters/generate
 // @desc    Generate an experience or employment letter PDF for one employee
 // @access  Private/Admin
-router.post('/generate', verifyToken, isAdmin, letterLimiter, async (req, res) => {
+router.post('/generate', verifyToken, isAdminOrHr, letterLimiter, async (req, res) => {
     try {
         const { employee_id, letter_type, last_working_date, signatory_name, signatory_role } = req.body || {};
 

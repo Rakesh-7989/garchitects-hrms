@@ -7,7 +7,7 @@ const https = require('https');
 const http = require('http');
 const PDFDocument = require('pdfkit');
 const { query } = require('../config/database');
-const { verifyToken, isAdmin, isManager } = require('../middleware/auth');
+const { verifyToken, isAdmin, isManager, isAdminOrHr } = require('../middleware/auth');
 const { istDateString } = require('../utils/date');
 const { sendPayslipEmail } = require('../services/email');
 const { logAudit } = require('../utils/audit');
@@ -1032,7 +1032,7 @@ router.get('/my', verifyToken, async (req, res) => {
 // @route   GET /api/payroll/all
 // @desc    All payroll records (admin), filterable by month/year/status/search
 // @access  Admin
-router.get('/all', verifyToken, isAdmin, async (req, res) => {
+router.get('/all', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { month, year, status, search, limit } = req.query;
         let sqlQuery = `
@@ -1070,7 +1070,7 @@ router.get('/all', verifyToken, isAdmin, async (req, res) => {
 // @route   GET /api/payroll/attendance-summary?employee_id=&month=&year=
 // @desc    Auto-computed attendance numbers for a payslip period
 // @access  Admin
-router.get('/attendance-summary', verifyToken, isAdmin, async (req, res) => {
+router.get('/attendance-summary', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const employee_id = parseInt(req.query.employee_id, 10);
         const month = parseInt(req.query.month, 10);
@@ -1115,7 +1115,7 @@ router.post('/render-pdf', verifyToken, isManager, pdfRateLimit, async (req, res
 //          employer contributions and net pay per employee).
 // @access  Private (Admin)
 // NOTE: registered before GET /:id so "export" is never captured as an id.
-router.get('/export', verifyToken, isAdmin, async (req, res) => {
+router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const month = parseInt(req.query.month) || new Date().getMonth() + 1;
         const year = parseInt(req.query.year) || new Date().getFullYear();
@@ -1232,7 +1232,7 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
 // @access  Private (owner or admin)
 router.get('/:id', verifyToken, async (req, res) => {
     try {
-        const isPrivileged = req.user.role === 'admin';
+        const isPrivileged = req.user.role === 'admin' || req.user.role === 'hr';
         const row = await fetchPayslipWithProfile(req.params.id, req.user.id, isPrivileged);
         if (!row) return res.status(404).json({ success: false, message: 'Not found' });
         res.json({ success: true, payslip: row });
@@ -1247,7 +1247,7 @@ router.get('/:id', verifyToken, async (req, res) => {
 // @access  Private (owner or admin)
 router.get('/:id/pdf', verifyToken, pdfRateLimit, async (req, res) => {
     try {
-        const isPrivileged = req.user.role === 'admin';
+        const isPrivileged = req.user.role === 'admin' || req.user.role === 'hr';
         const row = await fetchPayslipWithProfile(req.params.id, req.user.id, isPrivileged);
         if (!row) return res.status(404).json({ success: false, message: 'Payslip not found' });
         const buf = await renderPayslipPdf(row, row.company);

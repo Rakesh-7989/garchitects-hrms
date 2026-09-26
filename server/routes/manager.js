@@ -6,6 +6,7 @@ const { istDateString } = require('../utils/date');
 const { sendToUser } = require('../services/push');
 const { getWorkWeekConfig } = require('../utils/workWeek');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { logAudit } = require('../utils/audit');
 
 // @route   GET /api/manager/team
 // @desc    Get current user's direct reports (TL) or all employees (HR/Manager)
@@ -224,9 +225,14 @@ router.put('/leaves/:id', verifyToken, isManager, async (req, res) => {
         const result = await query(
             `UPDATE leave_applications 
             SET status = $1, approved_by = $2, approval_remarks = $3, updated_at = NOW() 
-            WHERE id = $4 RETURNING *`,
+            WHERE id = $4 AND status = 'pending' RETURNING *`,
             [status, req.user.id, remarks, req.params.id]
         );
+        // TOCTOU guard: another approver may have decided between our read above
+        // and this write. Only the winner proceeds (no double approval).
+        if (result.rows.length === 0) {
+            return res.status(409).json({ success: false, message: 'This request was already decided' });
+        }
 
         if (status === 'approved') {
             const start = new Date(leaveApp.start_date);
@@ -258,6 +264,14 @@ router.put('/leaves/:id', verifyToken, isManager, async (req, res) => {
             }
         }
 
+        logAudit({
+            actorId: req.user.id,
+            action: status === 'approved' ? 'leave.approve' : 'leave.reject',
+            entityType: 'leave_application',
+            entityId: req.params.id,
+            details: { employee_id: leaveApp.employee_id, remarks: remarks || null },
+            ip: req.ip
+        });
         res.json({ success: true, leave: result.rows[0] });
 
         const lt = await query('SELECT name FROM leave_types WHERE id = $1', [leaveApp.leave_type_id]).catch(() => ({ rows: [] }));
@@ -297,10 +311,22 @@ router.put('/wfh/:id', verifyToken, isManager, async (req, res) => {
         const result = await query(
             `UPDATE wfh_requests 
             SET status = $1, approved_by = $2, approval_remarks = $3, updated_at = NOW() 
-            WHERE id = $4 RETURNING *`,
+            WHERE id = $4 AND status = 'pending' RETURNING *`,
             [status, req.user.id, remarks, req.params.id]
         );
+        // TOCTOU guard: another approver may have decided between read and write.
+        if (result.rows.length === 0) {
+            return res.status(409).json({ success: false, message: 'This request was already decided' });
+        }
 
+        logAudit({
+            actorId: req.user.id,
+            action: status === 'approved' ? 'wfh.approve' : 'wfh.reject',
+            entityType: 'wfh_request',
+            entityId: req.params.id,
+            details: { employee_id: appRes.rows[0].employee_id, remarks: remarks || null },
+            ip: req.ip
+        });
         res.json({ success: true, wfh: result.rows[0] });
 
         const wfhApp = appRes.rows[0];
@@ -556,10 +582,22 @@ router.put('/tickets/:id', verifyToken, isManager, async (req, res) => {
             `UPDATE support_tickets 
             SET admin_response = COALESCE($1, admin_response), status = $2, responded_by = $3, 
             responded_at = NOW(), updated_at = NOW() 
-            WHERE id = $4 RETURNING *`,
+            WHERE id = $4 AND status IN ('open', 'in_progress') RETURNING *`,
             [response || null, newStatus, req.user.id, req.params.id]
         );
+        // TOCTOU guard: another responder may have closed it between read/write.
+        if (result.rows.length === 0) {
+            return res.status(409).json({ success: false, message: 'Ticket was already resolved or closed' });
+        }
 
+        logAudit({
+            actorId: req.user.id,
+            action: 'ticket.respond',
+            entityType: 'support_ticket',
+            entityId: req.params.id,
+            details: { status: newStatus, employee_id: appRes.rows[0].employee_id, response: response || null },
+            ip: req.ip
+        });
         res.json({ success: true, ticket: result.rows[0] });
 
         const ticket = appRes.rows[0];

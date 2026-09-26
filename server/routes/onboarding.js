@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdminOrHr } = require('../middleware/auth');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
 const { sendToUser, sendToUsers } = require('../services/push');
@@ -155,7 +155,7 @@ router.post('/tasks/:id/complete', verifyToken, async (req, res) => {
 // @route   POST /api/onboarding/tasks/:id/reopen
 // @desc    Re-open a completed task (admin correction path)
 // @access  Private (Admin)
-router.post('/tasks/:id/reopen', verifyToken, isAdmin, async (req, res) => {
+router.post('/tasks/:id/reopen', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await q(
             `UPDATE process_tasks
@@ -192,7 +192,7 @@ router.post('/tasks/:id/reopen', verifyToken, isAdmin, async (req, res) => {
 // @route   GET /api/onboarding/processes
 // @desc    All employee onboarding journeys with progress summary
 // @access  Private (Admin)
-router.get('/processes', verifyToken, isAdmin, async (req, res) => {
+router.get('/processes', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await q(
             `SELECT p.id, p.employee_id, p.type, p.status, p.started_at, p.completed_at,
@@ -222,7 +222,7 @@ router.get('/processes', verifyToken, isAdmin, async (req, res) => {
 // @route   GET /api/onboarding/processes/:id/tasks
 // @desc    Full checklist of one journey (includes reviewer info)
 // @access  Private (Admin)
-router.get('/processes/:id/tasks', verifyToken, isAdmin, async (req, res) => {
+router.get('/processes/:id/tasks', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const procRes = await q(
             `SELECT p.*, e.first_name, e.last_name, e.employee_id AS emp_code
@@ -258,7 +258,7 @@ router.get('/processes/:id/tasks', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/onboarding/processes/:id/tasks
 // @desc    Add a custom ad-hoc task to an existing journey
 // @access  Private (Admin)
-router.post('/processes/:id/tasks', verifyToken, isAdmin, async (req, res) => {
+router.post('/processes/:id/tasks', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { title, description, assignee_role } = req.body;
         if (!title || !String(title).trim()) {
@@ -311,7 +311,7 @@ router.post('/processes/:id/tasks', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/onboarding/start/:employeeId
 // @desc    Manually start onboarding (employees created before this feature)
 // @access  Private (Admin)
-router.post('/start/:employeeId', verifyToken, isAdmin, async (req, res) => {
+router.post('/start/:employeeId', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const empRes = await q(
             'SELECT id, first_name, last_name, employee_id FROM employees WHERE id = $1',
@@ -351,7 +351,7 @@ router.post('/start/:employeeId', verifyToken, isAdmin, async (req, res) => {
 // @route   GET /api/onboarding/templates
 // @desc    List checklist templates
 // @access  Private (Admin)
-router.get('/templates', verifyToken, isAdmin, async (req, res) => {
+router.get('/templates', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         // Seed the defaults on first view so a fresh deployment shows the
         // standard checklist instead of an empty table.
@@ -369,7 +369,7 @@ router.get('/templates', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/onboarding/templates
 // @desc    Create a checklist template
 // @access  Private (Admin)
-router.post('/templates', verifyToken, isAdmin, async (req, res) => {
+router.post('/templates', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { title, description, assignee_role, sequence } = req.body;
         if (!title || !String(title).trim()) {
@@ -402,7 +402,7 @@ router.post('/templates', verifyToken, isAdmin, async (req, res) => {
 // @route   PUT /api/onboarding/templates/:id
 // @desc    Update a checklist template
 // @access  Private (Admin)
-router.put('/templates/:id', verifyToken, isAdmin, async (req, res) => {
+router.put('/templates/:id', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { title, description, assignee_role, sequence, is_active } = req.body;
         if (!title || !String(title).trim()) {
@@ -440,7 +440,7 @@ router.put('/templates/:id', verifyToken, isAdmin, async (req, res) => {
 // @route   DELETE /api/onboarding/templates/:id
 // @desc    Soft-disable a template (history preserved, no longer offered)
 // @access  Private (Admin)
-router.delete('/templates/:id', verifyToken, isAdmin, async (req, res) => {
+router.delete('/templates/:id', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await q(
             'UPDATE hr_task_templates SET is_active = 0 WHERE id = $1 RETURNING id, title',
@@ -467,7 +467,7 @@ router.delete('/templates/:id', verifyToken, isAdmin, async (req, res) => {
 // @route   GET /api/onboarding/export
 // @desc    Branded Excel onboarding progress tracker for all employees
 // @access  Private (Admin)
-router.get('/export', verifyToken, isAdmin, async (req, res) => {
+router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await query(
             `SELECT p.id, p.status AS process_status, p.started_at, p.completed_at,

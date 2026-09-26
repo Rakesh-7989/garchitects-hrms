@@ -4,7 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 const { query } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdmin, isAdminOrHr } = require('../middleware/auth');
 const { uploadBuffer, deleteFile, getStorageClient } = require('../services/storage');
 const { logAudit } = require('../utils/audit');
 
@@ -44,7 +44,7 @@ router.get('/my', verifyToken, async (req, res) => {
     }
 });
 
-router.get('/all', verifyToken, isAdmin, async (req, res) => {
+router.get('/all', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await query(
             `SELECT d.*, e.first_name || ' ' || e.last_name as employee_name, e.employee_id as emp_id
@@ -164,7 +164,7 @@ router.delete('/:id', verifyToken, async (req, res) => {
     }
 });
 
-router.delete('/:id/admin', verifyToken, isAdmin, async (req, res) => {
+router.delete('/:id/admin', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const doc = await query('SELECT * FROM documents WHERE id = $1', [req.params.id]);
         if (doc.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });

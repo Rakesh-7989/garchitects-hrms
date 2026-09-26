@@ -107,6 +107,22 @@ const isAdmin = (req, res, next) => {
     next();
 };
 
+// Check if user is Admin or HR (people-module staff).
+// HR handles the people modules: employees (list/create/update/status/
+// reset-password - but NOT permanent delete), payroll VIEW (list/detail/pdf/
+// export, not generate/bulk/delete), reports, profile-update approvals,
+// letters, onboarding, documents and attendance reviews. Money-write ops and
+// structural settings remain admin-only; each route keeps the right guard.
+const isAdminOrHr = (req, res, next) => {
+    if (req.user.role !== 'admin' && req.user.role !== 'hr') {
+        return res.status(403).json({
+            success: false,
+            message: 'Access denied. Admin or HR role required.'
+        });
+    }
+    next();
+};
+
 // Check if user is Manager or above
 const isManager = (req, res, next) => {
     const allowedRoles = ['admin', 'manager', 'team_lead', 'hr'];
@@ -162,6 +178,7 @@ const audienceForRole = (role) => {
 module.exports = { 
     verifyToken, 
     isAdmin, 
+    isAdminOrHr, 
     isManager, 
     isEmployee,
     generateToken,

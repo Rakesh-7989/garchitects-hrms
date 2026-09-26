@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdminOrHr } = require('../middleware/auth');
 const { istDateString, istTimeString, istMonth, istYear } = require('../utils/date');
 
-router.get('/dashboard', verifyToken, isAdmin, async (req, res) => {
+router.get('/dashboard', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const today = istDateString();
         const now = istTimeString();
@@ -63,7 +63,7 @@ router.get('/dashboard', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-router.get('/employees', verifyToken, isAdmin, async (req, res) => {
+router.get('/employees', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await query(
             `SELECT d.name as department, COUNT(e.id) as count 
@@ -78,7 +78,7 @@ router.get('/employees', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-router.get('/attendance', verifyToken, isAdmin, async (req, res) => {
+router.get('/attendance', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { month, year } = req.query;
         const m = String(month || istMonth()).padStart(2, '0');
@@ -100,7 +100,7 @@ router.get('/attendance', verifyToken, isAdmin, async (req, res) => {
 // @desc    Work assignment report: status summary, per-employee, per-project,
 //          plus the 10 most recent assignments.
 // @access  Private (Admin)
-router.get('/work-assignments', verifyToken, isAdmin, async (req, res) => {
+router.get('/work-assignments', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const openFilter = `wa.status IN ('assigned','in_progress')`;
         const [byStatus, byEmployee, byProject, recent] = await Promise.all([

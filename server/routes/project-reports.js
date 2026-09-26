@@ -21,6 +21,15 @@ const PROJECT_ENTITY_TYPES = [
  */
 router.get('/overview', verifyToken, isManager, async (req, res) => {
     try {
+        // D11 (same rule as projects + work assignments): a team lead only sees
+        // projects they lead (whole-project or any unit row). Managers/HR/admins
+        // see everything.
+        const isFullView = ['admin', 'manager', 'hr'].includes(req.user.role);
+        let ledIds = null;
+        if (!isFullView) {
+            const led = await q('SELECT DISTINCT project_id FROM project_leads WHERE lead_id = $1', [req.user.id]);
+            ledIds = led.rows.map(r => r.project_id);
+        }
         const projectsResult = await q(`
             SELECT p.id, p.name, COALESCE(p.client, p.customer) as client, p.description,
                    p.status, p.project_type, p.start_date, p.end_date,
@@ -32,7 +41,8 @@ router.get('/overview', verifyToken, isManager, async (req, res) => {
                    (SELECT COUNT(*) FROM project_daily_updates ut WHERE ut.project_id = p.id) as updates_total,
                    (SELECT MAX(update_date) FROM project_daily_updates um WHERE um.project_id = p.id) as latest_update_date
             FROM projects p
-            ORDER BY p.name`);
+            ${isFullView ? '' : 'WHERE p.id = ANY($1::int[])'}
+            ORDER BY p.name`, isFullView ? [] : [ledIds]);
         const projects = projectsResult.rows.map(p => ({
             ...p,
             updates_7d: parseInt(p.updates_7d, 10) || 0,
@@ -52,8 +62,9 @@ router.get('/overview', verifyToken, isManager, async (req, res) => {
             JOIN projects p ON p.id = pu.project_id
             JOIN employees e ON e.id = pu.employee_id
             LEFT JOIN project_units u ON u.id = pu.unit_id
+            ${isFullView ? '' : 'WHERE pu.project_id = ANY($1::int[])'}
             ORDER BY pu.update_date DESC, pu.id DESC
-            LIMIT 6`);
+            LIMIT 6`, isFullView ? [] : [ledIds]);
 
         const recentDocuments = await q(`
             SELECT pd.id, pd.title, pd.doc_type, pd.file_name, pd.created_at,
@@ -62,8 +73,9 @@ router.get('/overview', verifyToken, isManager, async (req, res) => {
             FROM project_documents pd
             JOIN projects p ON p.id = pd.project_id
             LEFT JOIN employees e ON e.id = pd.uploader_id
+            ${isFullView ? '' : 'WHERE pd.project_id = ANY($1::int[])'}
             ORDER BY pd.created_at DESC, pd.id DESC
-            LIMIT 6`);
+            LIMIT 6`, isFullView ? [] : [ledIds]);
 
         const summary = {
             total_projects: projects.length,
@@ -91,14 +103,28 @@ router.get('/overview', verifyToken, isManager, async (req, res) => {
 router.get('/activity', verifyToken, isManager, async (req, res) => {
     try {
         const limit = Math.min(parseInt(req.query.limit) || 25, 100);
+        // D11: a team lead only sees activity belonging to projects they lead
+        // (project-level entity, or a document/daily-update row of a led project).
+        const isFullView = ['admin', 'manager', 'hr'].includes(req.user.role);
+        let ledIds = [];
+        if (!isFullView) {
+            const led = await q('SELECT DISTINCT project_id FROM project_leads WHERE lead_id = $1', [req.user.id]);
+            ledIds = led.rows.map(r => r.project_id);
+        }
         const result = await q(`
             SELECT al.id, al.action, al.entity_type, al.entity_id, al.details, al.created_at,
                    COALESCE(e.first_name || ' ' || e.last_name, 'System') as actor_name
             FROM audit_logs al
             LEFT JOIN employees e ON e.id = al.actor_id
             WHERE al.entity_type = ANY($1::text[])
+            ${isFullView ? '' : `AND (
+                (al.entity_type = 'project' AND al.entity_id = ANY($2::int[]))
+                OR (al.entity_type = 'project_document' AND EXISTS (SELECT 1 FROM project_documents pd WHERE pd.id = al.entity_id AND pd.project_id = ANY($2::int[])))
+                OR (al.entity_type = 'project_daily_update' AND EXISTS (SELECT 1 FROM project_daily_updates pu WHERE pu.id = al.entity_id AND pu.project_id = ANY($2::int[])))
+            )`}
             ORDER BY al.created_at DESC, al.id DESC
-            LIMIT $2`, [PROJECT_ENTITY_TYPES, limit]);
+            LIMIT $${isFullView ? 2 : 3}`,
+            isFullView ? [PROJECT_ENTITY_TYPES, limit] : [PROJECT_ENTITY_TYPES, ledIds, limit]);
         res.json({ success: true, items: result.rows });
     } catch (error) {
         console.error('Error loading project activity:', error);
