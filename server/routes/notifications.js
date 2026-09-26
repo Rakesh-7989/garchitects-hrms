@@ -25,7 +25,7 @@ router.get('/counts', verifyToken, isManager, async (req, res) => {
         });
         const q = (sql, params) => safe(runWithSchemaRepair(() => query(sql, params)));
 
-        const [pendingLeaves, pendingWfh, pendingTickets, announcementsUnread, pendingProfileUpdates, pendingRegularizations, openWorkAssignments] = await Promise.all([
+        const [pendingLeaves, pendingWfh, pendingTickets, announcementsUnread, pendingProfileUpdates, pendingRegularizations, openWorkAssignments, openLeadProjects] = await Promise.all([
             safe(query("SELECT COUNT(*) as count FROM leave_applications WHERE status = 'pending'" + scopeClause, scopeParams)),
             safe(query("SELECT COUNT(*) as count FROM wfh_requests WHERE status = 'pending'" + scopeClause, scopeParams)),
             safe(query("SELECT COUNT(*) as count FROM support_tickets WHERE status IN ('open', 'in_progress')" + scopeClause, scopeParams)),
@@ -50,7 +50,11 @@ router.get('/counts', verifyToken, isManager, async (req, res) => {
             // all, manager/team-lead see the ones THEY created (same scope as GET /).
             (req.user.role === 'admin' || req.user.role === 'hr')
                 ? safe(query("SELECT COUNT(*) as count FROM work_assignments WHERE status IN ('assigned','in_progress')"))
-                : safe(query("SELECT COUNT(*) as count FROM work_assignments WHERE status IN ('assigned','in_progress') AND assigned_by = $1", [req.user.id]))
+                : safe(query("SELECT COUNT(*) as count FROM work_assignments WHERE status IN ('assigned','in_progress') AND assigned_by = $1", [req.user.id])),
+            // Projects the caller leads (project-level or unit-level rows),
+            // distinct per project — lights up the bell / nav badge on
+            // "My Led Projects" the moment a lead is designated (P9).
+            q("SELECT COUNT(DISTINCT project_id) as count FROM project_leads WHERE lead_id = $1", [req.user.id])
         ]);
 
         const counts = {
@@ -60,9 +64,10 @@ router.get('/counts', verifyToken, isManager, async (req, res) => {
             announcementsUnread: parseInt(announcementsUnread.rows[0].count),
             pendingTickets: parseInt(pendingTickets.rows[0].count),
             pendingRegularizations: parseInt(pendingRegularizations.rows[0].count),
-            openWorkAssignments: parseInt(openWorkAssignments.rows[0].count)
+            openWorkAssignments: parseInt(openWorkAssignments.rows[0].count),
+            openLeadProjects: parseInt(openLeadProjects.rows[0].count)
         };
-        counts.total = counts.pendingLeaves + counts.pendingWfh + counts.pendingProfileUpdates + counts.announcementsUnread + counts.pendingTickets + counts.pendingRegularizations + counts.openWorkAssignments;
+        counts.total = counts.pendingLeaves + counts.pendingWfh + counts.pendingProfileUpdates + counts.announcementsUnread + counts.pendingTickets + counts.pendingRegularizations + counts.openWorkAssignments + counts.openLeadProjects;
 
         res.json({ success: true, counts });
     } catch (error) {

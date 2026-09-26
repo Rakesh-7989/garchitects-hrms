@@ -324,3 +324,21 @@ implementation).
 | **Route** `server/routes/project-leads.js` (`/api/project-leads`) | `POST /` designate `{projectId, leadId, unitIds[]}` (empty = whole project; all-per-unit conflicts handled); `GET /` overview; `GET /mine` (caller's led projects + units + member counts); `GET /leads-options` (active team_lead/manager); `GET /my-team` (reporting-tree picker mirroring /place enforcement; admin/hr → all active); `DELETE /:id`; `POST /place` (idempotent inserts honoring the partial uniques + audit `project.lead_designate`/`project.lead_unassign`/`project.lead_place`). |
 | **UI** | `/manager/team-projects` gained a **Project Leads** panel (list + Assign Lead modal with unit checkboxes default-all; role-gated to admin/manager/hr). New **`/manager/led-projects`** page: "My Led Projects" — per led project show units + member counts, "Assign Team" modal places my reporting tree into my units (or the project itself when it has no units), refresh after placement. Nav `#ledProjectsLink` on the 4 portal pages + all 18 admin pages. |
 | **No-units handling** | A unit-less project is designated as a whole-project lead (unit NULL). The lead page falls back to "Assign to Project" (no unit). Simultaneously P8/D5 already lets any managerish place any active employee into any unit-less project directly — the user-requested "units పక్కన పెడితే ఎవరు ఎవరికి ఐనా" freedom is preserved. |
+
+### 9.1 — Team-lead scoping (`D11`, overrides D5 for team_leads; live-verified 11/11 + scope matrix)
+
+After a live check the user asked: *"why does a team lead have broad project access — the
+team lead should only assign their team into the project the admin/manager assigned to
+them."* Decision `D11`: **scope the team_lead** — managers/admin/hr keep D5 full power.
+
+| Layer | Change |
+|---|---|
+| `GET /api/projects/options` | For `team_lead` returns **only the projects they lead** (project-level row → project + all its units; unit rows → those units). Other roles unchanged. |
+| `POST /api/projects/:id/employees` | For `team_lead`: every assignment must target a project/unit they lead **and** every employee must be in their reporting tree, else 403 (mirrors `/project-leads/place`; helpers `leadCovers`/`myTreeIds` shared from `project-leads.js`). |
+| `DELETE /api/projects/:id/employees/:employeeId` | For `team_lead`: may only remove members from projects/units they lead, else 403. |
+| `GET /api/notifications/counts` | New `openLeadProjects` count (DISTINCT led projects) → bell badge + sidebar badge on **My Led Projects** lights up the moment a designator assigns a lead. |
+| `/manager/team-projects` UI | For `team_lead`: project picker loads via `/project-leads/mine` (led projects only; empty state explains "you are not the lead of any project yet"); employee picker loads via `/project-leads/my-team` (reporting tree). |
+
+Consequence: a team_lead with **no** designated project can no longer assign anyone
+anywhere (previous D5 gap closed); once admin/manager designates them, the project
+appears in Team Projects + My Led Projects and they can place their team into it.

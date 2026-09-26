@@ -4,6 +4,7 @@ const { query, getClient } = require('../config/database');
 const { verifyToken, isAdmin, isManager } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
+const { leadCovers, myTreeIds } = require('./project-leads');
 
 // Self-healing query wrapper: if a legacy database is missing the projects
 // module tables, the first 42P01 error creates them and the request retries.
@@ -137,6 +138,42 @@ router.get('/stats', verifyToken, isAdmin, async (req, res) => {
  */
 router.get('/options', verifyToken, isManager, async (req, res) => {
     try {
+        // P9/D9 scoping: a team_lead only sees the projects they lead
+        // (project-level row → all units; unit rows → those units only).
+        if (req.user.role === 'team_lead') {
+            const projs = await q(
+                `SELECT DISTINCT p.id, p.name, p.status
+                 FROM project_leads pl JOIN projects p ON p.id = pl.project_id
+                 WHERE pl.lead_id = $1
+                 ORDER BY p.name`,
+                [req.user.id]
+            );
+            const projects = [];
+            for (const p of projs.rows) {
+                const whole = await q(
+                    `SELECT 1 FROM project_leads WHERE project_id = $1 AND lead_id = $2 AND unit_id IS NULL`,
+                    [p.id, req.user.id]
+                );
+                let units;
+                if (whole.rows.length > 0) {
+                    const u = await q(
+                        `SELECT u.id, u.name FROM project_units u WHERE u.project_id = $1 AND u.status = 'active' ORDER BY u.name`,
+                        [p.id]
+                    );
+                    units = u.rows;
+                } else {
+                    const u = await q(
+                        `SELECT u.id, u.name FROM project_leads pl JOIN project_units u ON u.id = pl.unit_id
+                         WHERE pl.project_id = $1 AND pl.lead_id = $2 AND u.status = 'active' ORDER BY u.name`,
+                        [p.id, req.user.id]
+                    );
+                    units = u.rows;
+                }
+                projects.push({ id: p.id, name: p.name, status: p.status, units });
+            }
+            return res.json({ success: true, projects });
+        }
+
         const result = await q(
             `SELECT p.id, p.name, p.status,
                     COALESCE(json_agg(json_build_object('id', u.id, 'name', u.name))
@@ -384,6 +421,27 @@ router.post('/:projectId/employees', verifyToken, isManager, async (req, res) =>
             }
         }
 
+        // P9/D9 scope: a team_lead may place only their reporting tree into
+        // projects/units they lead (same rule as /api/project-leads/place).
+        // Managers/admin/hr keep the D5 general power.
+        if (req.user.role === 'team_lead') {
+            const whole = await leadCovers(projectId, null, req.user.id);
+            const tree = await myTreeIds(req.user.id);
+            for (const a of list) {
+                const empId = parseInt(a.employeeId ?? a.employee_id, 10);
+                if (isNaN(empId)) continue;
+                const rawUnit = a.unitId ?? a.unit_id;
+                const unitId = (rawUnit === null || rawUnit === undefined || rawUnit === '') ? null : parseInt(rawUnit, 10);
+                const coversTarget = whole || (unitId !== null && !isNaN(unitId) && await leadCovers(projectId, unitId, req.user.id));
+                if (!coversTarget) {
+                    return res.status(403).json({ success: false, message: 'You can only assign into projects/units you lead' });
+                }
+                if (!tree.has(empId)) {
+                    return res.status(403).json({ success: false, message: 'You can only assign your own team members' });
+                }
+            }
+        }
+
         // Assign employees (idempotent): skip an assignment that already exists
         // for the same project + employee + unit.
         const results = [];
@@ -458,10 +516,32 @@ router.post('/:projectId/employees', verifyToken, isManager, async (req, res) =>
  */
 router.delete('/:projectId/employees/:employeeId', verifyToken, isManager, async (req, res) => {
     try {
+        const projectId = parseInt(req.params.projectId, 10);
+        const employeeId = parseInt(req.params.employeeId, 10);
+        if (isNaN(projectId) || isNaN(employeeId)) {
+            return res.status(400).json({ success: false, message: 'Invalid project or employee id' });
+        }
+
+        // P9/D9 scope: a team_lead may only remove members from projects/units
+        // they lead. Managers/admin/hr keep the general power.
+        if (req.user.role === 'team_lead') {
+            const row = await q(
+                `SELECT unit_id FROM project_employees WHERE project_id = $1 AND id = $2`,
+                [projectId, employeeId]
+            );
+            if (row.rows.length === 0) {
+                return res.status(404).json({ success: false, message: 'Employee not assigned to project' });
+            }
+            const covers = await leadCovers(projectId, row.rows[0].unit_id, req.user.id);
+            if (!covers) {
+                return res.status(403).json({ success: false, message: 'You can only remove members from projects/units you lead' });
+            }
+        }
+
         // Do NOT delete historical daily update data
         const result = await q(
             `DELETE FROM project_employees WHERE project_id = $1 AND employee_id = $2 RETURNING employee_id`,
-            [req.params.projectId, req.params.employeeId]
+            [projectId, employeeId]
         );
         
         if (result.rows.length === 0) {
@@ -470,8 +550,8 @@ router.delete('/:projectId/employees/:employeeId', verifyToken, isManager, async
 
         logAudit({
             actorId: req.user.id, action: 'project.unassign', entityType: 'project',
-            entityId: req.params.projectId,
-            details: { employeeId: Number(req.params.employeeId) }, ip: req.ip
+            entityId: projectId,
+            details: { employeeId }, ip: req.ip
         });
 
         res.json({ 

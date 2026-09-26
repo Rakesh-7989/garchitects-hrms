@@ -388,13 +388,13 @@ async function loadNotifBadge() {
         if (user.role === 'admin') {
             const data = await apiCall('/notifications/counts');
             if (data && data.success) {
-                count = data.counts.pendingLeaves + data.counts.pendingWfh + data.counts.pendingProfileUpdates + data.counts.announcementsUnread + data.counts.pendingTickets + (parseInt(data.counts.openWorkAssignments) || 0);
+                count = data.counts.pendingLeaves + data.counts.pendingWfh + data.counts.pendingProfileUpdates + data.counts.announcementsUnread + data.counts.pendingTickets + (parseInt(data.counts.openWorkAssignments) || 0) + (parseInt(data.counts.openLeadProjects) || 0);
                 loadSidebarCounts(data.counts);
             }
         } else if (user.role === 'manager' || user.role === 'team_lead') {
             const data = await apiCall('/notifications/counts');
             if (data && data.success) {
-                count = data.counts.pendingLeaves + data.counts.pendingWfh + data.counts.pendingTickets + data.counts.announcementsUnread + (parseInt(data.counts.openWorkAssignments) || 0);
+                count = data.counts.pendingLeaves + data.counts.pendingWfh + data.counts.pendingTickets + data.counts.announcementsUnread + (parseInt(data.counts.openWorkAssignments) || 0) + (parseInt(data.counts.openLeadProjects) || 0);
                 loadSidebarCounts(data.counts, 'manager');
             }
         } else {
@@ -422,14 +422,16 @@ function loadSidebarCounts(counts, mode) {
     const map = mode === 'manager'
         ? {
             '/manager/my-team': counts.pendingLeaves + counts.pendingWfh + counts.pendingTickets,
-            '/manager/team-work': parseInt(counts.openWorkAssignments) || 0
+            '/manager/team-work': parseInt(counts.openWorkAssignments) || 0,
+            '/manager/led-projects': parseInt(counts.openLeadProjects) || 0
         }
         : {
             '/admin/leave': counts.pendingLeaves,
             '/admin/wfh': counts.pendingWfh,
             '/admin/tickets': counts.pendingTickets,
             '/admin/employees': counts.pendingProfileUpdates,
-            '/manager/team-work': parseInt(counts.openWorkAssignments) || 0
+            '/manager/team-work': parseInt(counts.openWorkAssignments) || 0,
+            '/manager/led-projects': parseInt(counts.openLeadProjects) || 0
         };
     Object.keys(map).forEach(href => {
         const item = document.querySelector('.sidebar-nav a.nav-item[href="' + href + '"]');

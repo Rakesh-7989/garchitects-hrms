@@ -444,3 +444,7 @@ router.post('/place', verifyToken, isManager, async (req, res) => {
 });
 
 module.exports = router;
+// Scope helpers reused by server/routes/projects.js to enforce the same
+// "my team + my units" rule on the general P8 routes for team_leads (D9).
+module.exports.leadCovers = leadCovers;
+module.exports.myTreeIds = myTreeIds;

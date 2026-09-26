@@ -198,7 +198,20 @@
         let currentLeads = [];
 
         async function loadProjects(manual) {
-            const data = await apiCall('/projects/options');
+            // P9/D9: a team_lead sees ONLY the projects they lead
+            // (whole-project or unit rows). Manager/admin/hr see all.
+            let data;
+            if (currentRole === 'team_lead') {
+                const d = await apiCall('/project-leads/mine');
+                data = d && d.success
+                    ? { success: true, projects: (d.led || []).map(p => ({
+                        id: p.projectId, name: p.projectName, status: p.projectStatus,
+                        units: (p.units || []).map(u => ({ id: u.id, name: u.name }))
+                    })) }
+                    : d;
+            } else {
+                data = await apiCall('/projects/options');
+            }
             const sel = document.getElementById('tpProject');
             if (!data || !data.success) {
                 sel.innerHTML = '<option value="">Failed to load projects</option>';
@@ -206,6 +219,9 @@
                 return;
             }
             projects = data.projects || [];
+            if (currentRole === 'team_lead' && projects.length === 0) {
+                document.getElementById('tpRoster').innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.9rem;">You are not the lead of any project yet.<br>When an admin/manager assigns a project to you, it appears here and you can assign your team into it.</div>';
+            }
             const prev = sel.value;
             sel.innerHTML = '<option value="">— Select a project —</option>' + projects.map(p =>
                 '<option value="' + p.id + '">' + escapeHtml(p.name) + (p.status && p.status !== 'active' ? ' (' + escapeHtml(String(p.status).replace('_', ' ')) + ')' : '') + '</option>'
@@ -367,7 +383,16 @@
         }
 
         async function loadEmployeesForPicker() {
-            const data = await apiCall('/employees/directory');
+            // P9/D9: a team_lead's picker = their reporting tree (matches the
+            // server-side /place + general-route scope). Manager/admin/hr see
+            // the full company directory (D5).
+            let data;
+            if (currentRole === 'team_lead') {
+                const d = await apiCall('/project-leads/my-team');
+                data = d && d.success ? { success: true, directory: d.team || [] } : d;
+            } else {
+                data = await apiCall('/employees/directory');
+            }
             if (!data || !data.success) return;
             allEmployees = (data.directory || []).slice().sort((a, b) => String(a.first_name).localeCompare(String(b.first_name)));
         }
