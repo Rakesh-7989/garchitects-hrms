@@ -189,10 +189,12 @@ const ENSURE_TABLE_DDL = {
             id SERIAL PRIMARY KEY,
             project_id INT REFERENCES projects(id) ON DELETE CASCADE,
             employee_id INT REFERENCES employees(id) ON DELETE CASCADE,
+            unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
             assigned_at TIMESTAMP DEFAULT NOW(),
-            status VARCHAR(20) DEFAULT 'active',
-            UNIQUE(project_id, employee_id)
+            status VARCHAR(20) DEFAULT 'active'
         )`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS uq_project_employees_no_unit ON project_employees(project_id, employee_id) WHERE unit_id IS NULL`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS uq_project_employees_unit ON project_employees(project_id, employee_id, unit_id) WHERE unit_id IS NOT NULL`,
         `CREATE INDEX IF NOT EXISTS idx_project_employees_project ON project_employees(project_id)`,
         `CREATE INDEX IF NOT EXISTS idx_project_employees_employee ON project_employees(employee_id)`
     ],
@@ -218,17 +220,56 @@ const ENSURE_TABLE_DDL = {
             id SERIAL PRIMARY KEY,
             project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
             update_date DATE NOT NULL,
             task_cat VARCHAR(30) NOT NULL CHECK (task_cat IN ('design', 'drafting', 'site_visit', 'coordination', 'approvals', 'documentation', 'meeting', 'other')),
             description TEXT NOT NULL,
             hours NUMERIC(4,1) DEFAULT 0,
             notes TEXT,
             created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(project_id, employee_id, update_date)
+            updated_at TIMESTAMP DEFAULT NOW()
         )`,
         `CREATE INDEX IF NOT EXISTS idx_project_daily_updates_project_date ON project_daily_updates(project_id, update_date DESC)`,
-        `CREATE INDEX IF NOT EXISTS idx_project_daily_updates_employee_date ON project_daily_updates(employee_id, update_date DESC)`
+        `CREATE INDEX IF NOT EXISTS idx_project_daily_updates_employee_date ON project_daily_updates(employee_id, update_date DESC)`,
+        `CREATE INDEX IF NOT EXISTS idx_pdu_unit ON project_daily_updates(unit_id)`
+    ],
+    // Units (sub-projects): towers/plots/floors/phases under a project. Must be
+    // creatable before project_employees/project_daily_updates reference it.
+    project_units: [
+        `CREATE TABLE IF NOT EXISTS project_units (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name VARCHAR(150) NOT NULL,
+            code VARCHAR(30),
+            description TEXT,
+            status VARCHAR(20) DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(project_id, name)
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_project_units_project ON project_units(project_id)`
+    ],
+    // Work assignments: team-lead/manager assign concrete tasks to employees.
+    work_assignments: [
+        `CREATE TABLE IF NOT EXISTS work_assignments (
+            id SERIAL PRIMARY KEY,
+            project_id INT REFERENCES projects(id) ON DELETE SET NULL,
+            unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
+            assigned_by INT NOT NULL REFERENCES employees(id),
+            assigned_to INT NOT NULL REFERENCES employees(id),
+            title VARCHAR(200) NOT NULL,
+            description TEXT,
+            priority VARCHAR(10) DEFAULT 'normal' CHECK (priority IN ('low','normal','high','urgent')),
+            due_date DATE,
+            status VARCHAR(20) DEFAULT 'assigned'
+                CHECK (status IN ('assigned','in_progress','completed','cancelled')),
+            completed_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_wa_assignee ON work_assignments(assigned_to, status)`,
+        `CREATE INDEX IF NOT EXISTS idx_wa_assigner ON work_assignments(assigned_by, status)`,
+        `CREATE INDEX IF NOT EXISTS idx_wa_project ON work_assignments(project_id)`
     ],
     employee_status_history: [
         `CREATE TABLE IF NOT EXISTS employee_status_history (
