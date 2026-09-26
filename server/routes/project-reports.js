@@ -118,9 +118,9 @@ router.get('/activity', verifyToken, isManager, async (req, res) => {
             LEFT JOIN employees e ON e.id = al.actor_id
             WHERE al.entity_type = ANY($1::text[])
             ${isFullView ? '' : `AND (
-                (al.entity_type = 'project' AND al.entity_id = ANY($2::int[]))
-                OR (al.entity_type = 'project_document' AND EXISTS (SELECT 1 FROM project_documents pd WHERE pd.id = al.entity_id AND pd.project_id = ANY($2::int[])))
-                OR (al.entity_type = 'project_daily_update' AND EXISTS (SELECT 1 FROM project_daily_updates pu WHERE pu.id = al.entity_id AND pu.project_id = ANY($2::int[])))
+                (al.entity_type = 'project' AND al.entity_id::bigint = ANY($2::bigint[]))
+                OR (al.entity_type = 'project_document' AND EXISTS (SELECT 1 FROM project_documents pd WHERE pd.id = al.entity_id::bigint AND pd.project_id = ANY($2::bigint[])))
+                OR (al.entity_type = 'project_daily_update' AND EXISTS (SELECT 1 FROM project_daily_updates pu WHERE pu.id = al.entity_id::bigint AND pu.project_id = ANY($2::bigint[])))
             )`}
             ORDER BY al.created_at DESC, al.id DESC
             LIMIT $${isFullView ? 2 : 3}`,
