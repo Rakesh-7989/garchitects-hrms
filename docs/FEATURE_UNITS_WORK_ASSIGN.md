@@ -1,7 +1,7 @@
 # Feature Design — Units (sub-projects) + Work Assignments + Overtime removal
 
 **Repo:** G-Architects HRMS · **Branch:** master (auto-deploys to https://garchitects-hrms.vercel.app)
-**Status:** Proposed — waiting on 4 design decisions before implementation (marked ⚠ below)
+**Status:** ✅ **Implemented + verified live (2026-09-26)** — overtime removed, Units (P1–P4) and Work Assignments (P5–P6) shipped to master. Design decisions D1–D4 locked (below).
 
 ---
 
@@ -209,8 +209,8 @@ overtime column drop are destructive and gated on your D1/D4 answers). Commit is
 | P2 | Units schema/migration + routes (units CRUD, unit-aware assignment/updates/reports) | ✅ shipped + verified live 2026-09-26 |
 | P3 | Admin UI (units expander, assign/update unit dropdowns, overview units count) | ✅ shipped |
 | P4 | Employee UI (unit badges on cards/feed, unit dropdown in daily form) | ✅ shipped |
-| P5 | Work assignments: schema + route + scope | 🔜 next |
-| P6 | Work assignments UI (employee My Work + team-lead assign) | 🔜 next |
+| P5 | Work assignments: schema + route + scope | ✅ shipped + verified live 2026-09-26 |
+| P6 | Work assignments UI (employee My Work + team-lead assign) | ✅ shipped + verified live 2026-09-26 |
 
 **Unit-delete fix (commit `72f3638`, live-verified):** `ON DELETE SET NULL` on
 `project_employees.unit_id` collides with the partial unique `uq_project_employees_no_unit`
@@ -229,3 +229,34 @@ deleted after), employee-side POST with unitId, and full live-DB cleanup (0 left
 updates). Overtime: `attendance.overtime_hours` dropped by the startup migration (runs in the
 same ordered block as project_units creation, confirmed present) and zero `overtime` refs
 remain in `public/`.
+
+**Work assignments — server (commits `b2a16dc` + `83c03e7`, live-verified with qa-wa-live.mjs):**
+table section 23 + startup migration; `server/routes/work-assignments.js` mounted at
+`/api/work-assignments` — GET (admin/hr: all + filters; manager/team_lead: own-created),
+GET /my (any auth), POST (isManager, D3 any active employee, dup-open 409, unit↔project 400,
+title 400), PUT (assignee status-only with legal moves + terminal-state locks; assigner/admin/hr
+full edit), DELETE (assigner/admin). `schemaRepair.js` self-heals `work_assignments` +
+`project_units` (and aligns `project_employees`/`project_daily_updates` heals to the D1/D2 shape)
+so a cold-instance first request can never 500 on a missing table. Full live matrix green:
+create (no-project + project+unit, names joined, assigned_by=admin), dup 409, foreign unit 400,
+missing title 400, GET / + status filter, GET /my, assignee assigned→in_progress→completed
+(completed_at set) + illegal move 400 + title-edit 400 + cancel, assignee delete 403, admin
+full edit + delete, full cleanup (0 rows left, QAWA1 deleted).
+
+**Work assignments — UI (commit `e1da3c9`, live-verified with qa-wa-ui-live.mjs):**
+- Employee **My Work** (`public/pages/employee/my-work.html`, `/employee/my-work`): own
+  assignments via GET /my with Open/In Progress/Completed/Overdue stat cards, status filter
+  chips, priority/due/project-unit/assigner meta, and Start / Mark Complete / Cancel actions
+  (legal moves only; completed_at shown when done). Nav item "My Work" added to all 14
+  employee pages.
+- **Team Work** (`public/pages/manager/team-work.html`, `/manager/team-work`): role-guarded
+  (admin/manager/team_lead/hr). Assign Work modal (active-employee picker from
+  `/employees/directory` — admin/hr/manager see all, team_lead sees direct reports; project
+  picker from new GET `/api/work-assignments/projects`; unit picker dependent on project via
+  existing `/projects/:id/units`), status filter chips, Edit (legal status targets only) for
+  assigner/admin/hr, Withdraw for assigner/admin. Admin/hr see every assignment; manager/team_lead
+  see only what they created (D3). Server routing: `/manager/my-team` became `/manager/:page`
+  via `servePortalPage('manager')`; "Team Work" nav item added to `my-team.html` + all 18 admin
+  pages; auth.js auto-shows the Team Work link for admin/manager/team_lead/hr.
+- Live: both pages serve 200, picker endpoints authorized (401 without token), full UI-driven
+  lifecycle POST→PUT(completed)→DELETE round-trips with 0 rows left afterwards.
