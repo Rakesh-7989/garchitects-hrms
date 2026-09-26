@@ -106,7 +106,7 @@ router.get('/work-assignments', verifyToken, isAdmin, async (req, res) => {
         const [byStatus, byEmployee, byProject, recent] = await Promise.all([
             query(`SELECT wa.status, COUNT(*)::int as count FROM work_assignments wa GROUP BY wa.status`),
             query(
-                `SELECT at2.employee_id, at2.first_name, at2.last_name, wa.assigned_to,
+                `SELECT at2.employee_id, at2.first_name, at2.last_name,
                         SUM(CASE WHEN ${openFilter} THEN 1 ELSE 0 END)::int as open_count,
                         SUM(CASE WHEN wa.status = 'completed' THEN 1 ELSE 0 END)::int as completed_count,
                         COUNT(*)::int as total
@@ -116,7 +116,7 @@ router.get('/work-assignments', verifyToken, isAdmin, async (req, res) => {
                  ORDER BY open_count DESC, at2.first_name`
             ),
             query(
-                `SELECT COALESCE(p.name, 'No project') as project, wa.project_id,
+                `SELECT COALESCE(p.name, 'No project') as project,
                         COUNT(*)::int as total,
                         SUM(CASE WHEN ${openFilter} THEN 1 ELSE 0 END)::int as open_count,
                         SUM(CASE WHEN wa.status = 'completed' THEN 1 ELSE 0 END)::int as completed_count
