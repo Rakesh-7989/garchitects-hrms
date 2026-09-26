@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isManager } = require('../middleware/auth');
-const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
 const { leadCovers, myTreeIds } = require('./project-leads');
 
@@ -79,7 +79,8 @@ router.get('/my', verifyToken, async (req, res) => {
         res.json({ success: true, assignments: result.rows });
     } catch (error) {
         console.error('Error fetching my work assignments:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -103,7 +104,8 @@ router.get('/', verifyToken, isManager, async (req, res) => {
         res.json({ success: true, assignments: result.rows });
     } catch (error) {
         console.error('Error listing work assignments:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -135,7 +137,8 @@ router.get('/projects', verifyToken, isManager, async (req, res) => {
         res.json({ success: true, projects: result.rows });
     } catch (error) {
         console.error('Error listing projects for assignment picker:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -229,7 +232,8 @@ router.post('/', verifyToken, isManager, async (req, res) => {
         res.status(201).json({ success: true, message: 'Work assigned', assignment: full.rows[0] });
     } catch (error) {
         console.error('Error creating work assignment:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -347,7 +351,8 @@ router.put('/:id', verifyToken, async (req, res) => {
         res.json({ success: true, message: 'Assignment updated', assignment: full.rows[0] });
     } catch (error) {
         console.error('Error updating work assignment:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -373,7 +378,8 @@ router.delete('/:id', verifyToken, async (req, res) => {
         res.json({ success: true, message: 'Assignment deleted' });
     } catch (error) {
         console.error('Error deleting work assignment:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 

@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isManager } = require('../middleware/auth');
-const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
 
@@ -91,7 +91,8 @@ router.get('/overview', verifyToken, isManager, async (req, res) => {
         res.json({ success: true, projects, summary, recentUpdates: recentUpdates.rows, recentDocuments: recentDocuments.rows });
     } catch (error) {
         console.error('Error building project overview:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -128,7 +129,8 @@ router.get('/activity', verifyToken, isManager, async (req, res) => {
         res.json({ success: true, items: result.rows });
     } catch (error) {
         console.error('Error loading project activity:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 

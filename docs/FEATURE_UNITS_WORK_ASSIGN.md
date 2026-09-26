@@ -402,3 +402,61 @@ returns `409` instead of applying twice. Applied to `manager.js` leaves/wfh/tick
 admin-path approve routes in `leave.js`/`wfh.js`. Also added the previously-missing
 `logAudit` calls to `manager.js` (leave/wfh approve+reject, ticket respond) — that is the
 real day-to-day approval flow and used to write zero audit rows.
+
+## 12. Phase C — Error-leak sweep, payroll render-pdf hardening, frontend role-gate parity
+
+Security audit follow-up (2026-09-27). Three work items; server-side changes below are
+live-QA'd by `qa-phaseC-live.mjs`, frontend changes verified by code-review + the
+regression assertions in the same harness.
+
+### 12.1 Shared safe pg-error mapper at every raw-leak site (~20 sites)
+
+`pgErrorResponse` (in `server/utils/schemaRepair.js`) maps the common Postgres codes
+(23505 unique, 23503 FK, 22P02 bad number, 22007/22008 date, 23514 check, 23502 not-null)
+to friendly **400** messages and everything else to a generic **500 "Server error"** — no
+SQL / relation / column internals ever reach the client.
+
+- Fixed a latent bug in `projects.js`: the catch blocks called `pgErrorResponse(error)` but
+  then sent `message: (error && error.message) || r.message` — `error.message` is truthy
+  for nearly every DB error, so the mapper was **never** effective. Now `message: r.message`.
+- Swept the remaining raw `res.status(500).json({ success:false, message:(error &&
+  error.message) || 'Server error' })` sites → mapper pattern:
+  `project-documents.js` (5), `project-updates.js` (4), `work-assignments.js` (6),
+  `project-reports.js` (2).
+- `employees.js` keeps an **admin-only** `detail` field with the raw message on
+  create/update failures (documented debug aid; never shown to non-admin roles).
+- Verified live: malformed ids (`/employees/notanumber`, `/projects/notanumber`,
+  `/project-documents/notanumber`, out-of-range bigint) all return friendly 400/500
+  bodies with zero SQL markers.
+
+### 12.2 Payroll `/render-pdf` — totals are server-recomputed, access narrowed to Admin/HR
+
+- **Finding**: `renderPayslipPdf` already runs `computeTotals(p)` internally on the RAW
+  component/day fields and renders every financial row/card from those recalculated
+  totals — client-supplied `gross`/`net`/`totalDeductions` are never honoured. The
+  remaining exposure was **who could call it**: `isManager` meant any manager/team-lead
+  could mint a brand-stamped draft PDF for an arbitrary employee id + figures.
+- **Change**: `/render-pdf` is now `verifyToken, isAdminOrHr` (admin + HR only). Managers
+  and team-leads view **stored** payslips through `GET /:id/pdf`, which is server-sourced
+  and access-checked — they no longer need to render drafts. Frontend safe: the only
+  caller of the draft path is the admin `payroll-generate.html` page; stored rows always
+  take the `/:id/pdf` branch (employee payslips page unaffected).
+- Live QA matrix: manager `403`, employee `403`, HR `200` real `%PDF`.
+
+### 12.3 Frontend role-gate parity — nav filter + manager home + HR review empowerment
+
+The admin sidebar was **static HTML, identical for admin/hr/manager**, so managers were
+shown pages whose APIs now 403 (employees/payroll/reports/…) while HR was missing review
+surfaces. Fixed:
+
+| Change | Detail |
+|---|---|
+| `auth.js` `applyRoleNav()` (runs on every portal page) | Central runtime filter on `#sidebar .sidebar-nav`: **manager** hides every `/admin/*` staff/analytics page (dashboard, employees, departments, designations, onboarding, attendance, leave, wfh, payroll, project-management, tickets, documents, reports, audit-logs, settings); **hr** hides project-management, audit-logs, settings (admin-only per user decision). Hidden section titles collapse. |
+| Manager home = manager portal | `getLoginUrl()` is now token-aware (never bounces a signed-out user at a guarded page — redirect-loop guard); **manager → `/manager/my-team`** (their team review + today dashboard). Admin/hr stay on `/admin/`. Login-page bounce + `handleLogin` redirects + logout (managers → `/`) aligned. |
+| HR org-wide review (server) | `leave.js` (`/all`, `/pending`, `/approve/:id`, `/export`), `wfh.js` (`/all`, `/pending`, `/approve/:id`), `tickets.js` (`/all`, `/pending`, `/respond/:id`) widened `isAdmin` → `isAdminOrHr` — HR can now review any employee's leave/WFH/ticket request org-wide (matches the decided HR matrix). Managers keep team-scoped reviews via `/manager/*` (still 403 on the org-wide admin endpoints). |
+| UI polish | `employees.html` "Delete Permanently" header action renders for `admin` only; `payroll.html` Bulk Generate / Generate Payslip / Edit / Delete buttons get `pp-admin-only` and are hidden for HR (view / download-zip / export salary-register stay available). |
+| Dead imports | Removed now-unused `isManager` (payroll.js) and `isAdmin` (leave/wfh/tickets.js) middleware imports. |
+
+Node-level parity kept: managers cannot reach HR-module APIs (403), HR cannot reach
+admin-only APIs (settings PUT, projects POST, audit-logs GET → 403), and the TL tree
+scoping + manager full-power behaviour from Phase B is unchanged (re-asserted in QA).

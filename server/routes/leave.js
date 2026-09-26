@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query, getClient } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdminOrHr } = require('../middleware/auth');
 const { validateLeave } = require('../middleware/validation');
 const { istDateString, istYear } = require('../utils/date');
 const { sendToUser } = require('../services/push');
@@ -227,7 +227,7 @@ router.get('/my', verifyToken, async (req, res) => {
     }
 });
 
-router.get('/all', verifyToken, isAdmin, async (req, res) => {
+router.get('/all', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { status } = req.query;
         let sqlQuery = `SELECT la.*, lt.name as leave_type_name, 
@@ -264,7 +264,7 @@ router.get('/all', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-router.get('/pending', verifyToken, isAdmin, async (req, res) => {
+router.get('/pending', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await query(
             `SELECT la.*, lt.name as leave_type_name, 
@@ -282,7 +282,7 @@ router.get('/pending', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-router.put('/approve/:id', verifyToken, isAdmin, async (req, res) => {
+router.put('/approve/:id', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { status, remarks } = req.body;
         if (!['approved', 'rejected'].includes(status)) {
@@ -449,7 +449,7 @@ router.get('/balance', verifyToken, async (req, res) => {
 // @route   GET /api/leave/export
 // @desc    Branded Excel leave register for a year (optional status filter)
 // @access  Private (Admin)
-router.get('/export', verifyToken, isAdmin, async (req, res) => {
+router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const year = parseInt(req.query.year) || istYear();
         const status = req.query.status && req.query.status !== 'all' ? String(req.query.status) : null;

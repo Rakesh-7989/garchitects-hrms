@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { query } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
-const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { uploadBuffer, deleteFile, getStorageClient } = require('../services/storage');
 const { logAudit } = require('../utils/audit');
 
@@ -52,7 +52,8 @@ router.get('/:projectId', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, documents: result.rows });
     } catch (error) {
         console.error('Error listing project documents:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -108,7 +109,8 @@ router.post('/:projectId/upload', verifyToken, isAdmin, (req, res, next) => {
         res.status(201).json({ success: true, document: result.rows[0] });
     } catch (error) {
         console.error('Project document upload error:', error.message);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -136,7 +138,8 @@ router.get('/:projectId/:id/download', verifyToken, isAdmin, async (req, res) =>
         res.send(buf);
     } catch (error) {
         console.error('Project document download error:', error.message);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -168,7 +171,8 @@ router.put('/:projectId/:id', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, document: result.rows[0] });
     } catch (error) {
         console.error('Project document update error:', error.message);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -196,7 +200,8 @@ router.delete('/:projectId/:id', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'Document deleted' });
     } catch (error) {
         console.error('Project document delete error:', error.message);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 

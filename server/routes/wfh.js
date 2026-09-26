@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query, getClient } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdminOrHr } = require('../middleware/auth');
 const { istDateString } = require('../utils/date');
 const { sendToUser } = require('../services/push');
 const { getWorkWeekConfig } = require('../utils/workWeek');
@@ -196,7 +196,7 @@ router.get('/my', verifyToken, async (req, res) => {
     }
 });
 
-router.get('/all', verifyToken, isAdmin, async (req, res) => {
+router.get('/all', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { status } = req.query;
         let sqlQuery = `SELECT wr.*,
@@ -232,7 +232,7 @@ router.get('/all', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-router.get('/pending', verifyToken, isAdmin, async (req, res) => {
+router.get('/pending', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await query(
             `SELECT wr.*,
@@ -249,7 +249,7 @@ router.get('/pending', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-router.put('/approve/:id', verifyToken, isAdmin, async (req, res) => {
+router.put('/approve/:id', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { status, remarks } = req.body;
         if (!['approved', 'rejected'].includes(status)) {

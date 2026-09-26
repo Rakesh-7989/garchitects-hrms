@@ -100,7 +100,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
     } catch (error) {
         console.error('Error fetching projects:', error);
         const r = pgErrorResponse(error);
-        res.status(r.status).json({ success: false, message: (error && error.message) || r.message });
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -672,7 +672,7 @@ router.post('/:projectId/units', verifyToken, isAdmin, async (req, res) => {
     } catch (error) {
         console.error('Error creating project unit:', error);
         const r = pgErrorResponse(error);
-        res.status(r.status).json({ success: false, message: (error && error.message) || r.message });
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -707,7 +707,7 @@ router.put('/:projectId/units/:unitId', verifyToken, isAdmin, async (req, res) =
     } catch (error) {
         console.error('Error updating project unit:', error);
         const r = pgErrorResponse(error);
-        res.status(r.status).json({ success: false, message: (error && error.message) || r.message });
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 

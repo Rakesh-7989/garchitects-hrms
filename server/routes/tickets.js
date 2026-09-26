@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdminOrHr } = require('../middleware/auth');
 const { sendToUser } = require('../services/push');
 const { resolveApproverRouting } = require('../utils/approvalRouting');
 
@@ -109,7 +109,7 @@ router.get('/my', verifyToken, async (req, res) => {
     }
 });
 
-router.get('/all', verifyToken, isAdmin, async (req, res) => {
+router.get('/all', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { status } = req.query;
         let sqlQuery = `SELECT st.*,
@@ -145,7 +145,7 @@ router.get('/all', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-router.get('/pending', verifyToken, isAdmin, async (req, res) => {
+router.get('/pending', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await query(
             `SELECT st.*,
@@ -163,7 +163,7 @@ router.get('/pending', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-router.put('/respond/:id', verifyToken, isAdmin, async (req, res) => {
+router.put('/respond/:id', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const { status, response } = req.body;
         if (!['open', 'in_progress', 'resolved', 'closed'].includes(status)) {

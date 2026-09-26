@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
-const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
 
 // Self-healing query wrapper: heals missing projects-module tables per request.
@@ -83,7 +83,8 @@ router.get('/', verifyToken, async (req, res) => {
         res.json({ success: true, updates: result.rows });
     } catch (error) {
         console.error('Error fetching project updates:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -164,7 +165,8 @@ router.post('/', verifyToken, async (req, res) => {
         res.json({ success: true, created: true, update: result.rows[0], message: 'Daily update submitted' });
     } catch (error) {
         console.error('Error submitting project update:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -231,7 +233,8 @@ router.put('/:id', verifyToken, async (req, res) => {
         res.json({ success: true, update: result.rows[0], message: 'Daily update updated' });
     } catch (error) {
         console.error('Error updating project update:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -255,7 +258,8 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'Daily update deleted' });
     } catch (error) {
         console.error('Error deleting project update:', error);
-        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 

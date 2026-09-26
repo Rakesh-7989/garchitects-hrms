@@ -1,7 +1,10 @@
 ﻿const API_URL = '/api';
 
 function getLoginUrl(user) {
-    if (user && ['admin', 'hr', 'manager'].includes(user.role)) return '/admin/';
+    // Never bounce a signed-out user at a guarded page (redirect-loop guard).
+    if (!localStorage.getItem('token')) return '/';
+    if (user && user.role === 'manager') return '/manager/my-team';
+    if (user && ['admin', 'hr'].includes(user.role)) return '/admin/';
     return '/';
 }
 
@@ -19,9 +22,12 @@ document.addEventListener('DOMContentLoaded', () => {
         path.includes('login.html'); // legacy /pages/*.html paths
     if (token && onLoginPage) {
         const user = getCurrentUser();
-        if (user && user.role === 'admin') {
+        if (!user) return;
+        if (user.role === 'admin' || user.role === 'hr') {
             window.location.href = '/admin/dashboard';
-        } else if (user) {
+        } else if (user.role === 'manager') {
+            window.location.href = '/manager/my-team';
+        } else {
             window.location.href = '/employee/dashboard';
         }
     }
@@ -82,8 +88,10 @@ async function handleLogin(event, portal) {
             setTimeout(() => {
                 if (data.must_change_password && data.user.role !== 'admin') {
                     window.location.href = '/employee/profile';
-                } else if (data.user.role === 'admin') {
+                } else if (data.user.role === 'admin' || data.user.role === 'hr') {
                     window.location.href = '/admin/dashboard';
+                } else if (data.user.role === 'manager') {
+                    window.location.href = '/manager/my-team';
                 } else {
                     window.location.href = '/employee/dashboard';
                 }
@@ -196,7 +204,9 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 async function logout() {
     const token = localStorage.getItem('token');
     const user = getCurrentUser();
-    const loginUrl = getLoginUrl(user);
+    // Managers land on the manager portal - logging out back at it would bounce
+    // them again, so send managers straight to the login surface.
+    const loginUrl = (user && user.role === 'manager') ? '/' : getLoginUrl(user);
     try {
         if (token) await fetch(`${API_URL}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
     } catch(e) {}
@@ -362,6 +372,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     } catch (e) {}
 });
+
+// ---- Phase C: role-aware portal navigation ----
+// The API layer is the hard security boundary; this filter only stops a role
+// from seeing/clicking pages whose APIs would 403 for it.
+//   manager → admin portal items are all staff/analytics-driven, so they are
+//             hidden (the manager portal is their home).
+//   hr      → hides the admin-only items: project CRUD, audit logs, settings.
+function applyRoleNav() {
+    try {
+        const user = getCurrentUser();
+        if (!user) return;
+        const hide = new Set();
+        if (user.role === 'manager') {
+            ['/admin/dashboard','/admin/employees','/admin/departments','/admin/designations',
+             '/admin/onboarding','/admin/attendance','/admin/leave','/admin/wfh','/admin/payroll',
+             '/admin/project-management','/admin/tickets','/admin/documents','/admin/reports',
+             '/admin/audit-logs','/admin/settings'].forEach(p => hide.add(p));
+        } else if (user.role === 'hr') {
+            ['/admin/project-management','/admin/audit-logs','/admin/settings'].forEach(p => hide.add(p));
+        }
+        if (hide.size === 0) return;
+        const sidebar = document.querySelector('#sidebar');
+        if (!sidebar) return;
+        sidebar.querySelectorAll('.sidebar-nav a.nav-item').forEach(a => {
+            if (hide.has(a.getAttribute('href'))) a.style.display = 'none';
+        });
+        // Collapse any section title whose child links all got hidden.
+        sidebar.querySelectorAll('.sidebar-nav .nav-section-title').forEach(title => {
+            let next = title.nextElementSibling;
+            let allHidden = true;
+            while (next && !next.classList.contains('nav-section-title')) {
+                if (next.tagName === 'A' && next.style.display !== 'none') { allHidden = false; break; }
+                next = next.nextElementSibling;
+            }
+            if (allHidden) title.style.display = 'none';
+        });
+    } catch (e) { /* navbar filtering is cosmetic only */ }
+}
+document.addEventListener('DOMContentLoaded', applyRoleNav);
 
 // ==================== PWA SUPPORT ====================
 

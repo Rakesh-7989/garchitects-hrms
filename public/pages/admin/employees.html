@@ -1072,7 +1072,9 @@
             } else if (emp.status === 'terminated') {
                 header += '<button class="btn btn-sm btn-success" onclick="rehireEmployee(' + emp.id + ')"><i class="fas fa-undo"></i> Rehire (same ID)</button>';
             }
-            header += '<button class="btn btn-sm btn-danger" onclick="openPermanentDeleteModal(' + emp.id + ')"><i class="fas fa-trash"></i> Delete Permanently</button>';
+            if ((getCurrentUser() || {}).role === 'admin') {
+                header += '<button class="btn btn-sm btn-danger" onclick="openPermanentDeleteModal(' + emp.id + ')"><i class="fas fa-trash"></i> Delete Permanently</button>';
+            }
             header += '</div>';
             header += '</div>';
             document.getElementById('viewEmpHeader').innerHTML = header;

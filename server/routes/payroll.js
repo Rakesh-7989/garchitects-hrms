@@ -7,7 +7,7 @@ const https = require('https');
 const http = require('http');
 const PDFDocument = require('pdfkit');
 const { query } = require('../config/database');
-const { verifyToken, isAdmin, isManager, isAdminOrHr } = require('../middleware/auth');
+const { verifyToken, isAdmin, isAdminOrHr } = require('../middleware/auth');
 const { istDateString } = require('../utils/date');
 const { sendPayslipEmail } = require('../services/email');
 const { logAudit } = require('../utils/audit');
@@ -1089,8 +1089,11 @@ router.get('/attendance-summary', verifyToken, isAdminOrHr, async (req, res) => 
 
 // @route   POST /api/payroll/render-pdf
 // @desc    Render a PDF from payslip payload data (for unsaved / live preview downloads)
-// @access  Private
-router.post('/render-pdf', verifyToken, isManager, pdfRateLimit, async (req, res) => {
+// @access  Private (Admin / HR) - payroll draft previews only ever originate on
+//          the admin payroll-generate page; managers/team-leads view STORED
+//          payslips via GET /:id/pdf which is server-sourced and access-checked,
+//          so they are not allowed to render arbitrary branded drafts here.
+router.post('/render-pdf', verifyToken, isAdminOrHr, pdfRateLimit, async (req, res) => {
     try {
         const p = req.body;
         if (!p) return res.status(400).json({ success: false, message: 'No payslip data' });
@@ -1098,6 +1101,10 @@ router.post('/render-pdf', verifyToken, isManager, pdfRateLimit, async (req, res
         // Ignoring any client-supplied company object also kills the SSRF /
         // unbounded-logo-download vector (a crafted company.logo_url could have
         // pointed the server at an internal address).
+        // Single source of truth for figures: renderPayslipPdf internally runs
+        // computeTotals(p) on the RAW component/day fields, so client-supplied
+        // gross/deduction/net totals are never honoured - the preview always
+        // matches what /generate would compute for the same inputs.
         const company = await getCompanyData();
         const buf = await renderPayslipPdf(p, company);
         const empId = p.emp_id || p.employee_id || 'emp';
