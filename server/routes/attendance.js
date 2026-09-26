@@ -152,19 +152,7 @@ router.post('/check-out', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'No check-in found for today' });
         }
         
-        let overtime = 0;
         const checkInTime = checkIn.rows[0].check_in;
-        const endSettings = await query(
-            `SELECT setting_key, setting_value FROM company_settings WHERE setting_key = 'office_end_time'`
-        );
-        const officeEnd = (endSettings.rows.length > 0 && endSettings.rows[0].setting_value) || '18:30:00';
-        if (checkInTime && now > officeEnd) {
-            const endParts = officeEnd.split(':').map(Number);
-            const nowParts = now.split(':').map(Number);
-            const endMins = endParts[0] * 60 + endParts[1];
-            const nowMins = nowParts[0] * 60 + nowParts[1];
-            overtime = Math.max(0, (nowMins - endMins) / 60);
-        }
 
         // Short-day rule: a morning login that ends up working under 3 hours
         // counts as a half day. Only downgrades present/late - never touches
@@ -178,10 +166,10 @@ router.post('/check-out', verifyToken, async (req, res) => {
             ['present', 'late'].includes(checkIn.rows[0].status);
 
         const result = await query(
-            `UPDATE attendance SET check_out = $1, overtime_hours = $2, check_out_location = $3${shortDay ? ", status = 'half-day'" : ''}
-            WHERE employee_id = $4 AND date = $5 AND check_out IS NULL 
+            `UPDATE attendance SET check_out = $1, check_out_location = $2${shortDay ? ", status = 'half-day'" : ''}
+            WHERE employee_id = $3 AND date = $4 AND check_out IS NULL 
             RETURNING *`,
-            [now, overtime, location, req.user.id, today]
+            [now, location, req.user.id, today]
         );
 
         let has_photo = false;
@@ -308,7 +296,7 @@ router.post('/mark-present', verifyToken, isManager, async (req, res) => {
         if (existing.rows.length > 0) {
             const result = await query(
                 `UPDATE attendance SET status = 'present', check_in = $1, check_out = NULL,
-                break_start = NULL, break_end = NULL, break_log = NULL, overtime_hours = 0,
+                break_start = NULL, break_end = NULL, break_log = NULL,
                 remarks = NULL, check_in_location = NULL
                 WHERE employee_id = $2 AND date = $3 RETURNING *`,
                 [officeStart, employee_id, date]
@@ -348,7 +336,7 @@ router.post('/mark-absent', verifyToken, isManager, async (req, res) => {
         if (existing.rows.length > 0) {
             const result = await query(
                 `UPDATE attendance SET status = 'absent', check_in = NULL, check_out = NULL, 
-                break_start = NULL, break_end = NULL, break_log = NULL, overtime_hours = 0,
+                break_start = NULL, break_end = NULL, break_log = NULL,
                 remarks = COALESCE($1, remarks)
                 WHERE employee_id = $2 AND date = $3 RETURNING *`,
                 [remarks, employee_id, date]
@@ -371,7 +359,7 @@ router.get('/my', verifyToken, async (req, res) => {
     try {
         const { month, year } = req.query;
         let sqlQuery = `SELECT a.id, a.employee_id, a.date, a.check_in, a.check_out, a.status,
-                a.overtime_hours, a.remarks, a.created_at, a.break_start, a.break_end, a.break_log,
+                a.remarks, a.created_at, a.break_start, a.break_end, a.break_log,
                 a.check_in_location, a.check_out_location,
                 CASE WHEN apci.id IS NOT NULL THEN 1 ELSE 0 END as has_photo_checkin,
                 CASE WHEN apco.id IS NOT NULL THEN 1 ELSE 0 END as has_photo_checkout

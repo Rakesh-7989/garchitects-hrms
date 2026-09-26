@@ -25,6 +25,7 @@ router.get('/overview', verifyToken, isManager, async (req, res) => {
             SELECT p.id, p.name, COALESCE(p.client, p.customer) as client, p.description,
                    p.status, p.project_type, p.start_date, p.end_date,
                    (SELECT COUNT(*) FROM project_employees pe WHERE pe.project_id = p.id) as employees_count,
+                   (SELECT COUNT(*) FROM project_units u WHERE u.project_id = p.id) as units_count,
                    (SELECT COUNT(*) FROM project_documents d WHERE d.project_id = p.id) as documents_count,
                    (SELECT COUNT(*) FROM project_daily_updates u7 WHERE u7.project_id = p.id AND u7.update_date >= CURRENT_DATE - 7) as updates_7d,
                    (SELECT COUNT(*) FROM project_daily_updates u30 WHERE u30.project_id = p.id AND u30.update_date >= CURRENT_DATE - 30) as updates_30d,
@@ -38,16 +39,19 @@ router.get('/overview', verifyToken, isManager, async (req, res) => {
             updates_30d: parseInt(p.updates_30d, 10) || 0,
             updates_total: parseInt(p.updates_total, 10) || 0,
             employees_count: parseInt(p.employees_count, 10) || 0,
+            units_count: parseInt(p.units_count, 10) || 0,
             documents_count: parseInt(p.documents_count, 10) || 0
         }));
 
         const recentUpdates = await q(`
-            SELECT pu.id, pu.project_id, pu.update_date, pu.task_cat, pu.description, pu.hours,
+            SELECT pu.id, pu.project_id, pu.unit_id, pu.update_date, pu.task_cat, pu.description, pu.hours,
                    p.name as project_name,
+                   u.name as unit_name,
                    e.first_name, e.last_name
             FROM project_daily_updates pu
             JOIN projects p ON p.id = pu.project_id
             JOIN employees e ON e.id = pu.employee_id
+            LEFT JOIN project_units u ON u.id = pu.unit_id
             ORDER BY pu.update_date DESC, pu.id DESC
             LIMIT 6`);
 
@@ -68,6 +72,7 @@ router.get('/overview', verifyToken, isManager, async (req, res) => {
             updates_last_30_days: projects.reduce((s, p) => s + p.updates_30d, 0),
             employees_assigned: projects.reduce((s, p) => s + p.employees_count, 0),
             documents_count: projects.reduce((s, p) => s + p.documents_count, 0),
+            units_count: projects.reduce((s, p) => s + p.units_count, 0),
             projects_active_last_30d: projects.filter(p => p.updates_30d > 0).length
         };
 

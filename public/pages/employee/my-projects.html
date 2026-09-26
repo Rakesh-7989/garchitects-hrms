@@ -99,11 +99,17 @@
                 <div class="card-body">
                     <form id="dailyUpdateForm">
                         <input type="hidden" id="updateEditId">
-                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
                             <div class="form-group">
                                 <label style="font-weight:500;margin-bottom:4px;display:block;color:var(--text-secondary);font-size:0.85rem;">Project *</label>
-                                <select id="updateProject" class="form-control"><option value="">-- Select Project --</option></select>
+                                <select id="updateProject" class="form-control" onchange="onUpdateProjectChange()"><option value="">-- Select Project --</option></select>
                             </div>
+                            <div class="form-group">
+                                <label style="font-weight:500;margin-bottom:4px;display:block;color:var(--text-secondary);font-size:0.85rem;">Unit (sub-project)</label>
+                                <select id="updateUnit" class="form-control" disabled><option value="">-- Unit (optional) --</option></select>
+                            </div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
                             <div class="form-group">
                                 <label style="font-weight:500;margin-bottom:4px;display:block;color:var(--text-secondary);font-size:0.85rem;">Date *</label>
                                 <input type="date" id="updateDate" class="form-control" style="background:var(--bg-light);">
@@ -186,6 +192,12 @@
 
             allProjects = data.projects;
 
+            // Unit map: project id → [{ id, name, code }] for the unit dropdown.
+            window.projectUnitMap = {};
+            allProjects.forEach(p => {
+                if (p.units && p.units.length) window.projectUnitMap[p.id] = p.units;
+            });
+
             // Top summary: how many projects this employee is in
             const summaryEl = document.getElementById('assignSummary');
             summaryEl.style.display = 'block';
@@ -229,6 +241,7 @@
                             ${dates}
                             ${project.location ? '<span><i class="fas fa-map-marker-alt" style="margin-right:5px;"></i>' + escapeHtml(project.location) + '</span>' : ''}
                             ${project.description ? '<span style="width:100%;">' + escapeHtml(project.description) + '</span>' : ''}
+                            ${project.units && project.units.length ? '<div style="width:100%;">' + project.units.map(u => '<span style="display:inline-block;background:var(--bg-light);border:1px solid var(--border-light);border-radius:12px;padding:2px 10px;font-size:0.75rem;font-weight:600;margin-right:6px;color:var(--text-primary);"><i class="fas fa-layer-group" style="margin-right:4px;"></i>' + escapeHtml(u.name + (u.code ? ' (' + u.code + ')' : '')) + '</span>').join('') + '</div>' : ''}
                         </div>
                         <button class="btn btn-primary" onclick="postUpdateForProject(${project.id})" style="padding:8px 20px;font-size:0.85rem;font-weight:600;border-radius:6px;">
                             <i class="fas fa-calendar-day"></i> Post Daily Update
@@ -239,11 +252,24 @@
 
         function postUpdateForProject(projectId) {
             document.getElementById('updateProject').value = String(projectId);
+            onUpdateProjectChange();
             const card = document.getElementById('dailyUpdateCard');
             card.style.display = 'block';
             if (document.getElementById('updateEditId').value) resetUpdateForm();
             card.scrollIntoView({ behavior: 'smooth', block: 'start' });
             document.getElementById('updateDescription').focus();
+        }
+
+        // Unit dropdown follows the selected project (the project's units only).
+        function onUpdateProjectChange() {
+            const pid = document.getElementById('updateProject').value;
+            const sel = document.getElementById('updateUnit');
+            const units = (pid && window.projectUnitMap) ? (window.projectUnitMap[pid] || []) : [];
+            sel.innerHTML = '<option value="">' + (units.length ? '-- Unit (optional) --' : '-- No units --') + '</option>';
+            units.forEach(u => {
+                sel.innerHTML += '<option value="' + u.id + '">' + escapeHtml(u.name + (u.code ? ' (' + u.code + ')' : '')) + '</option>';
+            });
+            sel.disabled = units.length === 0;
         }
 
         // ===================== DAILY UPDATES (plain text) =====================
@@ -265,6 +291,8 @@
             document.getElementById('updateHours').value = '';
             document.getElementById('updateNotes').value = '';
             document.getElementById('updateDate').value = getTodayIST();
+            const unitSel = document.getElementById('updateUnit');
+            if (unitSel) { unitSel.value = ''; if (unitSel.options.length > 1 && !unitSel.disabled) unitSel.value = ''; }
             document.getElementById('dailyUpdateEditBadge').style.display = 'none';
             document.getElementById('updateCancelEditBtn').style.display = 'none';
         }
@@ -292,7 +320,7 @@
                     <div style="padding:12px 0;border-bottom:1px dashed var(--border-light);">
                         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
                             <div style="min-width:0;flex:1;">
-                                <div style="font-size:0.85rem;font-weight:600;">${formatDate(u.update_date)} &middot; ${escapeHtml(u.project_name)} ${catBadge(u.task_cat)}${Number(u.hours) > 0 ? ` <span style="font-size:0.78rem;color:var(--text-tertiary);">${u.hours}h</span>` : ''}</div>
+                                <div style="font-size:0.85rem;font-weight:600;">${formatDate(u.update_date)} &middot; ${escapeHtml(u.project_name)}${u.unit_name ? ' <span style="font-size:0.72rem;font-weight:600;background:var(--bg-light);border:1px solid var(--border-light);border-radius:10px;padding:1px 8px;color:var(--text-secondary);">' + escapeHtml(u.unit_name) + '</span>' : ''} ${catBadge(u.task_cat)}${Number(u.hours) > 0 ? ` <span style="font-size:0.78rem;color:var(--text-tertiary);">${u.hours}h</span>` : ''}</div>
                                 <div style="font-size:0.85rem;color:var(--text-primary);margin-top:4px;">${escapeHtml(u.description)}</div>
                                 ${u.notes ? `<div style="font-size:0.78rem;color:var(--text-tertiary);margin-top:2px;">Note: ${escapeHtml(u.notes)}</div>` : ''}
                             </div>
@@ -307,6 +335,8 @@
             if (!u) { showToast('Update not found', 'error'); return; }
             document.getElementById('updateEditId').value = u.id;
             document.getElementById('updateProject').value = String(u.project_id);
+            onUpdateProjectChange();
+            document.getElementById('updateUnit').value = u.unit_id ? String(u.unit_id) : '';
             document.getElementById('updateDate').value = String(u.update_date).slice(0, 10);
             document.getElementById('updateCategory').value = u.task_cat;
             document.getElementById('updateHours').value = u.hours || 0;
@@ -340,7 +370,7 @@
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
             btn.disabled = true;
 
-            const body = { projectId: parseInt(projectId), updateDate: updateDate, taskCat: taskCat, description: description, hours: hours, notes: notes };
+            const body = { projectId: parseInt(projectId), updateDate: updateDate, taskCat: taskCat, description: description, hours: hours, notes: notes, unitId: document.getElementById('updateUnit').value ? parseInt(document.getElementById('updateUnit').value) : null };
             const data = editId
                 ? await apiCall('/project-updates/' + editId, 'PUT', body)
                 : await apiCall('/project-updates', 'POST', body);

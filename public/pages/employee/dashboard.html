@@ -152,12 +152,11 @@
                         <div class="today-status-row"><span class="today-status-label">Break Start</span><span class="today-status-value" id="statusBreakStart">--</span></div>
                         <div class="today-status-row"><span class="today-status-label">Break End</span><span class="today-status-value" id="statusBreakEnd">--</span></div>
                         <div class="today-status-row"><span class="today-status-label">Status</span><span class="today-status-value" id="statusBadge"></span></div>
-                        <div class="today-status-row"><span class="today-status-label">Overtime</span><span class="today-status-value" id="statusOvertime">0h</span></div>
                     </div>
                 </div>
             </div>
 
-            <div class="grid grid-4 mb-3">
+            <div class="grid grid-3 mb-3">
                 <div class="stat-card slide-up stagger-1">
                     <div class="stat-icon green"><i class="fas fa-calendar-check"></i></div>
                     <div class="stat-info"><h3 id="daysPresent">0</h3><p>Days Present</p></div>
@@ -384,7 +383,6 @@
                         document.getElementById('statusBreakEnd').textContent = '--';
                     }
                     document.getElementById('statusBadge').innerHTML = '<span class="badge badge-' + getStatusBadge(todayAttendance.status) + '">' + escapeHtml(getStatusText(todayAttendance.status)) + '</span>';
-                    document.getElementById('statusOvertime').textContent = formatHours(todayAttendance.overtime_hours);
                     const onBreak = todayAttendance.break_start && !todayAttendance.break_end;
                     if (!todayAttendance.check_out) {
                         document.getElementById('checkInBtn').style.display = 'none';
@@ -654,9 +652,7 @@
                     const dow = new Date(year, month - 1, d).getDay();
                     if (holidayMap[key] || (window.workWeek ? window.workWeek.isWeekOff(new Date(year, month - 1, d)) : (dow === 0 || dow === 6))) present++;
                 }
-                const overtime = rows.reduce((s, a) => s + parseFloat(a.overtime_hours || 0), 0);
                 document.getElementById('daysPresent').textContent = present;
-                document.getElementById('overtimeHours').textContent = overtime.toFixed(1);
             }
             if (leaveData && leaveData.success && leaveData.leaves) {
                 const approved = leaveData.leaves.filter(l => l.status === 'approved').length;

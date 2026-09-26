@@ -312,7 +312,7 @@
             }
 
             const todayStr = getTodayIST();
-                    let html = '<div class="table-container"><table><thead><tr><th>Date</th><th>Day</th><th>Check In</th><th>Check Out</th><th>Location</th><th>Hours Worked</th><th>Status</th><th>Overtime</th></tr></thead><tbody>';
+                    let html = '<div class="table-container"><table><thead><tr><th>Date</th><th>Day</th><th>Check In</th><th>Check Out</th><th>Location</th><th>Hours Worked</th><th>Status</th></tr></thead><tbody>';
                     records.forEach(a => {
                         const d = new Date(a.date);
                         const adate = a.date ? a.date.split('T')[0] : '';
@@ -359,7 +359,6 @@
                         const isLeaveRow = a.status === 'absent' && !!lvCls;
                         const leaveLabel = lvCls === 'lop' ? 'Absent (LOP)' : 'On Leave (Paid)';
                         html += '<td><span class="badge badge-' + (isLeaveRow ? (lvCls === 'lop' ? 'danger' : 'info') : getStatusBadge(a.status)) + '">' + escapeHtml(isLeaveRow ? leaveLabel : getStatusText(a.status)) + '</span></td>';
-                        html += '<td>' + formatHours(a.overtime_hours) + '</td>';
                         html += '</tr>';
                     });
                 html += '</tbody></table></div>';

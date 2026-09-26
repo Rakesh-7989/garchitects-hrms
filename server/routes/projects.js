@@ -58,7 +58,24 @@ router.get('/my', verifyToken, async (req, res) => {
              ORDER BY p.name`,
             [req.user.id]
         );
-        res.json({ success: true, projects: result.rows });
+        // Attach the units of the caller's assignments (unit per project).
+        const unitResult = await q(
+            `SELECT pe.project_id, u.id, u.name, u.code
+             FROM project_employees pe
+             JOIN project_units u ON u.id = pe.unit_id
+             WHERE pe.employee_id = $1 AND pe.unit_id IS NOT NULL
+             ORDER BY u.name`,
+            [req.user.id]
+        );
+        const unitsByProject = {};
+        unitResult.rows.forEach(r => {
+            if (!unitsByProject[r.project_id]) unitsByProject[r.project_id] = [];
+            unitsByProject[r.project_id].push({ id: r.id, name: r.name, code: r.code });
+        });
+        res.json({
+            success: true,
+            projects: result.rows.map(p => ({ ...p, units: unitsByProject[p.id] || [] }))
+        });
     } catch (error) {
         console.error('Error fetching employee projects:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -73,7 +90,8 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
     try {
         const result = await q(
             `SELECT ${PROJECT_SELECT_COLS},
-             (SELECT COUNT(*) FROM project_employees pe WHERE pe.project_id = p.id) as employees_count
+             (SELECT COUNT(*) FROM project_employees pe WHERE pe.project_id = p.id) as employees_count,
+             (SELECT COUNT(*) FROM project_units u WHERE u.project_id = p.id) as units_count
              FROM projects p
              ORDER BY p.name`
         );
@@ -277,10 +295,12 @@ router.get('/:projectId/employees', verifyToken, isAdmin, async (req, res) => {
     try {
         const result = await q(
             `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.email, e.phone, 
-              e.role, e.status, e.department_id, d.name as department_name
+              e.role, e.status, e.department_id, d.name as department_name,
+              pe.unit_id, u.name as unit_name
              FROM project_employees pe
              JOIN employees e ON pe.employee_id = e.id
              LEFT JOIN departments d ON e.department_id = d.id
+             LEFT JOIN project_units u ON u.id = pe.unit_id
              WHERE pe.project_id = $1 AND e.role != 'admin'
              ORDER BY e.first_name, e.last_name`,
             [req.params.projectId]
@@ -297,59 +317,107 @@ router.get('/:projectId/employees', verifyToken, isAdmin, async (req, res) => {
  */
 router.post('/:projectId/employees', verifyToken, isAdmin, async (req, res) => {
     try {
-        const { employeeIds } = req.body;
-        if (!employeeIds || !Array.isArray(employeeIds) || employeeIds.length === 0) {
+        const { employeeIds, assignments } = req.body;
+        // Backwards compatible: `{ employeeIds: [1, 2] }` → no-unit assignments.
+        // New shape: `{ assignments: [{ employeeId, unitId }] }` (unitId optional).
+        let list = [];
+        if (Array.isArray(assignments) && assignments.length > 0) {
+            list = assignments;
+        } else if (Array.isArray(employeeIds) && employeeIds.length > 0) {
+            list = employeeIds.map(id => ({ employeeId: id, unitId: null }));
+        } else {
             return res.status(400).json({ success: false, message: 'Employee IDs are required' });
         }
-    
+
+        const projectId = parseInt(req.params.projectId, 10);
+        if (isNaN(projectId)) {
+            return res.status(400).json({ success: false, message: 'Invalid project id' });
+        }
+
         // Check if project exists
-        const projectCheck = await q(
-            `SELECT id FROM projects WHERE id = $1`,
-            [req.params.projectId]
-        );
+        const projectCheck = await q(`SELECT id FROM projects WHERE id = $1`, [projectId]);
         if (projectCheck.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Project not found' });
         }
-    
-        // Assign employees (idempotent - uses ON CONFLICT pattern)
-        const results = [];
-        for (const empId of employeeIds) {
-            const result = await q(
-                `INSERT INTO project_employees (project_id, employee_id) 
-                 VALUES ($1, $2) 
-                 ON CONFLICT (project_id, employee_id) DO NOTHING 
-                 RETURNING id, project_id, employee_id`,
-                [req.params.projectId, empId]
+
+        // Every supplied unit must belong to this project.
+        const unitIds = [...new Set(list.map(a => a.unitId).filter(u => u !== null && u !== undefined && u !== ''))];
+        if (unitIds.length > 0) {
+            const units = await q(
+                `SELECT id FROM project_units WHERE project_id = $1 AND id = ANY($2::int[])`,
+                [projectId, unitIds]
             );
-            results.push(result.rows[0]);
+            const found = new Set(units.rows.map(r => r.id));
+            const bad = unitIds.find(u => !found.has(u));
+            if (bad !== undefined) {
+                return res.status(400).json({ success: false, message: `Unit ${bad} does not belong to this project` });
+            }
         }
-    
+
+        // Assign employees (idempotent): skip an assignment that already exists
+        // for the same project + employee + unit.
+        const results = [];
+        for (const a of list) {
+            const empId = parseInt(a.employeeId ?? a.employee_id, 10);
+            if (isNaN(empId)) continue;
+            const rawUnit = a.unitId ?? a.unit_id;
+            const unitId = (rawUnit === null || rawUnit === undefined || rawUnit === '') ? null : parseInt(rawUnit, 10);
+            if (unitId !== null && isNaN(unitId)) continue;
+
+            const existing = unitId === null
+                ? await q(
+                    `SELECT id FROM project_employees
+                     WHERE project_id = $1 AND employee_id = $2 AND unit_id IS NULL`,
+                    [projectId, empId]
+                )
+                : await q(
+                    `SELECT id FROM project_employees
+                     WHERE project_id = $1 AND employee_id = $2 AND unit_id = $3`,
+                    [projectId, empId, unitId]
+                );
+            if (existing.rows.length > 0) {
+                results.push({ id: existing.rows[0].id, project_id: projectId, employee_id: empId, unit_id: unitId, duplicate: true });
+                continue;
+            }
+
+            const r2 = await q(
+                `INSERT INTO project_employees (project_id, employee_id, unit_id)
+                 VALUES ($1, $2, $3)
+                 RETURNING id, project_id, employee_id, unit_id`,
+                [projectId, empId, unitId]
+            );
+            results.push(r2.rows[0]);
+        }
+
         // Get the full updated employee list
         const employeeResult = await q(
             `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.email, e.phone, 
-              e.role, e.status, e.department_id, d.name as department_name
+              e.role, e.status, e.department_id, d.name as department_name,
+              pe.unit_id, u.name as unit_name
              FROM project_employees pe
              JOIN employees e ON pe.employee_id = e.id
              LEFT JOIN departments d ON e.department_id = d.id
+             LEFT JOIN project_units u ON u.id = pe.unit_id
              WHERE pe.project_id = $1 AND e.role != 'admin'
              ORDER BY e.first_name, e.last_name`,
-            [req.params.projectId]
+            [projectId]
         );
-    
+
         logAudit({
             actorId: req.user.id, action: 'project.assign', entityType: 'project',
-            entityId: req.params.projectId,
-            details: { employeeIds: Array.isArray(employeeIds) ? employeeIds.map(Number) : employeeIds },
+            entityId: projectId,
+            details: { assignments: list.map(a => ({ employeeId: parseInt(a.employeeId ?? a.employee_id, 10) || null, unitId: (a.unitId ?? a.unit_id) || null })) },
             ip: req.ip
         });
 
         res.json({ 
             success: true, 
-            assigned: results.filter(r => r.id),
+            assigned: results.filter(r => r.id && !r.duplicate),
             totalAssigned: employeeResult.rows.length,
             employees: employeeResult.rows
         });
     } catch (error) {
+        console.error('Error assigning employees to project:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
@@ -381,6 +449,154 @@ router.delete('/:projectId/employees/:employeeId', verifyToken, isAdmin, async (
             message: 'Employee removed from project successfully' 
         });
     } catch (error) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// ============================================================
+// UNITS (sub-projects)
+// GET /:projectId/units — list units; assigned employees may read
+// their own project's units too (the employee daily-update form needs it).
+// ============================================================
+router.get('/:projectId/units', verifyToken, async (req, res) => {
+    try {
+        const isAdminish = ['admin', 'hr', 'manager', 'team_lead'].includes(req.user.role);
+        if (!isAdminish) {
+            const chk = await q(
+                `SELECT 1 FROM project_employees WHERE project_id = $1 AND employee_id = $2 LIMIT 1`,
+                [req.params.projectId, req.user.id]
+            );
+            if (chk.rows.length === 0) {
+                return res.status(403).json({ success: false, message: 'You are not assigned to this project' });
+            }
+        }
+        const result = await q(
+            `SELECT u.id, u.project_id, u.name, u.code, u.description, u.status, u.created_at,
+                    (SELECT COUNT(*) FROM project_employees pe WHERE pe.unit_id = u.id) as employees_count
+             FROM project_units u
+             WHERE u.project_id = $1
+             ORDER BY u.name`,
+            [req.params.projectId]
+        );
+        res.json({ success: true, units: result.rows });
+    } catch (error) {
+        console.error('Error fetching project units:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+/**
+ * GET /api/projects/:projectId/units/:unitId/employees
+ * Roster of the employees assigned to one unit.
+ */
+router.get('/:projectId/units/:unitId/employees', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const result = await q(
+            `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.role, e.status
+             FROM project_employees pe
+             JOIN employees e ON pe.employee_id = e.id
+             WHERE pe.unit_id = $1 AND pe.project_id = $2 AND e.role != 'admin'
+             ORDER BY e.first_name, e.last_name`,
+            [req.params.unitId, req.params.projectId]
+        );
+        res.json({ success: true, employees: result.rows });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+/**
+ * POST /api/projects/:projectId/units
+ * Create a unit (sub-project) under a project.
+ */
+router.post('/:projectId/units', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const { name, code, description } = req.body;
+        const unitName = name ? String(name).trim() : '';
+        if (!unitName) {
+            return res.status(400).json({ success: false, message: 'Unit name is required' });
+        }
+        const projectCheck = await q(`SELECT id FROM projects WHERE id = $1`, [req.params.projectId]);
+        if (projectCheck.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Project not found' });
+        }
+        const result = await q(
+            `INSERT INTO project_units (project_id, name, code, description)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id, project_id, name, code, description, status, created_at`,
+            [req.params.projectId, unitName, code ? String(code).trim() : null, description || null]
+        );
+        logAudit({
+            actorId: req.user.id, action: 'project.unit.create', entityType: 'project_unit',
+            entityId: result.rows[0].id,
+            details: { projectId: Number(req.params.projectId), name: result.rows[0].name }, ip: req.ip
+        });
+        res.json({ success: true, unit: result.rows[0], message: 'Unit created' });
+    } catch (error) {
+        console.error('Error creating project unit:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: (error && error.message) || r.message });
+    }
+});
+
+/**
+ * PUT /api/projects/:projectId/units/:unitId
+ * Rename / update a unit.
+ */
+router.put('/:projectId/units/:unitId', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const { name, code, description, status } = req.body;
+        const row = await q(
+            `UPDATE project_units
+             SET name = COALESCE($1, name),
+                 code = COALESCE($2, code),
+                 description = COALESCE($3, description),
+                 status = COALESCE($4, status),
+                 updated_at = NOW()
+             WHERE id = $5 AND project_id = $6
+             RETURNING id, project_id, name, code, description, status`,
+            [name ? String(name).trim() : null, code || null, description || null, status || null,
+             req.params.unitId, req.params.projectId]
+        );
+        if (row.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Unit not found' });
+        }
+        logAudit({
+            actorId: req.user.id, action: 'project.unit.update', entityType: 'project_unit',
+            entityId: row.rows[0].id,
+            details: { projectId: Number(req.params.projectId), name: row.rows[0].name }, ip: req.ip
+        });
+        res.json({ success: true, unit: row.rows[0], message: 'Unit updated' });
+    } catch (error) {
+        console.error('Error updating project unit:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: (error && error.message) || r.message });
+    }
+});
+
+/**
+ * DELETE /api/projects/:projectId/units/:unitId
+ * Delete a unit. Assignment rows and daily updates keep their history but the
+ * unit reference is set to NULL (ON DELETE SET NULL) — updates stay visible
+ * under the project.
+ */
+router.delete('/:projectId/units/:unitId', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const row = await q(
+            `DELETE FROM project_units WHERE id = $1 AND project_id = $2 RETURNING id, name`,
+            [req.params.unitId, req.params.projectId]
+        );
+        if (row.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Unit not found' });
+        }
+        logAudit({
+            actorId: req.user.id, action: 'project.unit.delete', entityType: 'project_unit',
+            entityId: row.rows[0].id,
+            details: { projectId: Number(req.params.projectId), name: row.rows[0].name }, ip: req.ip
+        });
+        res.json({ success: true, message: 'Unit deleted' });
+    } catch (error) {
+        console.error('Error deleting project unit:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });

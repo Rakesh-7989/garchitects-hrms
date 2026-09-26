@@ -262,6 +262,12 @@
                         <label>Project</label>
                         <input type="text" class="form-control" id="updateProjectName" readonly style="background:var(--bg-light);">
                     </div>
+                    <div class="form-group">
+                        <label>Unit (sub-project)</label>
+                        <select class="form-control" id="updateUnit">
+                            <option value="">-- Unit (optional) --</option>
+                        </select>
+                    </div>
                     <div style="display:flex;gap:12px;">
                         <div class="form-group" style="flex:1;">
                             <label>Date *</label>
@@ -358,6 +364,12 @@
             <div class="modal-body">
                 <form id="assignEmployeesForm" onsubmit="assignEmployees(event)">
                     <input type="hidden" name="projectId" id="assignProjectId">
+                    <div class="form-group">
+                        <label>Assign to Unit (optional)</label>
+                        <select class="form-control" id="assignUnit">
+                            <option value="">-- Unit (optional) --</option>
+                        </select>
+                    </div>
                     <div class="form-group">
                         <label>Select Designation</label>
                         <select class="form-control" id="assignDesignation" onchange="loadEmployeesByDesignation()">
@@ -605,6 +617,10 @@
                             const dc = document.getElementById(`expand-documents-${p.id}`);
                             if (dc) { dc.style.display = 'block'; loadDocuments(p.id); }
                         }
+                        if (expandedSections[`${p.id}-units`]) {
+                            const un = document.getElementById(`expand-units-${p.id}`);
+                            if (un) { un.style.display = 'block'; loadUnits(p.id); }
+                        }
                         if (expandedSections[`${p.id}-employees`]) {
                             const e = document.getElementById(`expand-employees-${p.id}`);
                             if (e) { e.style.display = 'block'; loadEmployeesForProject(p.id); }
@@ -662,6 +678,9 @@
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'documents')">
                                 <i class="fas fa-folder-open"></i> Documents
                             </button>
+                            <button class="btn btn-secondary btn-sm" id="units-btn-${p.id}" onclick="toggleExpand(${p.id}, 'units')">
+                                <i class="fas fa-layer-group"></i> Units (${countOf(p.units_count)})
+                            </button>
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'employees')">
                                 <i class="fas fa-users"></i> Employees
                             </button>
@@ -678,6 +697,9 @@
                     </div>
                     <div id="expand-employees-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="employees-content-${p.id}"></div>
+                    </div>
+                    <div id="expand-units-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
+                        <div id="units-content-${p.id}"></div>
                     </div>
                 </div>
             `;
@@ -704,10 +726,13 @@
                     const fresh = (d.projects || d.data || []).find(x => String(x.id) === String(projectId));
                     if (fresh) {
                         p.employees_count = fresh.employees_count;
+                        p.units_count = fresh.units_count;
                         const card = document.getElementById(`project-card-${projectId}`);
                         if (card) {
                             const em = card.querySelector('span strong');
                             if (em) em.textContent = countOf(fresh.employees_count);
+                            const ub = document.getElementById(`units-btn-${projectId}`);
+                            if (ub) ub.innerHTML = '<i class="fas fa-layer-group"></i> Units (' + countOf(fresh.units_count) + ')';
                         }
                     }
                 }
@@ -760,6 +785,7 @@
             expandedSections[key] = true;
             if (type === 'documents') await loadDocuments(projectId);
             else if (type === 'updates') await loadUpdates(projectId);
+            else if (type === 'units') await loadUnits(projectId);
             else await loadEmployeesForProject(projectId);
         }
 
@@ -786,6 +812,7 @@
                             <div style="min-width:0;flex:1;">
                                 <span style="font-weight:500;font-size:0.85rem;">${esc(e.first_name || '')} ${esc(e.last_name || '')}</span>
                                 <span style="color:var(--text-tertiary);font-size:0.78rem;margin-left:8px;">${esc(e.employee_id || e.id || '')}</span>
+                                ${e.unit_name ? `<span style="display:inline-block;background:var(--bg-light);border:1px solid var(--border-light);border-radius:10px;padding:0 8px;font-size:0.72rem;font-weight:600;margin-left:8px;color:var(--text-secondary);"><i class="fas fa-layer-group" style="margin-right:3px;"></i>${esc(e.unit_name)}</span>` : ''}
                                 ${e.email ? `<span style="color:var(--text-secondary);font-size:0.78rem;margin-left:8px;">${esc(e.email)}</span>` : ''}
                             </div>
                             <button class="btn btn-danger btn-sm" onclick="removeEmployeeFromProject(${projectId}, ${e.id || e.employee_id})" title="Remove">
@@ -795,6 +822,96 @@
                     `).join('')}
                 </div>
             `;
+        }
+
+        // ===================== PROJECT UNITS (sub-projects) =====================
+        // Units = the sub-divisions of a project (Tower A, Plot 12, Floor 3...).
+        // Employees are assigned per unit and daily updates record the unit.
+        async function loadUnits(projectId) {
+            const container = document.getElementById(`units-content-${projectId}`);
+            if (!container) return;
+            container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner" style="margin:0 auto;width:20px;height:20px;"></div></div>';
+            const data = await apiCall(`/projects/${projectId}/units`);
+            if (!data || !data.success) {
+                container.innerHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;">Could not load units.</p>';
+                return;
+            }
+            const units = data.units || data.data || [];
+            if (!Array.isArray(units)) {
+                container.innerHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;">No units available.</p>';
+                return;
+            }
+            if (!units.length) {
+                container.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <h4 style="font-size:0.9rem;font-weight:600;">Units (sub-projects)</h4>
+                        <button class="btn btn-primary btn-sm" onclick="addUnitPrompt(${projectId})"><i class="fas fa-plus"></i> Add Unit</button>
+                    </div>
+                    <p style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">No units yet. Add sub-divisions like <strong>Tower A</strong>, <strong>Plot 12</strong>, <strong>Floor 3</strong>... then assign employees to a unit and log each daily update against the unit it happened in.</p>`;
+                return;
+            }
+            container.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <h4 style="font-size:0.9rem;font-weight:600;">Units (${units.length})</h4>
+                    <button class="btn btn-primary btn-sm" onclick="addUnitPrompt(${projectId})"><i class="fas fa-plus"></i> Add Unit</button>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                    ${units.map(u => `
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-card);border-radius:var(--radius);border:1px solid var(--border);">
+                            <div style="min-width:0;flex:1;">
+                                <span style="font-weight:500;font-size:0.85rem;"><i class="fas fa-layer-group" style="margin-right:6px;color:var(--primary);"></i>${esc(u.name || '')}${u.code ? ` <span style="color:var(--text-tertiary);font-size:0.78rem;">(${esc(u.code)})</span>` : ''}</span>
+                                <span style="color:var(--text-tertiary);font-size:0.78rem;margin-left:8px;">${countOf(u.employees_count)} employee${countOf(u.employees_count) === 1 ? '' : 's'}</span>
+                                ${u.description ? `<span style="color:var(--text-secondary);font-size:0.78rem;margin-left:8px;">${esc(u.description)}</span>` : ''}
+                            </div>
+                            <div style="display:flex;gap:6px;flex-shrink:0;">
+                                <button class="btn btn-secondary btn-sm" onclick="renameUnitPrompt(${projectId}, ${u.id})" title="Rename"><i class="fas fa-pen"></i></button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteUnit(${projectId}, ${u.id})" title="Delete"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>`;
+        }
+
+        async function addUnitPrompt(projectId) {
+            const name = prompt('Unit name (e.g. Tower A, Plot 12, Floor 3):');
+            if (!name || !name.trim()) return;
+            const hasCode = confirm('Add a short code too (e.g. T-A, U1)?');
+            const code = hasCode ? (prompt('Short code:') || '') : '';
+            const data = await apiCall(`/projects/${projectId}/units`, 'POST', { name: name.trim(), code: code.trim() || null });
+            if (data && data.success) {
+                showToast('Unit added');
+                loadUnits(projectId);
+                refreshProjectCount(projectId);
+            } else {
+                showToast(data?.message || 'Failed to add unit', 'error');
+            }
+        }
+
+        async function renameUnitPrompt(projectId, unitId) {
+            const newName = prompt('New unit name:');
+            if (!newName || !newName.trim()) return;
+            const data = await apiCall(`/projects/${projectId}/units/${unitId}`, 'PUT', { name: newName.trim() });
+            if (data && data.success) {
+                showToast('Unit updated');
+                loadUnits(projectId);
+                if (expandedSections[`${projectId}-employees`]) loadEmployeesForProject(projectId);
+                refreshProjectCount(projectId);
+            } else {
+                showToast(data?.message || 'Failed to update unit', 'error');
+            }
+        }
+
+        async function deleteUnit(projectId, unitId) {
+            if (!(await confirmAction('Delete this unit? Existing daily updates keep their history (the unit reference is cleared).'))) return;
+            const data = await apiCall(`/projects/${projectId}/units/${unitId}`, 'DELETE');
+            if (data && data.success) {
+                showToast('Unit deleted');
+                loadUnits(projectId);
+                if (expandedSections[`${projectId}-employees`]) loadEmployeesForProject(projectId);
+                refreshProjectCount(projectId);
+            } else {
+                showToast(data?.message || 'Failed to delete unit', 'error');
+            }
         }
 
         // ===================== PROJECT OVERVIEW (DASHBOARD) =====================
@@ -827,6 +944,7 @@
             const cards = [
                 { label: 'Total Projects', value: (s.total_projects || 0).toLocaleString(), icon: 'fa-project-diagram', tint: 'primary' },
                 { label: 'Active Now', value: (s.active_projects || 0).toLocaleString(), icon: 'fa-folder-open', tint: 'success' },
+                { label: 'Units', value: (s.units_count || 0).toLocaleString(), icon: 'fa-layer-group', tint: 'secondary' },
                 { label: 'Updates (7d)', value: (s.updates_last_7_days || 0).toLocaleString(), icon: 'fa-calendar-day', tint: 'primary' },
                 { label: 'Updates (30d)', value: (s.updates_last_30_days || 0).toLocaleString(), icon: 'fa-calendar-check', tint: 'warning' },
                 { label: 'Employees Assigned', value: (s.employees_assigned || 0).toLocaleString(), icon: 'fa-users', tint: 'primary' },
@@ -863,7 +981,7 @@
                     <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border);align-items:flex-start;">
                         <i class="fas fa-calendar-day" style="color:var(--primary);margin-top:2px;"></i>
                         <div style="flex:1;min-width:0;">
-                            <div style="font-size:0.84rem;"><strong>${esc(u.project_name)}</strong> <span style="color:var(--text-tertiary);">· ${String(u.update_date).slice(0, 10)}</span></div>
+                            <div style="font-size:0.84rem;"><strong>${esc(u.project_name)}</strong>${u.unit_name ? ` <span style="display:inline-block;background:var(--bg-light);border:1px solid var(--border-light);border-radius:10px;padding:0 6px;font-size:0.68rem;font-weight:600;color:var(--text-secondary);">${esc(u.unit_name)}</span>` : ''} <span style="color:var(--text-tertiary);">· ${String(u.update_date).slice(0, 10)}</span></div>
                             <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">${esc(u.first_name || '')} ${esc(u.last_name || '')} · ${updatesCategoryBadge(u.task_cat)}${Number(u.hours) > 0 ? ` · ${u.hours}h` : ''}</div>
                             <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.description)}</div>
                         </div>
@@ -1080,6 +1198,19 @@
             document.getElementById('empSearchInput').value = '';
             document.getElementById('selectedEmployeesChips').innerHTML = '';
             document.getElementById('employeeDropdownList').innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-secondary);">Please select a designation first to see employees.</div>';
+            // Unit options for this project (assignments may be per-unit now).
+            const unitSel = document.getElementById('assignUnit');
+            unitSel.innerHTML = '<option value="">-- Unit (optional) --</option>';
+            try {
+                const udata = await apiCall(`/projects/${projectId}/units`);
+                const units = (udata && udata.success && (udata.units || udata.data)) || [];
+                if (Array.isArray(units) && units.length) {
+                    units.forEach(u => {
+                        unitSel.innerHTML += `<option value="${u.id}">${esc(u.name || '')}${u.code ? ' (' + esc(u.code) + ')' : ''}</option>`;
+                    });
+                }
+            } catch (e) { /* unit load is optional */ }
+            unitSel.value = '';
             openModal('assignEmployeesModal');
             await loadDesignations();
         }
@@ -1199,7 +1330,13 @@
             const btn = document.getElementById('assignEmpBtn');
             btn.disabled = true;
             btn.textContent = 'Assigning...';
-            const body = { employeeIds: Array.from(selectedEmployeeIds) };
+            const assignUnitVal = document.getElementById('assignUnit').value;
+            const body = {
+                assignments: Array.from(selectedEmployeeIds).map(id => ({
+                    employeeId: id,
+                    unitId: assignUnitVal ? parseInt(assignUnitVal, 10) : null
+                }))
+            };
             const data = await apiCall(`/projects/${currentAssignProjectId}/employees`, 'POST', body);
             btn.disabled = false;
             btn.textContent = 'Assign';
@@ -1449,7 +1586,7 @@
                     <div style="padding:10px 0;border-bottom:1px dashed var(--border);">
                         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
                             <div style="min-width:0;flex:1;">
-                                <div style="font-size:0.85rem;font-weight:600;">${String(u.update_date).slice(0, 10)} &middot; ${updatesCategoryBadge(u.task_cat)}${Number(u.hours) > 0 ? ` <span class="badge badge-secondary">${u.hours}h</span>` : ''}</div>
+                                <div style="font-size:0.85rem;font-weight:600;">${String(u.update_date).slice(0, 10)} &middot; ${u.unit_name ? `<span class="badge badge-secondary" style="margin-right:4px;"><i class="fas fa-layer-group"></i> ${esc(u.unit_name)}</span>` : ''}${updatesCategoryBadge(u.task_cat)}${Number(u.hours) > 0 ? ` <span class="badge badge-secondary">${u.hours}h</span>` : ''}</div>
                                 <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">${empName}${u.notes ? ` <span style="color:var(--text-tertiary);">&middot; ${esc(u.notes)}</span>` : ''}</div>
                                 <div style="font-size:0.82rem;margin-top:4px;color:var(--text-primary);">${esc(u.description)}</div>
                             </div>
@@ -1471,6 +1608,19 @@
             const empField = document.getElementById('updateEmployeeField');
             const empRo = document.getElementById('updateEmployeeReadonly');
 
+            // Unit options for this project (updates may be per-unit now).
+            const unitSel = document.getElementById('updateUnit');
+            unitSel.innerHTML = '<option value="">-- Unit (optional) --</option>';
+            try {
+                const udata = await apiCall(`/projects/${projectId}/units`);
+                const units = (udata && udata.success && (udata.units || udata.data)) || [];
+                if (Array.isArray(units) && units.length) {
+                    units.forEach(u => {
+                        unitSel.innerHTML += `<option value="${u.id}">${esc(u.name || '')}${u.code ? ' (' + esc(u.code) + ')' : ''}</option>`;
+                    });
+                }
+            } catch (e) { /* unit load is optional */ }
+
             if (updateId) {
                 // Edit an existing update - the owner or an admin.
                 let u = (updatesCache[projectId] || []).find(x => String(x.id) === String(updateId));
@@ -1482,6 +1632,7 @@
                     if (!u) { showToast('Update not found', 'error'); return; }
                 }
                 fillUpdateModal(projectId, u, true);
+                unitSel.value = u.unit_id ? String(u.unit_id) : '';
             } else {
                 // New update - admins may pick any assigned employee.
                 document.getElementById('updateId').value = '';
@@ -1536,7 +1687,8 @@
                 taskCat: document.getElementById('updateCategory').value,
                 description: document.getElementById('updateDescription').value.trim(),
                 hours: document.getElementById('updateHours').value === '' ? 0 : Number(document.getElementById('updateHours').value),
-                notes: document.getElementById('updateNotes').value.trim() || null
+                notes: document.getElementById('updateNotes').value.trim() || null,
+                unitId: document.getElementById('updateUnit').value ? parseInt(document.getElementById('updateUnit').value, 10) : null
             };
             if (document.getElementById('updateEmployeeField').style.display === 'block') {
                 const empSel = document.getElementById('updateEmployee');

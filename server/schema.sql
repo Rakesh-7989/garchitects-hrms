@@ -106,7 +106,6 @@ CREATE TABLE IF NOT EXISTS attendance (
     break_end TIME,
     break_log TEXT,
     status VARCHAR(20) DEFAULT 'present' CHECK (status IN ('present', 'absent', 'half-day', 'late', 'holiday', 'weekoff', 'wfh')),
-    overtime_hours DECIMAL(4,2) DEFAULT 0,
     remarks TEXT,
     check_in_location TEXT,
     check_out_location TEXT,
@@ -661,37 +660,61 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 -- ============================================================
+-- 20b. PROJECT UNITS (sub-projects: towers, plots, floors, phases...)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS project_units (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    code VARCHAR(30),
+    description TEXT,
+    status VARCHAR(20) DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(project_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_project_units_project ON project_units(project_id);
+
+-- ============================================================
 -- 21. PROJECT EMPLOYEES
 -- ============================================================
 CREATE TABLE IF NOT EXISTS project_employees (
     id SERIAL PRIMARY KEY,
     project_id INT REFERENCES projects(id) ON DELETE CASCADE,
     employee_id INT REFERENCES employees(id) ON DELETE CASCADE,
+    unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
     assigned_at TIMESTAMP DEFAULT NOW(),
-    status VARCHAR(20) DEFAULT 'active',
-    UNIQUE(project_id, employee_id)
+    status VARCHAR(20) DEFAULT 'active'
 );
+-- An employee may belong to several units on one project. Two partial unique
+-- indexes: at most one no-unit assignment per (project, employee), and at most
+-- one assignment per (project, employee, unit).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_project_employees_no_unit ON project_employees(project_id, employee_id) WHERE unit_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_project_employees_unit ON project_employees(project_id, employee_id, unit_id) WHERE unit_id IS NOT NULL;
 
 -- ============================================================
 -- 22. PROJECT DAILY UPDATES (architecture-studio daily text updates)
 -- ============================================================
--- One plain update per employee per project per day: what was worked on,
--- which studio category it falls under, hours spent, and any notes.
+-- One user-update per piece of work: which project AND which unit it happened
+-- in, the studio category, hours spent, and any notes. Multiple updates per
+-- employee per day are allowed (each tied to a unit), so there is no unique
+-- constraint on (project, employee, date).
 CREATE TABLE IF NOT EXISTS project_daily_updates (
     id SERIAL PRIMARY KEY,
     project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
     update_date DATE NOT NULL,
     task_cat VARCHAR(30) NOT NULL CHECK (task_cat IN ('design', 'drafting', 'site_visit', 'coordination', 'approvals', 'documentation', 'meeting', 'other')),
     description TEXT NOT NULL,
     hours NUMERIC(4,1) DEFAULT 0,
     notes TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(project_id, employee_id, update_date)
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_project_daily_updates_project_date ON project_daily_updates(project_id, update_date DESC);
 CREATE INDEX IF NOT EXISTS idx_project_daily_updates_employee_date ON project_daily_updates(employee_id, update_date DESC);
+CREATE INDEX IF NOT EXISTS idx_pdu_unit ON project_daily_updates(unit_id);
 
 -- ============================================================
 -- PROJECT SETTINGS (for holiday config, etc.)
@@ -737,17 +760,17 @@ ON CONFLICT (name) DO NOTHING;
 INSERT INTO project_employees (project_id, employee_id)
 SELECT p.id, e.id FROM projects p, employees e
 WHERE p.name = 'Travel Management' AND e.role != 'admin'
-ON CONFLICT (project_id, employee_id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 INSERT INTO project_employees (project_id, employee_id)
 SELECT p.id, e.id FROM projects p, employees e
 WHERE p.name = 'Medical Billing' AND e.role != 'admin'
-ON CONFLICT (project_id, employee_id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 INSERT INTO project_employees (project_id, employee_id)
 SELECT p.id, e.id FROM projects p, employees e
 WHERE p.name = 'KYC' AND e.role != 'admin'
-ON CONFLICT (project_id, employee_id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- ============================================================
 -- SECONDARY REPORTING MANAGER + WORK-WEEK POLICY

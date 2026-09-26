@@ -288,6 +288,8 @@ async function runMigrations() {
         await query(`DROP TABLE IF EXISTS project_sets`);
         await query(`ALTER TABLE projects DROP COLUMN IF EXISTS contract_value`);
         await query(`ALTER TABLE projects DROP COLUMN IF EXISTS phase`);
+        // Attendance overtime removed (no overtime concept at the studio).
+        await query(`ALTER TABLE attendance DROP COLUMN IF EXISTS overtime_hours`);
         await query(`CREATE TABLE IF NOT EXISTS project_daily_updates (
             id SERIAL PRIMARY KEY,
             project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -298,13 +300,44 @@ async function runMigrations() {
             hours NUMERIC(4,1) DEFAULT 0,
             notes TEXT,
             created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(project_id, employee_id, update_date)
+            updated_at TIMESTAMP DEFAULT NOW()
         )`);
+        // Unit-aware updates: an employee may log several updates per day, each
+        // tied to the unit they worked in. Drop the legacy one-per-project-day
+        // uniqueness on DBs created before this release.
+        await query(`ALTER TABLE project_daily_updates DROP CONSTRAINT IF EXISTS project_daily_updates_project_id_employee_id_update_date_key`);
         await query(`CREATE INDEX IF NOT EXISTS idx_project_daily_updates_project_date ON project_daily_updates(project_id, update_date DESC)`);
         await query(`CREATE INDEX IF NOT EXISTS idx_project_daily_updates_employee_date ON project_daily_updates(employee_id, update_date DESC)`);
         console.log('[Migration] construction tables dropped; project_daily_updates ensured.');
     } catch (e) { console.warn('[Migration] HRMS project reshape skipped:', e.message); }
+
+    // Units (sub-projects): a project contains physical/functional units (tower,
+    // plot, floor, phase...). Employees are assigned per unit and every daily
+    // update records the unit the work happened in. An employee may belong to
+    // several units on the same project, so the old (project_id, employee_id)
+    // uniqueness is relaxed into two partial unique indexes.
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS project_units (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name VARCHAR(150) NOT NULL,
+            code VARCHAR(30),
+            description TEXT,
+            status VARCHAR(20) DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(project_id, name)
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_units_project ON project_units(project_id)`);
+        await query(`ALTER TABLE project_employees ADD COLUMN IF NOT EXISTS unit_id INT REFERENCES project_units(id) ON DELETE SET NULL`);
+        await query(`ALTER TABLE project_daily_updates ADD COLUMN IF NOT EXISTS unit_id INT REFERENCES project_units(id) ON DELETE SET NULL`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_employees_unit ON project_employees(project_id, unit_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_pdu_unit ON project_daily_updates(unit_id)`);
+        await query(`ALTER TABLE project_employees DROP CONSTRAINT IF EXISTS project_employees_project_id_employee_id_key`);
+        await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_project_employees_no_unit ON project_employees(project_id, employee_id) WHERE unit_id IS NULL`);
+        await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_project_employees_unit ON project_employees(project_id, employee_id, unit_id) WHERE unit_id IS NOT NULL`);
+        console.log('[Migration] project_units ensured; project_employees unit-aware.');
+    } catch (e) { console.warn('[Migration] project_units migration skipped:', e.message); }
 
     // Rename customer → client: add the new column, copy existing data,
     // then use `client` everywhere. The old `customer` column is kept for
