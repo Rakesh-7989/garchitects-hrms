@@ -39,6 +39,7 @@
             <a href="/manager/my-team" id="myTeamLink" style="display:none;" class="nav-item"><i class="fas fa-users"></i><span class="nav-text">My Team</span></a>
             <a href="/manager/team-work" id="teamWorkLink" style="display:none;" class="nav-item"><i class="fas fa-tasks"></i><span class="nav-text">Team Work</span></a>
             <a href="/manager/team-projects" id="teamProjectsLink" style="display:none;" class="nav-item active"><i class="fas fa-project-diagram"></i><span class="nav-text">Team Projects</span></a>
+            <a href="/manager/led-projects" id="ledProjectsLink" style="display:none;" class="nav-item"><i class="fas fa-crown"></i><span class="nav-text">My Led Projects</span></a>
             <div class="nav-section-title">My Info</div>
             <a href="/employee/profile" class="nav-item"><i class="fas fa-user"></i><span class="nav-text">My Profile</span></a>
             <a href="/employee/onboarding" class="nav-item"><i class="fas fa-user-plus"></i><span class="nav-text">My Onboarding</span></a>
@@ -107,6 +108,13 @@
                 <div id="tpRoster" style="margin-top:16px;">
                     <div style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.9rem;">Select a project to see who is assigned and assign team members into its units.</div>
                 </div>
+                <div id="tpLeads" style="margin-top:20px;border-top:1px solid var(--border-light);padding-top:14px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+                        <div style="font-weight:600;font-size:0.9rem;"><i class="fas fa-crown" style="color:var(--primary);margin-right:6px;"></i>Project Leads <span style="font-size:0.72rem;color:var(--text-secondary);font-weight:400;"> — who owns this project / its units</span></div>
+                        <button type="button" class="btn btn-sm btn-primary" id="leadBtn" onclick="openLeadModal()" style="display:none;"><i class="fas fa-crown"></i> Assign Lead</button>
+                    </div>
+                    <div id="tpLeadsList" style="font-size:0.85rem;color:var(--text-secondary);">Select a project first.</div>
+                </div>
             </div>
         </div>
     </main>
@@ -140,16 +148,41 @@
         </div>
     </div>
 
+    <div class="modal" id="leadModal">
+        <div class="modal-content" style="max-width:520px;">
+            <div class="modal-header">
+                <h2 id="leadModalTitle">Assign Project Lead</h2>
+                <button onclick="closeLeadModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Lead *</label>
+                    <select class="form-control" id="leadPick"><option value="">-- Select team lead / manager --</option></select>
+                </div>
+                <div class="form-group">
+                    <label>Units to lead <span style="font-size:0.72rem;color:var(--text-secondary);">(all checked = whole project; future units auto-follow)</span></label>
+                    <div id="leadUnits" style="border:1px solid var(--border-light);border-radius:8px;padding:10px;max-height:180px;overflow-y:auto;"></div>
+                </div>
+                <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeLeadModal()">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="leadSubmit" onclick="submitLead()"><i class="fas fa-crown"></i> Assign Lead</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="../../js/auth.js"></script>
     <script src="../../js/dashboard.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             if (!checkAuth()) throw new Error('Not authenticated');
             const user = getCurrentUser();
+            currentRole = user.role;
             if (!['admin', 'manager', 'team_lead', 'hr'].includes(user.role)) {
                 location.href = '/employee/dashboard';
                 return;
             }
+            designator = ['admin', 'manager', 'hr'].includes(user.role);
             loadProjects();
             loadEmployeesForPicker();
         });
@@ -159,6 +192,10 @@
         let roster = [];
         let allEmployees = [];
         let selected = new Set();
+        let currentRole = null;
+        let designator = false; // admin/hr/manager (D6) — can designate leads
+        let leadCandidates = [];
+        let currentLeads = [];
 
         async function loadProjects(manual) {
             const data = await apiCall('/projects/options');
@@ -187,6 +224,7 @@
             document.getElementById('assignBtn').disabled = !pid;
             if (!pid) {
                 document.getElementById('tpRoster').innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.9rem;">Select a project to see who is assigned and assign team members into its units.</div>';
+                renderLeads([]);
                 return;
             }
             const pr = projects.find(p => p.id === pid) || { units: [] };
@@ -199,6 +237,100 @@
             }
             roster = data.employees || (Array.isArray(data.data) ? data.data : []);
             renderRoster(pr);
+            await loadLeadsForProject(pid);
+        }
+
+        // ---------- Project Leads panel (P9) ----------
+        async function loadLeadsForProject(pid) {
+            const data = await apiCall('/project-leads');
+            if (!data || !data.success) { currentLeads = []; renderLeads([]); return; }
+            currentLeads = (data.leadLinks || []).filter(l => l.project_id === pid);
+            renderLeads(currentLeads);
+        }
+
+        async function renderLeads(list) {
+            const el = document.getElementById('tpLeadsList');
+            const btn = document.getElementById('leadBtn');
+            const showBtn = designator && document.getElementById('tpProject').value;
+            btn.style.display = showBtn ? 'inline-flex' : 'none';
+            if (!list || list.length === 0) {
+                el.innerHTML = '<span style="color:var(--text-secondary);">' + (showBtn ? 'No lead assigned yet — click <strong>Assign Lead</strong>.' : 'No lead assigned yet.') + '</span>';
+                return;
+            }
+            el.innerHTML = list.map(l =>
+                '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border-light);">' +
+                '<i class="fas fa-crown" style="color:#D97706;"></i>' +
+                '<div style="min-width:0;">' +
+                '<span style="font-weight:500;">' + escapeHtml((l.first_name || '') + ' ' + (l.last_name || '')) + ' <span style="font-size:0.72rem;color:var(--text-secondary);">(' + escapeHtml(l.employee_id || '') + ' · ' + escapeHtml(String(l.lead_role || '').replace('_', ' ')) + ')</span></span>' +
+                '<div style="font-size:0.74rem;color:var(--text-secondary);">' + (l.unit_id === null ? '<span class="badge badge-info" style="font-size:0.66rem;">Whole project</span> — all units (future units auto-follow)' : 'Leads unit: <strong>' + escapeHtml(l.unit_name || l.unit_id) + '</strong>') + '</div>' +
+                '</div>' +
+                (designator ? '<button class="btn btn-sm btn-danger" style="margin-left:auto;" onclick="removeLeadLink(' + l.id + ')"><i class="fas fa-user-minus"></i> Remove</button>' : '') +
+                '</div>'
+            ).join('');
+        }
+
+        async function openLeadModal() {
+            const pid = document.getElementById('tpProject').value;
+            if (!pid) { showToast('Select a project first', 'error'); return; }
+            if (leadCandidates.length === 0) {
+                const d = await apiCall('/project-leads/leads-options');
+                if (!d || !d.success) { showToast('Could not load lead candidates', 'error'); return; }
+                leadCandidates = d.leads || [];
+            }
+            const pick = document.getElementById('leadPick');
+            pick.innerHTML = '<option value="">-- Select team lead / manager --</option>' +
+                leadCandidates.map(l => '<option value="' + l.id + '">' + escapeHtml(l.first_name + ' ' + (l.last_name || '') + ' (' + l.employee_id + ')') + '</option>').join('');
+
+            const unitsBox = document.getElementById('leadUnits');
+            if (projectUnits.length === 0) {
+                unitsBox.innerHTML = '<div style="font-size:0.8rem;color:var(--text-secondary);">This project has no units — the lead will own the whole project (unit-less).</div>';
+            } else {
+                unitsBox.innerHTML = projectUnits.map(u =>
+                    '<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:0.85rem;cursor:pointer;">' +
+                    '<input type="checkbox" class="lead-unit-chk" value="' + u.id + '" checked style="accent-color:var(--primary);"> ' + escapeHtml(u.name) +
+                    '</label>'
+                ).join('');
+            }
+            document.getElementById('leadModal').classList.add('active');
+        }
+
+        function closeLeadModal() {
+            document.getElementById('leadModal').classList.remove('active');
+        }
+
+        async function submitLead() {
+            const pid = document.getElementById('tpProject').value;
+            const leadId = document.getElementById('leadPick').value;
+            if (!pid || !leadId) { showToast('Select a project and a lead', 'error'); return; }
+            const allChecked = document.querySelectorAll('.lead-unit-chk:checked');
+            const unitIds = allChecked.length > 0 ? Array.from(allChecked).map(c => parseInt(c.value, 10)) : [];
+            // All project units checked → send [] so the server creates the whole-project row.
+            const allSelected = projectUnits.length > 0 && unitIds.length === projectUnits.length;
+            const btn = document.getElementById('leadSubmit');
+            btn.disabled = true;
+            const r = await apiCall('/project-leads', 'POST', { projectId: parseInt(pid, 10), leadId: parseInt(leadId, 10), unitIds: allSelected ? [] : unitIds });
+            btn.disabled = false;
+            if (r && r.success) {
+                showToast(r.message || 'Lead assigned', 'success');
+                closeLeadModal();
+                await loadLeadsForProject(parseInt(pid, 10));
+            } else if (r && r.message) {
+                showToast(r.message, 'error');
+            } else {
+                showToast('Could not assign lead. Try again.', 'error');
+            }
+        }
+
+        async function removeLeadLink(id) {
+            if (!confirm('Remove this lead from the project?')) return;
+            const r = await apiCall('/project-leads/' + id, 'DELETE');
+            if (r && r.success) {
+                showToast('Lead removed', 'success');
+                const pid = document.getElementById('tpProject').value;
+                if (pid) await loadLeadsForProject(parseInt(pid, 10));
+            } else if (r && r.message) {
+                showToast(r.message, 'error');
+            }
         }
 
         function unitName(unitId) {

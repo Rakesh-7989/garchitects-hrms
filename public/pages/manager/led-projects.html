@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Led Projects - G-Architects HRMS</title>
+    <link rel="icon" type="image/png" href="../../assets/images/fav-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#4F46E5">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="apple-touch-icon" href="/assets/images/apple-touch-icon.png">
+    <link rel="stylesheet" href="../../css/main.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .lp-proj { padding: 18px 20px; background: var(--bg-card); border-radius: var(--radius-md); box-shadow: var(--shadow); border: 1px solid transparent; margin-bottom: 16px; }
+        .lp-proj-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .lp-unit { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: 8px; margin-bottom: 8px; }
+        .lp-unit .u-name { font-weight: 500; font-size: 0.9rem; }
+        .lp-unit .u-count { font-size: 0.78rem; color: var(--text-secondary); }
+        .emp-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--primary-50); border: 1px solid var(--border-light); border-radius: 999px; padding: 6px 12px; font-size: 0.8rem; font-weight: 500; }
+        .emp-chip button { background: none; border: none; cursor: pointer; color: var(--danger); font-size: 0.85rem; padding: 0 2px; }
+        .employee-option { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+        .employee-option:hover { background: var(--bg-secondary); }
+        .employee-option.selected { background: var(--primary-50); }
+        @media (max-width: 768px) {
+            .lp-proj-header { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body class="employee-app">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo"><i class="fas fa-building" style="color:var(--primary-light);font-size:1.5rem;"></i><span style="font-size:1rem;font-weight:700;">G-Architects HRMS</span></div>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section-title">Main</div>
+            <a href="/employee/dashboard" class="nav-item"><i class="fas fa-tachometer-alt"></i><span class="nav-text">Dashboard</span></a>
+            <a href="/manager/my-team" id="myTeamLink" style="display:none;" class="nav-item"><i class="fas fa-users"></i><span class="nav-text">My Team</span></a>
+            <a href="/manager/team-work" id="teamWorkLink" style="display:none;" class="nav-item"><i class="fas fa-tasks"></i><span class="nav-text">Team Work</span></a>
+            <a href="/manager/team-projects" id="teamProjectsLink" style="display:none;" class="nav-item"><i class="fas fa-project-diagram"></i><span class="nav-text">Team Projects</span></a>
+            <a href="/manager/led-projects" id="ledProjectsLink" style="display:none;" class="nav-item active"><i class="fas fa-crown"></i><span class="nav-text">My Led Projects</span></a>
+            <div class="nav-section-title">My Info</div>
+            <a href="/employee/profile" class="nav-item"><i class="fas fa-user"></i><span class="nav-text">My Profile</span></a>
+            <a href="/employee/onboarding" class="nav-item"><i class="fas fa-user-plus"></i><span class="nav-text">My Onboarding</span></a>
+            <a href="/employee/my-projects" class="nav-item"><i class="fas fa-project-diagram"></i><span class="nav-text">My Projects</span></a>
+            <a href="/employee/my-work" class="nav-item"><i class="fas fa-list-check"></i><span class="nav-text">My Work</span></a>
+            <a href="/employee/attendance" class="nav-item"><i class="fas fa-clock"></i><span class="nav-text">Attendance</span></a>
+            <a href="/employee/regularization" class="nav-item"><i class="fas fa-clock-rotate-left"></i><span class="nav-text">Regularization</span></a>
+            <a href="/employee/leave" class="nav-item"><i class="fas fa-calendar-times"></i><span class="nav-text">Leave</span></a>
+            <a href="/employee/wfh" class="nav-item"><i class="fas fa-home"></i><span class="nav-text">WFH</span></a>
+            <a href="/employee/payslips" class="nav-item"><i class="fas fa-indian-rupee-sign"></i><span class="nav-text">Payslips</span></a>
+            <div class="nav-section-title">Company</div>
+            <a href="/employee/documents" class="nav-item"><i class="fas fa-file-alt"></i><span class="nav-text">Documents</span></a>
+            <a href="/employee/announcements" class="nav-item"><i class="fas fa-bullhorn"></i><span class="nav-text">Announcements</span></a>
+            <div class="nav-section-title">Support</div>
+            <a href="/employee/holidays" class="nav-item"><i class="fas fa-calendar-check"></i><span class="nav-text">Holidays</span></a>
+            <div class="nav-section-title">Resources</div>
+            <a href="/employee/directory" class="nav-item"><i class="fas fa-address-book"></i><span class="nav-text">Directory</span></a>
+            <a href="/employee/tickets" class="nav-item"><i class="fas fa-ticket-alt"></i><span class="nav-text">My Queries</span></a>
+        </nav>
+    </aside>
+
+    <main class="main-content" id="mainContent">
+        <header class="header">
+            <div class="header-left">
+                <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+                <h2 style="font-size:1.25rem;font-weight:600;">My Led Projects</h2>
+            </div>
+            <div class="header-right">
+                <button type="button" class="notification-btn" title="Notifications"><i class="fas fa-bell"></i><span class="notification-badge" id="notifBadge" style="display:none;"></span></button>
+                <button class="notification-btn" onclick="toggleDarkMode()" title="Toggle dark mode"><i class="fas fa-moon" id="themeIcon"></i></button>
+                <div style="position:relative">
+                    <button class="profile-btn" onclick="toggleProfileMenu()">
+                        <span class="profile-photo" id="profilePhoto" style="display:inline-flex;align-items:center;justify-content:center;background:var(--primary);color:white;border-radius:50%;width:36px;height:36px;font-size:0.8rem;font-weight:600;"></span>
+                        <span id="profileName" style="margin-left:8px;font-weight:500;"></span>
+                        <i class="fas fa-chevron-down" style="margin-left:4px;font-size:0.7rem;"></i>
+                    </button>
+                    <div class="profile-menu" id="profileMenu" style="display:none;">
+                        <a href="/employee/profile" class="profile-menu-item"><i class="fas fa-user"></i> My Profile</a>
+                        <div class="profile-menu-divider"></div>
+                        <a href="#" class="profile-menu-item danger" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div style="padding:30px;">
+            <div class="card" style="padding:20px;margin-bottom:24px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+                    <div style="font-weight:600;font-size:0.95rem;"><i class="fas fa-crown" style="color:var(--primary);margin-right:8px;"></i>Projects I Lead — place my team into my units</div>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="loadLed()"><i class="fas fa-rotate-right"></i> Refresh</button>
+                </div>
+                <div id="lpList">
+                    <div style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.9rem;">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="modal" id="placeModal">
+        <div class="modal-content" style="max-width:540px;">
+            <div class="modal-header">
+                <h2 id="placeModalTitle">Assign My Team</h2>
+                <button onclick="closePlaceModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Assign to</label>
+                    <select class="form-control" id="placeUnit"></select>
+                </div>
+                <div class="form-group">
+                    <label>Select Team Members</label>
+                    <div style="position:relative;margin-bottom:8px;">
+                        <input type="text" class="form-control" id="placeSearch" placeholder="Search name or employee code..." oninput="renderPlaceOptions()">
+                    </div>
+                    <div id="placeList" style="border:1px solid var(--border-light);border-radius:8px;max-height:240px;overflow-y:auto;"></div>
+                </div>
+                <div id="placeChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-height:24px;"></div>
+                <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+                    <button type="button" class="btn btn-secondary" onclick="closePlaceModal()">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="placeSubmit" onclick="submitPlace()"><i class="fas fa-paper-plane"></i> Place</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../../js/auth.js"></script>
+    <script src="../../js/dashboard.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!checkAuth()) throw new Error('Not authenticated');
+            loadLed();
+            loadMyTeam();
+        });
+
+        let ledProjects = [];
+        let myTeam = [];
+        let selected = new Set();
+        let placeTarget = null; // { projectId, projectName, wholeProject, units[] }
+
+        async function loadLed() {
+            const data = await apiCall('/project-leads/mine');
+            if (!data || !data.success) {
+                document.getElementById('lpList').innerHTML = '<div style="text-align:center;padding:30px;color:var(--danger);font-size:0.9rem;">Failed to load led projects.</div>';
+                return;
+            }
+            ledProjects = data.led || [];
+            renderLed();
+        }
+
+        function esc(s) { const d = document.createElement('div'); d.textContent = (s === null || s === undefined) ? '' : String(s); return d.innerHTML; }
+
+        function renderLed() {
+            const el = document.getElementById('lpList');
+            if (ledProjects.length === 0) {
+                el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.9rem;">You are not the lead of any project yet. Contact an admin/manager to assign you as a project lead.</div>';
+                return;
+            }
+            el.innerHTML = ledProjects.map(p => {
+                const projectLine =
+                    '<div class="lp-proj-header"><div><div style="font-weight:600;">' + esc(p.projectName) +
+                    ' <span class="badge badge-info" style="font-size:0.68rem;">' + esc(String(p.projectStatus || '').replace('_',' ')) + '</span></div>' +
+                    '<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px;">' +
+                    (p.wholeProject ? 'Whole project lead · ' : 'Unit lead · ') + p.units.length + ' unit(s)' + '</div></div></div>';
+
+                let unitsHtml = '';
+                if (p.units.length > 0) {
+                    unitsHtml = p.units.map(u =>
+                        '<div class="lp-unit"><div><div class="u-name">' + esc(u.name) + '</div>' +
+                        '<div class="u-count">' + u.memberCount + ' member(s) assigned</div></div>' +
+                        '<button class="btn btn-sm btn-primary" onclick="openPlace(' + p.projectId + ',' + u.id + ')"><i class="fas fa-user-plus"></i> Assign Team</button></div>'
+                    ).join('');
+                } else {
+                    unitsHtml = '<div style="font-size:0.82rem;color:var(--text-secondary);margin:6px 0;">No units on this project.</div>';
+                }
+
+                const projectBtn = (p.wholeProject || p.units.length === 0)
+                    ? '<button class="btn btn-sm btn-secondary" onclick="openPlace(' + p.projectId + ',null)" style="margin-top:4px;"><i class="fas fa-user-plus"></i> Assign to Project (' + p.projectLevelCount + ')</button>'
+                    : '';
+
+                return '<div class="lp-proj">' + projectLine + unitsHtml + projectBtn + '</div>';
+            }).join('');
+        }
+
+        async function openPlace(projectId, unitId) {
+            const p = ledProjects.find(x => x.projectId === projectId);
+            if (!p) return;
+            placeTarget = p;
+            selected = new Set();
+            const uSel = document.getElementById('placeUnit');
+            uSel.innerHTML = '';
+            if (unitId !== null) {
+                uSel.innerHTML = '<option value="" disabled>Unit</option>' + p.units.map(u =>
+                    '<option value="' + u.id + '"' + (u.id === unitId ? ' selected' : '') + '>' + esc(u.name) + '</option>').join('');
+            } else if (p.units.length > 0) {
+                uSel.innerHTML = '<option value="">Project (no unit)</option>' + p.units.map(u =>
+                    '<option value="' + u.id + '">' + esc(u.name) + '</option>').join('');
+            } else {
+                uSel.innerHTML = '<option value="">Project (no units)</option>';
+            }
+            document.getElementById('placeSearch').value = '';
+            renderPlaceOptions();
+            document.getElementById('placeModal').classList.add('active');
+        }
+
+        function closePlaceModal() {
+            document.getElementById('placeModal').classList.remove('active');
+        }
+
+        async function loadMyTeam() {
+            const data = await apiCall('/project-leads/my-team');
+            if (!data || !data.success) return;
+            myTeam = (data.team || []).slice().sort((a, b) => String(a.first_name).localeCompare(String(b.first_name)));
+        }
+
+        function filteredTeam() {
+            const q = (document.getElementById('placeSearch').value || '').trim().toLowerCase();
+            if (!q) return myTeam;
+            return myTeam.filter(e =>
+                String(e.first_name || '').toLowerCase().includes(q) ||
+                String(e.last_name || '').toLowerCase().includes(q) ||
+                String((e.first_name || '') + ' ' + (e.last_name || '')).toLowerCase().includes(q) ||
+                String(e.employee_id || '').toLowerCase().includes(q));
+        }
+
+        function toggleMember(id) {
+            if (selected.has(id)) selected.delete(id); else selected.add(id);
+            renderPlaceOptions();
+        }
+
+        function renderPlaceOptions() {
+            const list = document.getElementById('placeList');
+            const chosen = filteredTeam();
+            if (chosen.length === 0) {
+                list.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:0.85rem;">' +
+                    (myTeam.length === 0 ? 'No team members in your reporting tree.' : 'No employees found.') + '</div>';
+            } else {
+                list.innerHTML = chosen.map(e =>
+                    '<label class="employee-option" style="display:flex;align-items:center;gap:10px;padding:8px 10px;cursor:pointer;">' +
+                    '<input type="checkbox" style="accent-color:var(--primary);" ' + (selected.has(e.id) ? 'checked' : '') + ' onchange="toggleMember(' + e.id + ')">' +
+                    '<div style="min-width:0;"><div style="font-weight:500;font-size:0.85rem;">' + esc(e.first_name + ' ' + (e.last_name || '')) + '</div>' +
+                    '<div style="font-size:0.72rem;color:var(--text-secondary);">' + esc(e.employee_id || '') + (e.designation_name ? ' &middot; ' + esc(e.designation_name) : '') + '</div></div>' +
+                    '</label>'
+                ).join('');
+            }
+            const chips = document.getElementById('placeChips');
+            const chosenArr = myTeam.filter(e => selected.has(e.id));
+            chips.innerHTML = chosenArr.length
+                ? chosenArr.map(e => '<span class="emp-chip">' + esc(e.first_name + ' ' + (e.last_name || '')) + ' <button onclick="toggleMember(' + e.id + ')">&times;</button></span>').join('')
+                : '';
+        }
+
+        async function submitPlace() {
+            if (!placeTarget) return;
+            const unitVal = document.getElementById('placeUnit').value;
+            const unitId = unitVal === '' ? null : parseInt(unitVal, 10);
+            if (selected.size === 0) { showToast('Select at least one member', 'error'); return; }
+            const btn = document.getElementById('placeSubmit');
+            btn.disabled = true;
+            const r = await apiCall('/project-leads/place', 'POST', {
+                projectId: placeTarget.projectId,
+                unitId: unitId,
+                employeeIds: Array.from(selected).map(x => parseInt(x, 10))
+            });
+            btn.disabled = false;
+            if (r && r.success) {
+                showToast(r.message || 'Members placed', 'success');
+                closePlaceModal();
+                await loadLed();
+            } else if (r && r.message) {
+                showToast(r.message, 'error');
+            } else {
+                showToast('Could not place members. Try again.', 'error');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -281,6 +281,22 @@ const ENSURE_TABLE_DDL = {
             created_at TIMESTAMP DEFAULT NOW()
         )`,
         `CREATE INDEX IF NOT EXISTS idx_status_history_employee ON employee_status_history(employee_id, created_at DESC)`
+    ],
+    // Project Leads (P9): designated project/unit owners. unit_id NULL = whole
+    // project (future units auto-follow). Additive; never touches existing data.
+    project_leads: [
+        `CREATE TABLE IF NOT EXISTS project_leads (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            lead_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            unit_id INT REFERENCES project_units(id) ON DELETE CASCADE,
+            assigned_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            assigned_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS uq_project_lead_project ON project_leads(project_id, lead_id) WHERE unit_id IS NULL`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS uq_project_lead_unit ON project_leads(project_id, unit_id, lead_id) WHERE unit_id IS NOT NULL`,
+        `CREATE INDEX IF NOT EXISTS idx_project_leads_lead ON project_leads(lead_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_project_leads_project ON project_leads(project_id)`
     ]
 };
 

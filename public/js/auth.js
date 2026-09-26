@@ -355,6 +355,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const link = document.getElementById('teamProjectsLink');
             if (link) link.style.display = 'flex';
         }
+        // My Led Projects link: same roles — a designated lead places their team.
+        if (u && (u.role === 'admin' || u.role === 'manager' || u.role === 'team_lead' || u.role === 'hr')) {
+            const link = document.getElementById('ledProjectsLink');
+            if (link) link.style.display = 'flex';
+        }
     } catch (e) {}
 });
 

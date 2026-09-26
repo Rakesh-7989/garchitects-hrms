@@ -59,6 +59,7 @@ app.use('/api/cron', require('./routes/cron'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/project-reports', require('./routes/project-reports'));
 app.use('/api/work-assignments', require('./routes/work-assignments'));
+app.use('/api/project-leads', require('./routes/project-leads'));
 app.use('/api/project-updates', require('./routes/project-updates'));
 app.use('/api/project-documents', require('./routes/project-documents'));
 
@@ -362,6 +363,24 @@ async function runMigrations() {
         await query(`CREATE INDEX IF NOT EXISTS idx_wa_project ON work_assignments(project_id)`);
         console.log('[Migration] work_assignments ensured.');
     } catch (e) { console.warn('[Migration] work_assignments migration skipped:', e.message); }
+
+    // Project Leads (P9): designated owners of a project / its units. unit_id
+    // NULL = whole project (future units auto-follow); rows are additive only.
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS project_leads (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            lead_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            unit_id INT REFERENCES project_units(id) ON DELETE CASCADE,
+            assigned_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            assigned_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_project_lead_project ON project_leads(project_id, lead_id) WHERE unit_id IS NULL`);
+        await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_project_lead_unit ON project_leads(project_id, unit_id, lead_id) WHERE unit_id IS NOT NULL`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_leads_lead ON project_leads(lead_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_project_leads_project ON project_leads(project_id)`);
+        console.log('[Migration] project_leads ensured.');
+    } catch (e) { console.warn('[Migration] project_leads migration skipped:', e.message); }
 
     // Rename customer → client: add the new column, copy existing data,
     // then use `client` everywhere. The old `customer` column is kept for

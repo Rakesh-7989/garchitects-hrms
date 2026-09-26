@@ -304,3 +304,23 @@ admin-controlled; P8 delegates *membership/placement* only).
 (employee **row id**), while the roster exposes `employee_id` as the **code string** —
 the page must pass `m.id` (row id) to `/employees/:id`, not the code (caught during
 implementation).
+
+## 9. Project Leads — delegated project/unit ownership (P9)
+
+**Decisions locked:**
+- **D6** — designation power: **admin / manager / hr** only (team_lead cannot designate).
+- **D7** — lead target role: active **team_lead or manager**.
+- **D8** — lead placement scope: **my team + my units**, server-enforced on the lead
+  route (`/api/project-leads/place`): a team_lead/manager may place only their
+  reporting-tree employees into the project/units they lead; admin/hr bypass (they
+  keep P8 power). The P8 general route stays D5-unrestricted.
+- **D9** — a *whole-project* lead (unit_id NULL) owns every current **and future** unit
+  (auto-follow); a *unit-scoped* lead owns only the chosen units.
+- **D10** — multiple leads per project allowed; one lead may lead many projects.
+
+| Piece | Detail |
+|---|---|
+| **Schema** (`project_leads`, §24 + startup migration + schemaRepair self-heal) | `(id, project_id, lead_id, unit_id→NULL=whole project, assigned_by, assigned_at)` with partial uniques `uq_project_lead_project`(project,lead) WHERE unit NULL and `uq_project_lead_unit`(project,unit,lead) WHERE unit not NULL. |
+| **Route** `server/routes/project-leads.js` (`/api/project-leads`) | `POST /` designate `{projectId, leadId, unitIds[]}` (empty = whole project; all-per-unit conflicts handled); `GET /` overview; `GET /mine` (caller's led projects + units + member counts); `GET /leads-options` (active team_lead/manager); `GET /my-team` (reporting-tree picker mirroring /place enforcement; admin/hr → all active); `DELETE /:id`; `POST /place` (idempotent inserts honoring the partial uniques + audit `project.lead_designate`/`project.lead_unassign`/`project.lead_place`). |
+| **UI** | `/manager/team-projects` gained a **Project Leads** panel (list + Assign Lead modal with unit checkboxes default-all; role-gated to admin/manager/hr). New **`/manager/led-projects`** page: "My Led Projects" — per led project show units + member counts, "Assign Team" modal places my reporting tree into my units (or the project itself when it has no units), refresh after placement. Nav `#ledProjectsLink` on the 4 portal pages + all 18 admin pages. |
+| **No-units handling** | A unit-less project is designated as a whole-project lead (unit NULL). The lead page falls back to "Assign to Project" (no unit). Simultaneously P8/D5 already lets any managerish place any active employee into any unit-less project directly — the user-requested "units పక్కన పెడితే ఎవరు ఎవరికి ఐనా" freedom is preserved. |

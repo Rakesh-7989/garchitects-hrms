@@ -743,6 +743,29 @@ CREATE INDEX IF NOT EXISTS idx_wa_assigner ON work_assignments(assigned_by, stat
 CREATE INDEX IF NOT EXISTS idx_wa_project ON work_assignments(project_id);
 
 -- ============================================================
+-- 24. PROJECT LEADS (delegated project/unit ownership — P9)
+-- ============================================================
+-- Admin/Manager/HR designate a team_lead (or manager, D7) as the LEAD of a
+-- project. unit_id NULL = the lead owns the WHOLE project (all current + future
+-- units auto-follow); unit_id set = the lead owns that unit only (D9: project
+-- level rows make future units the lead's too). Multiple leads per project are
+-- allowed (each owning the project or specific units). The lead may then place
+-- their own reporters (reporting chain, D8) into the project/units they lead.
+CREATE TABLE IF NOT EXISTS project_leads (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    lead_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    unit_id INT REFERENCES project_units(id) ON DELETE CASCADE,
+    assigned_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    assigned_at TIMESTAMP DEFAULT NOW()
+);
+-- At most one whole-project row per (project, lead) and one row per (project, unit, lead).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_project_lead_project ON project_leads(project_id, lead_id) WHERE unit_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_project_lead_unit ON project_leads(project_id, unit_id, lead_id) WHERE unit_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_project_leads_lead ON project_leads(lead_id);
+CREATE INDEX IF NOT EXISTS idx_project_leads_project ON project_leads(project_id);
+
+-- ============================================================
 -- PROJECT SETTINGS (for holiday config, etc.)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS project_settings (
