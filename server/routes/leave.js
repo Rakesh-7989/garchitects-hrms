@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { query } = require('../config/database');
+const { query, getClient } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { validateLeave } = require('../middleware/validation');
 const { istDateString, istYear } = require('../utils/date');
@@ -307,6 +307,7 @@ router.put('/approve/:id', verifyToken, isAdmin, async (req, res) => {
             WHERE id = $4 RETURNING *`,
             [status, req.user.id, remarks, req.params.id]
         );
+        logAudit({ actorId: req.user.id, action: status === 'approved' ? 'leave.approve' : 'leave.reject', entityType: 'leave_application', entityId: req.params.id, details: { employee_id: leaveApp.rows[0].employee_id, remarks: remarks || null }, ip: req.ip });
         
         if (status === 'approved') {
             const app = leaveApp.rows[0];
@@ -369,35 +370,42 @@ router.put('/approve/:id', verifyToken, isAdmin, async (req, res) => {
 // @desc    Employee cancels their own leave request (pending, or approved before it starts)
 // @access  Private
 router.post('/:id/cancel', verifyToken, async (req, res) => {
+    // Run the (read-approve-update) sequence on ONE checked-out connection so the
+    // tx is real. Previously BEGIN/COMMIT went through the pool helper, which can
+    // pick a different connection per statement and silently break atomicity.
+    const client = await getClient();
     try {
-        await query('BEGIN');
-        const sel = await query(
+        await client.query('BEGIN');
+        const sel = await client.query(
             'SELECT id, status, start_date, end_date, employee_id FROM leave_applications WHERE id = $1 AND employee_id = $2 FOR UPDATE',
             [req.params.id, req.user.id]
         );
         if (sel.rows.length === 0) {
-            await query('ROLLBACK');
+            await client.query('ROLLBACK');
             return res.status(404).json({ success: false, message: 'Leave request not found' });
         }
         const app = sel.rows[0];
         const today = istDateString();
         const isApproved = app.status === 'approved';
         if (app.status !== 'pending' && !(isApproved && String(app.start_date).substring(0,10) > today)) {
-            await query('ROLLBACK');
+            await client.query('ROLLBACK');
             return res.status(400).json({ success: false, message: 'This request can no longer be cancelled' });
         }
-        await query(`UPDATE leave_applications SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [req.params.id]);
+        await client.query(`UPDATE leave_applications SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [req.params.id]);
         if (isApproved) {
-            await query(
+            await client.query(
                 `DELETE FROM attendance WHERE employee_id = $1 AND date BETWEEN $2 AND $3 AND remarks LIKE 'On leave: ' || $4 || '%'`,
                 [app.employee_id, app.start_date, app.end_date, String(app.id)]
             );
         }
-        await query('COMMIT');
+        await client.query('COMMIT');
+        logAudit({ actorId: req.user.id, action: 'leave.cancel', entityType: 'leave_application', entityId: req.params.id, details: { status: app.status, was_approved: isApproved }, ip: req.ip });
         res.json({ success: true, message: 'Leave request cancelled' });
     } catch (error) {
-        try { await query('ROLLBACK'); } catch(e) {}
+        try { await client.query('ROLLBACK'); } catch(e) {}
         res.status(500).json({ success: false, message: 'Server error' });
+    } finally {
+        try { client.release(); } catch(e) {}
     }
 });
 

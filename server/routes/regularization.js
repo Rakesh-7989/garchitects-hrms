@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { query } = require('../config/database');
+const { query, getClient } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { istDateString } = require('../utils/date');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { logAudit } = require('../utils/audit');
 
 // Every query below touches attendance_regularizations, which may not exist
 // yet on a live database that predates the feature - repair and retry.
@@ -169,9 +170,13 @@ router.post('/:id/review', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'This request was already reviewed' });
         }
 
-        await query('BEGIN');
+        // Run the review + attendance write-back on ONE checked-out connection.
+        // Previously BEGIN/COMMIT went through the pool helper, which can pick a
+        // different connection per statement and silently break atomicity.
+        const client = await getClient();
         try {
-            await q(
+            await client.query('BEGIN');
+            await client.query(
                 `UPDATE attendance_regularizations
                 SET status = $1, reviewed_by = $2, review_note = $3, reviewed_at = NOW()
                 WHERE id = $4`,
@@ -180,13 +185,13 @@ router.post('/:id/review', verifyToken, async (req, res) => {
 
             if (status === 'approved') {
                 // Write-back into attendance: update existing row or insert one.
-                const att = await q(
+                const att = await client.query(
                     'SELECT id, remarks FROM attendance WHERE employee_id = $1 AND date = $2',
                     [requestRow.employee_id, requestRow.date]
                 );
                 if (att.rows.length > 0) {
                     const alreadyTagged = String(att.rows[0].remarks || '').includes('[regularized]');
-                    await q(
+                    await client.query(
                         `UPDATE attendance SET
                             check_in = COALESCE($1, check_in),
                             check_out = COALESCE($2, check_out),
@@ -196,18 +201,21 @@ router.post('/:id/review', verifyToken, async (req, res) => {
                         [requestRow.check_in, requestRow.check_out, att.rows[0].id, alreadyTagged]
                     );
                 } else {
-                    await q(
+                    await client.query(
                         `INSERT INTO attendance (employee_id, date, check_in, check_out, status, remarks)
                         VALUES ($1, $2, $3, $4, 'present', '[regularized]')`,
                         [requestRow.employee_id, requestRow.date, requestRow.check_in, requestRow.check_out]
                     );
                 }
             }
-            await query('COMMIT');
+            await client.query('COMMIT');
         } catch (txErr) {
-            try { await query('ROLLBACK'); } catch(e) {}
+            try { await client.query('ROLLBACK'); } catch(e) {}
             throw txErr;
+        } finally {
+            try { client.release(); } catch(e) {}
         }
+        logAudit({ actorId: req.user.id, action: status === 'approved' ? 'regularization.approve' : 'regularization.reject', entityType: 'attendance_regularization', entityId: req.params.id, details: { employee_id: requestRow.employee_id, date: requestRow.date, check_in: requestRow.check_in, check_out: requestRow.check_out }, ip: req.ip });
 
         res.json({ success: true, message: 'Request ' + status });
     } catch (error) {

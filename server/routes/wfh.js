@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { query } = require('../config/database');
+const { query, getClient } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { istDateString } = require('../utils/date');
 const { sendToUser } = require('../services/push');
 const { getWorkWeekConfig } = require('../utils/workWeek');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
 const { resolveApproverRouting } = require('../utils/approvalRouting');
+const { logAudit } = require('../utils/audit');
 
 function isWeekend(dateStr, weekoffDay = 0) {
     const d = new Date(dateStr);
@@ -139,35 +140,42 @@ router.post('/apply', verifyToken, async (req, res) => {
 // @desc    Employee cancels their own WFH request (pending, or approved before it starts)
 // @access  Private
 router.post('/:id/cancel', verifyToken, async (req, res) => {
+    // Run the (read-approve-update) sequence on ONE checked-out connection so the
+    // tx is real. Previously BEGIN/COMMIT went through the pool helper, which can
+    // pick a different connection per statement and silently break atomicity.
+    const client = await getClient();
     try {
-        await query('BEGIN');
-        const sel = await query(
+        await client.query('BEGIN');
+        const sel = await client.query(
             'SELECT id, status, start_date, end_date, employee_id FROM wfh_requests WHERE id = $1 AND employee_id = $2 FOR UPDATE',
             [req.params.id, req.user.id]
         );
         if (sel.rows.length === 0) {
-            await query('ROLLBACK');
+            await client.query('ROLLBACK');
             return res.status(404).json({ success: false, message: 'WFH request not found' });
         }
         const app = sel.rows[0];
         const today = istDateString();
         const isApproved = app.status === 'approved';
         if (app.status !== 'pending' && !(isApproved && String(app.start_date).substring(0,10) > today)) {
-            await query('ROLLBACK');
+            await client.query('ROLLBACK');
             return res.status(400).json({ success: false, message: 'This request can no longer be cancelled' });
         }
-        await query(`UPDATE wfh_requests SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [req.params.id]);
+        await client.query(`UPDATE wfh_requests SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [req.params.id]);
         if (isApproved) {
-            await query(
+            await client.query(
                 `DELETE FROM attendance WHERE employee_id = $1 AND date BETWEEN $2 AND $3 AND remarks LIKE 'Work from home: ' || $4 || '%'`,
                 [app.employee_id, app.start_date, app.end_date, String(app.id)]
             );
         }
-        await query('COMMIT');
+        await client.query('COMMIT');
+        logAudit({ actorId: req.user.id, action: 'wfh.cancel', entityType: 'wfh_request', entityId: req.params.id, details: { status: app.status, was_approved: isApproved }, ip: req.ip });
         res.json({ success: true, message: 'WFH request cancelled' });
     } catch (error) {
-        try { await query('ROLLBACK'); } catch(e) {}
+        try { await client.query('ROLLBACK'); } catch(e) {}
         res.status(500).json({ success: false, message: 'Server error' });
+    } finally {
+        try { client.release(); } catch(e) {}
     }
 });
 
@@ -264,6 +272,7 @@ router.put('/approve/:id', verifyToken, isAdmin, async (req, res) => {
             WHERE id = $4 RETURNING *`,
             [status, req.user.id, remarks, req.params.id]
         );
+        logAudit({ actorId: req.user.id, action: status === 'approved' ? 'wfh.approve' : 'wfh.reject', entityType: 'wfh_request', entityId: req.params.id, details: { employee_id: wfhApp.rows[0].employee_id, remarks: remarks || null }, ip: req.ip });
 
         if (status === 'approved') {
             const app = wfhApp.rows[0];

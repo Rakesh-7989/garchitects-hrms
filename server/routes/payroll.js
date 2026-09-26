@@ -7,7 +7,7 @@ const https = require('https');
 const http = require('http');
 const PDFDocument = require('pdfkit');
 const { query } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdmin, isManager } = require('../middleware/auth');
 const { istDateString } = require('../utils/date');
 const { sendPayslipEmail } = require('../services/email');
 const { logAudit } = require('../utils/audit');
@@ -131,6 +131,8 @@ function computeTotals(v) {
 // Download a remote image (HTTP/HTTPS) to a temp file path, returns the local path or null.
 // Uses os.tmpdir() (writable on Vercel/serverless, unlike the package dir) and a
 // unique file name so concurrent renders never overwrite each other's logo.
+const LOGO_MAX_BYTES = 3 * 1024 * 1024; // sanity cap (3 MB) - the logo URL source is
+                                        // admin-controlled (company settings), never client input.
 function downloadLogoToTemp(url, depth = 0) {
     return new Promise((resolve) => {
         try {
@@ -143,6 +145,11 @@ function downloadLogoToTemp(url, depth = 0) {
                 }
                 if (res.statusCode !== 200) { resolve(null); return; }
                 const file = fs.createWriteStream(tmpPath);
+                let size = 0;
+                res.on('data', (chunk) => {
+                    size += chunk.length;
+                    if (size > LOGO_MAX_BYTES) { res.destroy(); file.destroy(); resolve(null); }
+                });
                 res.pipe(file);
                 file.on('finish', () => { file.close(); resolve(tmpPath); });
                 file.on('error', () => { resolve(null); });
@@ -1083,11 +1090,15 @@ router.get('/attendance-summary', verifyToken, isAdmin, async (req, res) => {
 // @route   POST /api/payroll/render-pdf
 // @desc    Render a PDF from payslip payload data (for unsaved / live preview downloads)
 // @access  Private
-router.post('/render-pdf', verifyToken, pdfRateLimit, async (req, res) => {
+router.post('/render-pdf', verifyToken, isManager, pdfRateLimit, async (req, res) => {
     try {
         const p = req.body;
         if (!p) return res.status(400).json({ success: false, message: 'No payslip data' });
-        const company = p.company || await getCompanyData();
+        // Company details always come from the DB (admin-managed settings).
+        // Ignoring any client-supplied company object also kills the SSRF /
+        // unbounded-logo-download vector (a crafted company.logo_url could have
+        // pointed the server at an internal address).
+        const company = await getCompanyData();
         const buf = await renderPayslipPdf(p, company);
         const empId = p.emp_id || p.employee_id || 'emp';
         res.setHeader('Content-Type', 'application/pdf');

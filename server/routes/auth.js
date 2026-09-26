@@ -57,7 +57,11 @@ const otpResetLimiter = rateLimit({
 function hashOtp(otp) {
     // Short-lived 6-digit codes don't need bcrypt; a peppered SHA-256 keeps
     // a database leak from exposing usable codes.
-    const pepper = process.env.JWT_SECRET || 'garchitects-otp-pepper';
+    // Peppered hash; a dedicated env var is preferred, but JWT_SECRET (always set
+// in prod - auth fails closed without it) is a safe fallback. Fail closed
+// instead of shipping a hardcoded literal in source.
+const pepper = process.env.OTP_PEPPER || process.env.JWT_SECRET;
+if (!pepper) throw new Error('OTP pepper is not configured (set OTP_PEPPER or JWT_SECRET)');
     return crypto.createHash('sha256').update(String(otp) + ':' + pepper).digest('hex');
 }
 

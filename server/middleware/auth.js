@@ -30,7 +30,7 @@ const verifyToken = async (req, res, next) => {
             // a new column (e.g. token_version) self-heals on the first request
             // instead of failing every authenticated call with a 500.
             const result = await runWithSchemaRepair(
-                () => query('SELECT id, role, status, token_version FROM employees WHERE id = $1', [decoded.id])
+                () => query('SELECT id, role, status, token_version, must_change_password FROM employees WHERE id = $1', [decoded.id])
             );
             if (result.rows.length === 0) {
                 return res.status(401).json({
@@ -59,6 +59,30 @@ const verifyToken = async (req, res, next) => {
                 });
             }
             req.user.role = current.role;
+
+            // PASSWORD LOCK (server-side must_change_password enforcement).
+            // A temp password issued by an admin must not remain usable via the
+            // API forever: until the user sets their own password they may only
+            // reach the password/account surface (mirrors the frontend redirect
+            // to the profile page and its admin exemption). Everything else is
+            // refused with a dedicated code so clients can react explicitly.
+            if ((current.must_change_password === 1 || current.must_change_password === true) && req.user.role !== 'admin') {
+                const fullPath = ((req.originalUrl || req.url || '') + '').split('?')[0];
+                const isPasswordSurface =
+                    fullPath.indexOf('/auth/me') !== -1 ||
+                    fullPath.indexOf('/auth/change-password') !== -1 ||
+                    fullPath.indexOf('/auth/set-password') !== -1 ||
+                    fullPath.indexOf('/auth/logout') !== -1 ||
+                    fullPath.indexOf('/auth/profile-photo') !== -1 ||
+                    fullPath.indexOf('/auth/profile-request') !== -1;
+                if (!isPasswordSurface) {
+                    return res.status(403).json({
+                        success: false,
+                        code: 'PASSWORD_CHANGE_REQUIRED',
+                        message: 'You must set a new password before continuing.'
+                    });
+                }
+            }
         } catch (dbError) {
             return res.status(500).json({ success: false, message: 'Server error' });
         }
