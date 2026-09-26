@@ -576,12 +576,44 @@ router.put('/:projectId/units/:unitId', verifyToken, isAdmin, async (req, res) =
 
 /**
  * DELETE /api/projects/:projectId/units/:unitId
- * Delete a unit. Assignment rows and daily updates keep their history but the
- * unit reference is set to NULL (ON DELETE SET NULL) — updates stay visible
- * under the project.
+ * Delete a unit. Assignment rows and daily updates keep their history: the
+ * update rows' unit reference is set to NULL (FK ON DELETE SET NULL), and
+ * assignment rows are merged to no-unit when possible (or dropped when a
+ * no-unit row already exists) so the partial unique index stays satisfied.
  */
 router.delete('/:projectId/units/:unitId', verifyToken, isAdmin, async (req, res) => {
     try {
+        // Clear assignment references before deleting the unit. Relying on the
+        // FK's ON DELETE SET NULL alone would collide with the partial unique
+        // index uq_project_employees_no_unit when the employee already has a
+        // no-unit assignment on this project (SET NULL would create a second
+        // NULL row). So: null the reference when no other no-unit row exists,
+        // otherwise remove the assignment row entirely.
+        await q(
+            `UPDATE project_employees pe
+             SET unit_id = NULL
+             WHERE pe.project_id = $1 AND pe.unit_id = $2
+               AND NOT EXISTS (
+                   SELECT 1 FROM project_employees pe2
+                   WHERE pe2.project_id = pe.project_id
+                     AND pe2.employee_id = pe.employee_id
+                     AND pe2.unit_id IS NULL
+                     AND pe2.id <> pe.id
+               )`,
+            [req.params.projectId, req.params.unitId]
+        );
+        await q(
+            `DELETE FROM project_employees pe
+             WHERE pe.project_id = $1 AND pe.unit_id = $2
+               AND EXISTS (
+                   SELECT 1 FROM project_employees pe2
+                   WHERE pe2.project_id = pe.project_id
+                     AND pe2.employee_id = pe.employee_id
+                     AND pe2.unit_id IS NULL
+                     AND pe2.id <> pe.id
+               )`,
+            [req.params.projectId, req.params.unitId]
+        );
         const row = await q(
             `DELETE FROM project_units WHERE id = $1 AND project_id = $2 RETURNING id, name`,
             [req.params.unitId, req.params.projectId]
