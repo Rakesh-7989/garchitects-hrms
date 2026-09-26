@@ -1,7 +1,7 @@
 # Feature Design — Units (sub-projects) + Work Assignments + Overtime removal
 
 **Repo:** G-Architects HRMS · **Branch:** master (auto-deploys to https://garchitects-hrms.vercel.app)
-**Status:** ✅ **Implemented + verified live (2026-09-26)** — overtime removed, Units (P1–P4) and Work Assignments (P5–P6) shipped to master. Design decisions D1–D4 locked (below).
+**Status:** ✅ **Implemented + verified live (2026-09-26)** — overtime removed, Units (P1–P4), Work Assignments (P5–P6) and Assignment Awareness — widgets + bell + reports (P7) shipped to master. Design decisions D1–D4 locked (below).
 
 ---
 
@@ -260,3 +260,24 @@ full edit + delete, full cleanup (0 rows left, QAWA1 deleted).
   pages; auth.js auto-shows the Team Work link for admin/manager/team_lead/hr.
 - Live: both pages serve 200, picker endpoints authorized (401 without token), full UI-driven
   lifecycle POST→PUT(completed)→DELETE round-trips with 0 rows left afterwards.
+
+## 7. Assignment awareness — widgets + bell + reports (commit `ba5307c`, SQL fix `dfd9c5a`)
+
+Make the new Work Assignments module visible and actionable across the app. **Live-verified 2026-09-26
+with qa-awareness-live.mjs (23/23 pass).**
+
+| Piece | Where | What |
+|---|---|---|
+| **My Work widget** | Employee dashboard (all roles) | Open / In Progress / Overdue counts + top-3 urgent items → `/employee/my-work`. Data: `GET /work-assignments/my` (already live). |
+| **Work Assignments Pulse** | Employee dashboard, roles admin/manager/team_lead/hr only (`#managerWorkCard`) | Team-scope stats (Open/In Progress/Completed/Overdue — overdue = `due_date < today IST` on non-terminal) + recent 5 rows → `/manager/team-work`. Data: `GET /work-assignments`. |
+| **Work Assignments card** | Admin dashboard (`#adminWaList`) | Company-wide stat chips + recent-8 table (assignee avatar/name, title+project/unit/due, status badge) → Team Work. Data: `GET /work-assignments` (admin sees all). |
+| **Bell + sidebar badges** | `dashboard.js` + `GET /notifications/counts` | New `openWorkAssignments` count (admin/hr: all open; manager/team_lead: own-created — same D3 scope as `GET /`). Added to the admin/manager bell total AND to a **Team Work** sidebar nav badge (`loadSidebarCounts`). |
+| **Work Assignments report** | Admin Reports page + new `GET /api/reports/work-assignments` (isAdmin) | Status summary chips (Total/Open/In Progress/Completed/Cancelled), **By Employee** (open/completed/total, sorted open-first), **By Project** (open/completed/total), **Recent 10** (title, assignee, assigner, project, status, due). |
+
+**Bug found + fixed during live QA:** the report route first returned 500 — Postgres rejected the
+aggregate queries because `SELECT` carried `wa.assigned_to` (by-Employee) and `wa.project_id`
+(by-Project), which are not in `GROUP BY` and not functionally dependent → whole `Promise.all`
+rejected (fix `dfd9c5a` drops the unused columns). Verifier confirms the completed-state move
+(assigned→completed) is reflected in `byStatus` immediately after the PUT.
+
+No schema change (all reads reuse the existing `work_assignments` + `employees` + `projects`).
