@@ -339,6 +339,15 @@ them."* Decision `D11`: **scope the team_lead** — managers/admin/hr keep D5 fu
 | `GET /api/notifications/counts` | New `openLeadProjects` count (DISTINCT led projects) → bell badge + sidebar badge on **My Led Projects** lights up the moment a designator assigns a lead. |
 | `/manager/team-projects` UI | For `team_lead`: project picker loads via `/project-leads/mine` (led projects only; empty state explains "you are not the lead of any project yet"); employee picker loads via `/project-leads/my-team` (reporting tree). |
 
+**Same scoping applied to work assignments (`Team Work` page)** — user confirmed "Team Work లో కూడా అదే — same":
+| Layer | Change |
+|---|---|
+| `GET /api/work-assignments/projects` (picker) | For `team_lead`: only the projects they lead (DISTINCT lead rows). Other roles see all. |
+| `POST /api/work-assignments` | For `team_lead`: the assignee must be in their reporting tree (else 403) **and** a non-null project/unit must be one they lead (else 403). A project-less task has no project boundary, so the tree rule alone applies. |
+| `PUT /api/work-assignments/:id` | For `team_lead` assigners: reassignment must stay within their reporting tree; moving work onto a project/unit requires leading it (else 403). |
+| `GET /api/projects/:id/units` | For `team_lead`: within a project they lead, only their covered units (whole-project row → all; unit rows → those units only); with no lead rows in that project they are just a member → all units unchanged. |
+| `/manager/team-work` UI | `team_lead` employee picker loads via `/project-leads/my-team` (reporting tree); project dropdown gets a disabled "No projects assigned to you yet" placeholder when empty. |
+
 Consequence: a team_lead with **no** designated project can no longer assign anyone
 anywhere (previous D5 gap closed); once admin/manager designates them, the project
 appears in Team Projects + My Led Projects and they can place their team into it.

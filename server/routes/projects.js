@@ -580,14 +580,41 @@ router.get('/:projectId/units', verifyToken, async (req, res) => {
                 return res.status(403).json({ success: false, message: 'You are not assigned to this project' });
             }
         }
-        const result = await q(
-            `SELECT u.id, u.project_id, u.name, u.code, u.description, u.status, u.created_at,
-                    (SELECT COUNT(*) FROM project_employees pe WHERE pe.unit_id = u.id) as employees_count
-             FROM project_units u
-             WHERE u.project_id = $1
-             ORDER BY u.name`,
-            [req.params.projectId]
-        );
+
+        // P9/D11 parallel: within a project, a team_lead only sees the units
+        // they lead (whole-project row → all units; unit rows → those units).
+        // With no lead rows in this project, they are just a member → all units.
+        let unitRestrict = null;
+        if (req.user.role === 'team_lead') {
+            const leadRows = await q(
+                `SELECT unit_id FROM project_leads WHERE project_id = $1 AND lead_id = $2`,
+                [req.params.projectId, req.user.id]
+            );
+            if (leadRows.rows.length > 0 && !leadRows.rows.some(r => r.unit_id === null)) {
+                unitRestrict = leadRows.rows.map(r => r.unit_id);
+            }
+        }
+
+        let result;
+        if (unitRestrict === null) {
+            result = await q(
+                `SELECT u.id, u.project_id, u.name, u.code, u.description, u.status, u.created_at,
+                        (SELECT COUNT(*) FROM project_employees pe WHERE pe.unit_id = u.id) as employees_count
+                 FROM project_units u
+                 WHERE u.project_id = $1
+                 ORDER BY u.name`,
+                [req.params.projectId]
+            );
+        } else {
+            result = await q(
+                `SELECT u.id, u.project_id, u.name, u.code, u.description, u.status, u.created_at,
+                        (SELECT COUNT(*) FROM project_employees pe WHERE pe.unit_id = u.id) as employees_count
+                 FROM project_units u
+                 WHERE u.project_id = $1 AND u.id = ANY($2::int[])
+                 ORDER BY u.name`,
+                [req.params.projectId, unitRestrict]
+            );
+        }
         res.json({ success: true, units: result.rows });
     } catch (error) {
         console.error('Error fetching project units:', error);

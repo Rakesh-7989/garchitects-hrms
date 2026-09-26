@@ -4,6 +4,7 @@ const { query } = require('../config/database');
 const { verifyToken, isManager } = require('../middleware/auth');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
+const { leadCovers, myTreeIds } = require('./project-leads');
 
 // Self-healing query wrapper (mirrors sibling project routes).
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
@@ -114,6 +115,19 @@ router.get('/', verifyToken, isManager, async (req, res) => {
  */
 router.get('/projects', verifyToken, isManager, async (req, res) => {
     try {
+        // P9/D11 parallel: a team_lead may pick only the projects they lead
+        // (project-level row → project; unit rows → the project too, units are
+        // scoped separately via GET /projects/:id/units).
+        if (req.user.role === 'team_lead') {
+            const result = await q(
+                `SELECT DISTINCT p.id, p.name, p.status
+                 FROM project_leads pl JOIN projects p ON p.id = pl.project_id
+                 WHERE pl.lead_id = $1
+                 ORDER BY CASE p.status WHEN 'active' THEN 0 WHEN 'on_hold' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END, p.name`,
+                [req.user.id]
+            );
+            return res.json({ success: true, projects: result.rows });
+        }
         const result = await q(
             `SELECT id, name, status FROM projects
              ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'on_hold' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END, name`
@@ -162,6 +176,23 @@ router.post('/', verifyToken, isManager, async (req, res) => {
 
         const puErr = await validateProjectUnit(proj, unit);
         if (puErr) return res.status(puErr.status).json({ success: false, message: puErr.message });
+
+        // P9/D11 parallel: a team_lead may only assign work to their reporting
+        // tree, and only onto projects/units they lead. A project-less task has
+        // no project boundary, so the tree rule alone applies. Managers/admin/hr
+        // keep the D3 general power.
+        if (req.user.role === 'team_lead') {
+            const tree = await myTreeIds(req.user.id);
+            if (!tree.has(to)) {
+                return res.status(403).json({ success: false, message: 'You can only assign work to your own team members' });
+            }
+            if (proj !== null) {
+                const covers = await leadCovers(proj, unit, req.user.id);
+                if (!covers) {
+                    return res.status(403).json({ success: false, message: 'You can only assign work on projects/units you lead' });
+                }
+            }
+        }
 
         // Duplicate-open warning: same assignee + project + title already open.
         const dup = await q(
@@ -262,6 +293,14 @@ router.put('/:id', verifyToken, async (req, res) => {
                 if (!pu.ok) return res.status(pu.status).json({ success: false, message: pu.message });
                 const puErr = await validateProjectUnit(pu.proj, pu.unit);
                 if (puErr) return res.status(puErr.status).json({ success: false, message: puErr.message });
+                // P9/D11 parallel: a team_lead assigner may not move the work
+                // onto a project/unit they do not lead.
+                if (req.user.role === 'team_lead' && pu.proj !== null) {
+                    const covers = await leadCovers(pu.proj, pu.unit, req.user.id);
+                    if (!covers) {
+                        return res.status(403).json({ success: false, message: 'You can only assign work on projects/units you lead' });
+                    }
+                }
                 changes.project_id = pu.proj;
                 changes.unit_id = pu.unit;
             }
@@ -271,6 +310,14 @@ router.put('/:id', verifyToken, async (req, res) => {
                 const emp = await q(`SELECT id, status FROM employees WHERE id = $1`, [to]);
                 if (emp.rows.length === 0) return res.status(404).json({ success: false, message: 'Assigned employee not found' });
                 if (emp.rows[0].status !== 'active') return res.status(400).json({ success: false, message: 'Assignments can only target active employees' });
+                // P9/D11 parallel: a team_lead assigner may only reassign within
+                // their reporting tree.
+                if (req.user.role === 'team_lead') {
+                    const tree = await myTreeIds(req.user.id);
+                    if (!tree.has(to)) {
+                        return res.status(403).json({ success: false, message: 'You can only reassign within your own team' });
+                    }
+                }
                 changes.assigned_to = to;
             }
         }

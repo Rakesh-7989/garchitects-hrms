@@ -157,11 +157,13 @@
                 location.href = '/employee/dashboard';
                 return;
             }
+            currentRole = user.role;
             loadAssignments();
             loadEmployeesForPicker();
             loadProjectsForPicker();
         });
 
+        let currentRole = null;
         let assignments = [];
         let curFilter = 'all';
         let activeEmployees = [];
@@ -284,7 +286,16 @@
         }
 
         async function loadEmployeesForPicker() {
-            const data = await apiCall('/employees/directory');
+            // P9/D11 parallel: a team_lead's picker = their reporting tree
+            // (matches the server-side scope on POST/PUT). Manager/admin/hr see
+            // the full company directory (D3).
+            let data;
+            if (currentRole === 'team_lead') {
+                const d = await apiCall('/project-leads/my-team');
+                data = d && d.success ? { success: true, directory: d.team || [] } : d;
+            } else {
+                data = await apiCall('/employees/directory');
+            }
             if (!data || !data.success) return;
             activeEmployees = (data.directory || []).slice();
             const sel = document.getElementById('waAssignee');
@@ -301,7 +312,16 @@
             const data = await apiCall('/work-assignments/projects');
             if (!data || !data.success) return;
             const sel = document.getElementById('waProject');
-            (data.projects || []).forEach(p => {
+            const projects = data.projects || [];
+            if (currentRole === 'team_lead' && projects.length === 0) {
+                const o = document.createElement('option');
+                o.value = '';
+                o.textContent = 'No projects assigned to you yet';
+                o.disabled = true;
+                o.selected = true;
+                sel.appendChild(o);
+            }
+            projects.forEach(p => {
                 const o = document.createElement('option');
                 o.value = p.id;
                 o.textContent = p.name;
