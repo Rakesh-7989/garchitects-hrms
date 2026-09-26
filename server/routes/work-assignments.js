@@ -123,7 +123,7 @@ router.get('/projects', verifyToken, isManager, async (req, res) => {
                 `SELECT DISTINCT p.id, p.name, p.status
                  FROM project_leads pl JOIN projects p ON p.id = pl.project_id
                  WHERE pl.lead_id = $1
-                 ORDER BY CASE p.status WHEN 'active' THEN 0 WHEN 'on_hold' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END, p.name`,
+                 ORDER BY p.name`,
                 [req.user.id]
             );
             return res.json({ success: true, projects: result.rows });
