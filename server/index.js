@@ -58,6 +58,7 @@ app.use('/api/push', require('./routes/push'));
 app.use('/api/cron', require('./routes/cron'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/project-reports', require('./routes/project-reports'));
+app.use('/api/work-assignments', require('./routes/work-assignments'));
 app.use('/api/project-updates', require('./routes/project-updates'));
 app.use('/api/project-documents', require('./routes/project-documents'));
 
@@ -338,6 +339,31 @@ async function runMigrations() {
         await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_project_employees_unit ON project_employees(project_id, employee_id, unit_id) WHERE unit_id IS NOT NULL`);
         console.log('[Migration] project_units ensured; project_employees unit-aware.');
     } catch (e) { console.warn('[Migration] project_units migration skipped:', e.message); }
+
+    // Work Assignments: team-lead/manager assigns concrete tasks to active
+    // employees, optionally pinned to a project + unit. Additive only.
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS work_assignments (
+            id SERIAL PRIMARY KEY,
+            project_id INT REFERENCES projects(id) ON DELETE SET NULL,
+            unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
+            assigned_by INT NOT NULL REFERENCES employees(id),
+            assigned_to INT NOT NULL REFERENCES employees(id),
+            title VARCHAR(200) NOT NULL,
+            description TEXT,
+            priority VARCHAR(10) DEFAULT 'normal' CHECK (priority IN ('low','normal','high','urgent')),
+            due_date DATE,
+            status VARCHAR(20) DEFAULT 'assigned'
+                CHECK (status IN ('assigned','in_progress','completed','cancelled')),
+            completed_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_wa_assignee ON work_assignments(assigned_to, status)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_wa_assigner ON work_assignments(assigned_by, status)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_wa_project ON work_assignments(project_id)`);
+        console.log('[Migration] work_assignments ensured.');
+    } catch (e) { console.warn('[Migration] work_assignments migration skipped:', e.message); }
 
     // Rename customer → client: add the new column, copy existing data,
     // then use `client` everywhere. The old `customer` column is kept for

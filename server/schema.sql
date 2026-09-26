@@ -717,6 +717,32 @@ CREATE INDEX IF NOT EXISTS idx_project_daily_updates_employee_date ON project_da
 CREATE INDEX IF NOT EXISTS idx_pdu_unit ON project_daily_updates(unit_id);
 
 -- ============================================================
+-- 23. WORK ASSIGNMENTS (team-lead / manager assigns work to employees)
+-- ============================================================
+-- A concrete task assigned by a team_lead/manager/hr (or admin) to an active
+-- employee, optionally pinned to a project + unit. D3 (no reporting-tree
+-- enforcement): any of those roles may assign to any active employee.
+CREATE TABLE IF NOT EXISTS work_assignments (
+    id SERIAL PRIMARY KEY,
+    project_id INT REFERENCES projects(id) ON DELETE SET NULL,
+    unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
+    assigned_by INT NOT NULL REFERENCES employees(id),
+    assigned_to INT NOT NULL REFERENCES employees(id),
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    priority VARCHAR(10) DEFAULT 'normal' CHECK (priority IN ('low','normal','high','urgent')),
+    due_date DATE,
+    status VARCHAR(20) DEFAULT 'assigned'
+        CHECK (status IN ('assigned','in_progress','completed','cancelled')),
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_wa_assignee ON work_assignments(assigned_to, status);
+CREATE INDEX IF NOT EXISTS idx_wa_assigner ON work_assignments(assigned_by, status);
+CREATE INDEX IF NOT EXISTS idx_wa_project ON work_assignments(project_id);
+
+-- ============================================================
 -- PROJECT SETTINGS (for holiday config, etc.)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS project_settings (
