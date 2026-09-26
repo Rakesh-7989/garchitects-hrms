@@ -73,7 +73,9 @@ project-units (new, mounted at /api/projects/:projectId/units)
   GET    /api/projects/:projectId/units                  admin — list units (+ assigned count)
   POST   /api/projects/:projectId/units                  admin — create unit {name, code?, description?}
   PUT    /api/projects/:projectId/units/:unitId          admin — rename / update
-  DELETE /api/projects/:projectId/units/:unitId          admin — delete (assignments get unit=NULL; confirm)
+  DELETE /api/projects/:projectId/units/:unitId          admin — delete (assignments merged to no-unit
+                                                          when possible, else dropped; updates keep history,
+                                                          see §6 note)
 
 project assignment (extended)
   POST   /api/projects/:projectId/employees   body: { assignments: [{ employeeId, unitId|null }] }
@@ -203,9 +205,27 @@ overtime column drop are destructive and gated on your D1/D4 answers). Commit is
 
 | Phase | Scope | Status |
 |---|---|---|
-| P1 | Overtime removal (schema, attendance route, 2 pages) | ✅ shipped |
-| P2 | Units schema/migration + routes (units CRUD, unit-aware assignment/updates/reports) | ✅ shipped |
+| P1 | Overtime removal (schema, attendance route, 2 pages) | ✅ shipped + verified live 2026-09-26 |
+| P2 | Units schema/migration + routes (units CRUD, unit-aware assignment/updates/reports) | ✅ shipped + verified live 2026-09-26 |
 | P3 | Admin UI (units expander, assign/update unit dropdowns, overview units count) | ✅ shipped |
 | P4 | Employee UI (unit badges on cards/feed, unit dropdown in daily form) | ✅ shipped |
 | P5 | Work assignments: schema + route + scope | 🔜 next |
 | P6 | Work assignments UI (employee My Work + team-lead assign) | 🔜 next |
+
+**Unit-delete fix (commit `72f3638`, live-verified):** `ON DELETE SET NULL` on
+`project_employees.unit_id` collides with the partial unique `uq_project_employees_no_unit`
+when the employee already has a no-unit assignment on the project (SET NULL would create a
+second NULL row → 23505). The DELETE-units handler now clears assignment references first:
+null-out when no other no-unit row exists, otherwise drop the assignment row (updates keep
+history via their own SET NULL FK). Fresh `schema.sql` inits get the same protection because
+the merge runs at every unit delete regardless of FK action.
+
+**Live verification (2026-09-26, qa-units-final.mjs):** units CRUD + rename, per-unit employee
+assignment (legacy NULL row + multiple unit rows coexist), **two same-day updates** on
+different units (D2), `?unitId=` filter, PUT update unit change, foreign-unit rejection (400),
+referenced-unit deletes (both assignment-only and with daily updates), `GET /projects/my`
+units array for an assigned employee (verified via throwaway employee QA0001, permanently
+deleted after), employee-side POST with unitId, and full live-DB cleanup (0 leftover units /
+updates). Overtime: `attendance.overtime_hours` dropped by the startup migration (runs in the
+same ordered block as project_units creation, confirmed present) and zero `overtime` refs
+remain in `public/`.
