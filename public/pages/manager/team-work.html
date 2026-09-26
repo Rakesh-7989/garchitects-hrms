@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Work - G-Architects HRMS</title>
+    <link rel="icon" type="image/png" href="../../assets/images/fav-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#4F46E5">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="apple-touch-icon" href="/assets/images/apple-touch-icon.png">
+    <link rel="stylesheet" href="../../css/main.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .work-stat { padding: 18px 20px; background: var(--bg-card); border-radius: var(--radius-md); box-shadow: var(--shadow); border: 1px solid transparent; }
+        .work-stat .stat-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; margin-bottom: 10px; }
+        .work-stat .stat-num { font-size: 1.5rem; font-weight: 700; }
+        .work-stat .stat-label { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
+        .chip-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+        .chip-btn { border: 1px solid var(--border-light); background: var(--bg-card); color: var(--text-secondary); padding: 7px 14px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+        .chip-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .task-card { padding: 16px 18px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-md); margin-bottom: 12px; }
+        .task-card .task-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+        .task-card .task-title { font-weight: 600; font-size: 0.95rem; }
+        .task-card .task-meta { font-size: 0.78rem; color: var(--text-secondary); margin-top: 5px; line-height: 1.55; }
+        .task-card .task-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+        .task-desc { font-size: 0.85rem; margin-top: 8px; line-height: 1.5; }
+        .prio-high { background: #FEE2E2; color: #B91C1C; }
+        .prio-urgent { background: #FEE2E2; color: #991B1B; }
+        .prio-normal { background: #DBEAFE; color: #1D4ED8; }
+        .prio-low { background: #F3F4F6; color: #4B5563; }
+        .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 0.7rem; font-weight: 700; }
+        .due-overdue { background: #FEE2E2; color: #B91C1C; font-weight: 700; }
+        @media (max-width: 768px) {
+            .grid.grid-4 { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        }
+    </style>
+</head>
+<body class="employee-app">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo"><i class="fas fa-building" style="color:var(--primary-light);font-size:1.5rem;"></i><span style="font-size:1rem;font-weight:700;">G-Architects HRMS</span></div>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section-title">Main</div>
+            <a href="/employee/dashboard" class="nav-item"><i class="fas fa-tachometer-alt"></i><span class="nav-text">Dashboard</span></a>
+            <a href="/manager/my-team" id="myTeamLink" style="display:none;" class="nav-item"><i class="fas fa-users"></i><span class="nav-text">My Team</span></a>
+            <a href="/manager/team-work" id="teamWorkLink" style="display:none;" class="nav-item active"><i class="fas fa-tasks"></i><span class="nav-text">Team Work</span></a>
+            <div class="nav-section-title">My Info</div>
+            <a href="/employee/profile" class="nav-item"><i class="fas fa-user"></i><span class="nav-text">My Profile</span></a>
+            <a href="/employee/onboarding" class="nav-item"><i class="fas fa-user-plus"></i><span class="nav-text">My Onboarding</span></a>
+            <a href="/employee/my-projects" class="nav-item"><i class="fas fa-project-diagram"></i><span class="nav-text">My Projects</span></a>
+            <a href="/employee/my-work" class="nav-item"><i class="fas fa-list-check"></i><span class="nav-text">My Work</span></a>
+            <a href="/employee/attendance" class="nav-item"><i class="fas fa-clock"></i><span class="nav-text">Attendance</span></a>
+            <a href="/employee/regularization" class="nav-item"><i class="fas fa-clock-rotate-left"></i><span class="nav-text">Regularization</span></a>
+            <a href="/employee/leave" class="nav-item"><i class="fas fa-calendar-times"></i><span class="nav-text">Leave</span></a>
+            <a href="/employee/wfh" class="nav-item"><i class="fas fa-home"></i><span class="nav-text">WFH</span></a>
+            <a href="/employee/payslips" class="nav-item"><i class="fas fa-indian-rupee-sign"></i><span class="nav-text">Payslips</span></a>
+            <div class="nav-section-title">Company</div>
+            <a href="/employee/documents" class="nav-item"><i class="fas fa-file-alt"></i><span class="nav-text">Documents</span></a>
+            <a href="/employee/announcements" class="nav-item"><i class="fas fa-bullhorn"></i><span class="nav-text">Announcements</span></a>
+            <div class="nav-section-title">Support</div>
+            <a href="/employee/holidays" class="nav-item"><i class="fas fa-calendar-check"></i><span class="nav-text">Holidays</span></a>
+            <div class="nav-section-title">Resources</div>
+            <a href="/employee/directory" class="nav-item"><i class="fas fa-address-book"></i><span class="nav-text">Directory</span></a>
+            <a href="/employee/tickets" class="nav-item"><i class="fas fa-ticket-alt"></i><span class="nav-text">My Queries</span></a>
+        </nav>
+    </aside>
+
+    <main class="main-content" id="mainContent">
+        <header class="header">
+            <div class="header-left">
+                <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+                <h2 style="font-size:1.25rem;font-weight:600;">Team Work</h2>
+            </div>
+            <div class="header-right">
+                <button type="button" class="notification-btn" title="Notifications"><i class="fas fa-bell"></i><span class="notification-badge" id="notifBadge" style="display:none;"></span></button>
+                <button class="notification-btn" onclick="toggleDarkMode()" title="Toggle dark mode"><i class="fas fa-moon" id="themeIcon"></i></button>
+                <div style="position:relative">
+                    <button class="profile-btn" onclick="toggleProfileMenu()">
+                        <span class="profile-photo" id="profilePhoto" style="display:inline-flex;align-items:center;justify-content:center;background:var(--primary);color:white;border-radius:50%;width:36px;height:36px;font-size:0.8rem;font-weight:600;"></span>
+                        <span id="profileName" style="margin-left:8px;font-weight:500;"></span>
+                        <i class="fas fa-chevron-down" style="margin-left:4px;font-size:0.7rem;"></i>
+                    </button>
+                    <div class="profile-menu" id="profileMenu" style="display:none;">
+                        <a href="/employee/profile" class="profile-menu-item"><i class="fas fa-user"></i> My Profile</a>
+                        <div class="profile-menu-divider"></div>
+                        <a href="#" class="profile-menu-item danger" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div style="padding:30px;">
+            <div class="card" style="padding:20px;margin-bottom:24px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+                    <div style="font-weight:600;font-size:0.95rem;"><i class="fas fa-tasks" style="color:var(--primary);margin-right:8px;"></i>Work Assignments</div>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <span id="scopeLabel" style="font-size:0.75rem;color:var(--text-secondary);"></span>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="openCreateModal()"><i class="fas fa-plus"></i> Assign Work</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="loadAssignments(true)"><i class="fas fa-rotate-right"></i> Refresh</button>
+                    </div>
+                </div>
+                <div class="chip-bar">
+                    <button class="chip-btn active" data-f="all" onclick="setFilter('all')">All</button>
+                    <button class="chip-btn" data-f="assigned" onclick="setFilter('assigned')">Assigned</button>
+                    <button class="chip-btn" data-f="in_progress" onclick="setFilter('in_progress')">In Progress</button>
+                    <button class="chip-btn" data-f="completed" onclick="setFilter('completed')">Completed</button>
+                    <button class="chip-btn" data-f="cancelled" onclick="setFilter('cancelled')">Cancelled</button>
+                    <button class="chip-btn" data-f="overdue" onclick="setFilter('overdue')">Overdue</button>
+                </div>
+                <div id="assignmentList">
+                    <div class="spinner" style="margin:0 auto;"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="modal" id="workModal">
+        <div class="modal-content" style="max-width:520px;">
+            <div class="modal-header">
+                <h2 id="workModalTitle">Assign Work</h2>
+                <button onclick="closeWorkModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group"><label>Assign To *</label><select class="form-control" id="waAssignee"><option value="">Select employee…</option></select></div>
+                <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div class="form-group"><label>Priority</label><select class="form-control" id="waPriority"><option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+                    <div class="form-group"><label>Due Date</label><input type="date" class="form-control" id="waDue"></div>
+                </div>
+                <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div class="form-group"><label>Project</label><select class="form-control" id="waProject" onchange="onProjectChange()"><option value="">No project</option></select></div>
+                    <div class="form-group"><label>Unit</label><select class="form-control" id="waUnit"><option value="">No unit</option></select></div>
+                </div>
+                <div class="form-group"><label>Task Title *</label><input type="text" class="form-control" id="waTitle" maxlength="200" placeholder="e.g. Draft section drawings for Tower B"></div>
+                <div class="form-group"><label>Description</label><textarea class="form-control" id="waDesc" rows="3" placeholder="Details of the work expected"></textarea></div>
+                <div class="form-group" id="waStatusRow" style="display:none;"><label>Status</label><select class="form-control" id="waStatus"><option value="assigned">Assigned</option><option value="in_progress">In Progress</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>
+                <div class="modal-footer" style="padding:0;margin-top:12px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeWorkModal()">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="workSaveBtn" onclick="saveAssignment()"><i class="fas fa-paper-plane"></i> Assign</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../../js/auth.js"></script>
+    <script src="../../js/dashboard.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!checkAuth()) throw new Error('Not authenticated');
+            const user = getCurrentUser();
+            if (!['admin', 'manager', 'team_lead', 'hr'].includes(user.role)) {
+                location.href = '/employee/dashboard';
+                return;
+            }
+            loadAssignments();
+            loadEmployeesForPicker();
+            loadProjectsForPicker();
+        });
+
+        let assignments = [];
+        let curFilter = 'all';
+        let activeEmployees = [];
+        let projectUnits = [];
+        let editingId = null;
+        // Only legal status targets are offered (mirrors the server's LEGAL_MOVES).
+        const STATUS_TARGETS = {
+            assigned: ['assigned', 'in_progress', 'completed', 'cancelled'],
+            in_progress: ['in_progress', 'completed', 'cancelled'],
+            completed: ['completed'],
+            cancelled: ['cancelled']
+        };
+
+        function fillStatusOptions(cur) {
+            const sel = document.getElementById('waStatus');
+            sel.innerHTML = '';
+            (STATUS_TARGETS[cur] || [cur]).forEach(s => {
+                const o = document.createElement('option');
+                o.value = s;
+                o.textContent = s.replace('_', ' ');
+                sel.appendChild(o);
+            });
+            sel.value = cur;
+        }
+
+        function isOverdue(t) {
+            if (!t.due_date) return false;
+            if (t.status !== 'assigned' && t.status !== 'in_progress') return false;
+            return String(t.due_date).slice(0, 10) < new Date().toISOString().slice(0, 10);
+        }
+
+        async function loadAssignments(manual) {
+            const container = document.getElementById('assignmentList');
+            const data = await apiCall('/work-assignments');
+            if (!data || !data.success) {
+                container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);font-size:0.9rem;">Failed to load assignments. Please try again.</div>';
+                if (manual) showToast('Refresh failed', 'error');
+                return;
+            }
+            assignments = data.assignments || [];
+            const user = getCurrentUser();
+            const overlord = user && (user.role === 'admin' || user.role === 'hr');
+            document.getElementById('scopeLabel').textContent = overlord
+                ? 'Showing all assignments (' + assignments.length + ')'
+                : 'Showing assignments I created (' + assignments.length + ')';
+            renderFiltered();
+            if (manual) showToast('Refreshed', 'success');
+        }
+
+        function setFilter(f) {
+            curFilter = f;
+            document.querySelectorAll('.chip-btn').forEach(b => b.classList.toggle('active', b.dataset.f === f));
+            renderFiltered();
+        }
+
+        function filteredList() {
+            if (curFilter === 'all') return assignments;
+            if (curFilter === 'overdue') return assignments.filter(isOverdue);
+            return assignments.filter(a => a.status === curFilter);
+        }
+
+        function prioPill(p) {
+            const cls = p === 'low' ? 'prio-low' : p === 'high' ? 'prio-high' : p === 'urgent' ? 'prio-urgent' : 'prio-normal';
+            return '<span class="pill ' + cls + '">' + escapeHtml((p || 'normal').replace('_', ' ')) + '</span>';
+        }
+
+        function statusBadge(s) {
+            const map = {
+                assigned: ['badge-warning', 'Assigned'],
+                in_progress: ['badge-warning', 'In Progress'],
+                completed: ['badge-success', 'Completed'],
+                cancelled: ['badge-secondary', 'Cancelled']
+            };
+            const [cls, label] = map[s] || ['badge-secondary', (s || '').replace('_', ' ')];
+            return '<span class="badge ' + cls + '" style="font-size:0.68rem;">' + label + '</span>';
+        }
+
+        function cardActions(a) {
+            const user = getCurrentUser();
+            if (!user) return '';
+            const isAssigner = Number(a.assigned_by) === Number(user.id);
+            const overlord = user.role === 'admin' || user.role === 'hr';
+            const canEdit = isAssigner || overlord;
+            const canDelete = isAssigner || user.role === 'admin';
+            if (!canEdit && !canDelete) return '';
+            const btns = [];
+            if (canEdit) btns.push('<button class="btn btn-sm btn-primary" onclick="openEditModal(' + a.id + ')"><i class="fas fa-pen"></i> Edit</button>');
+            if (canDelete) btns.push('<button class="btn btn-sm btn-danger" onclick="withdraw(' + a.id + ')"><i class="fas fa-trash"></i> Withdraw</button>');
+            return btns.join('');
+        }
+
+        function taskCard(a) {
+            const dueHtml = a.due_date
+                ? '<span class="pill ' + (isOverdue(a) ? 'due-overdue' : 'prio-low') + '"><i class="fas fa-calendar-alt"></i> Due ' + formatDate(a.due_date) + (isOverdue(a) ? ' · Overdue' : '') + '</span>'
+                : '';
+            const assigneeHtml = '<span><i class="fas fa-user"></i> ' + escapeHtml((a.assigned_to_first || '') + ' ' + (a.assigned_to_last || '')) + ' <span style="opacity:0.7;">(' + escapeHtml(a.assigned_to_code || '') + ')</span></span>';
+            const projHtml = a.project_name ? '<span><i class="fas fa-project-diagram"></i> ' + escapeHtml(a.project_name) + (a.unit_name ? ' <span style="opacity:0.75;">/ ' + escapeHtml(a.unit_name) + '</span>' : '') + '</span>' : '';
+            const assignerHtml = a.assigned_by_code ? '<span><i class="fas fa-user-tie"></i> by ' + escapeHtml((a.assigned_by_first || '') + ' ' + (a.assigned_by_last || '')) + '</span>' : '';
+            const doneHtml = (a.status === 'completed' && a.completed_at) ? '<span><i class="fas fa-check-circle"></i> Completed ' + formatDate(a.completed_at) + '</span>' : '';
+            return '<div class="task-card">' +
+                '<div class="task-top">' +
+                    '<div><div class="task-title">' + escapeHtml(a.title) + ' ' + prioPill(a.priority) + '</div>' +
+                        '<div class="task-meta">' + [assigneeHtml, projHtml, assignerHtml].filter(Boolean).join(' &nbsp;·&nbsp; ') + '</div></div>' +
+                    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + statusBadge(a.status) + dueHtml + '</div>' +
+                '</div>' +
+                (a.description ? '<div class="task-desc">' + escapeHtml(a.description) + '</div>' : '') +
+                (doneHtml ? '<div class="task-meta" style="margin-top:8px;">' + doneHtml + '</div>' : '') +
+                '<div class="task-actions">' + cardActions(a) + '</div>' +
+            '</div>';
+        }
+
+        function renderFiltered() {
+            const container = document.getElementById('assignmentList');
+            const list = filteredList();
+            if (list.length === 0) {
+                container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary);"><i class="fas fa-clipboard-check" style="font-size:1.6rem;margin-bottom:10px;display:block;"></i>No assignments here.</div>';
+                return;
+            }
+            container.innerHTML = list.map(taskCard).join('');
+        }
+
+        async function loadEmployeesForPicker() {
+            const data = await apiCall('/employees/directory');
+            if (!data || !data.success) return;
+            activeEmployees = (data.directory || []).slice();
+            const sel = document.getElementById('waAssignee');
+            activeEmployees.sort((a, b) => String(a.first_name).localeCompare(String(b.first_name)));
+            activeEmployees.forEach(e => {
+                const o = document.createElement('option');
+                o.value = e.id;
+                o.textContent = e.first_name + ' ' + (e.last_name || '') + ' (' + e.employee_id + ') · ' + (e.designation_name || e.role || '');
+                sel.appendChild(o);
+            });
+        }
+
+        async function loadProjectsForPicker() {
+            const data = await apiCall('/work-assignments/projects');
+            if (!data || !data.success) return;
+            const sel = document.getElementById('waProject');
+            (data.projects || []).forEach(p => {
+                const o = document.createElement('option');
+                o.value = p.id;
+                o.textContent = p.name;
+                sel.appendChild(o);
+            });
+        }
+
+        async function onProjectChange() {
+            const sel = document.getElementById('waProject');
+            const uSel = document.getElementById('waUnit');
+            uSel.innerHTML = '<option value="">No unit</option>';
+            if (!sel.value) { projectUnits = []; return; }
+            const data = await apiCall('/projects/' + sel.value + '/units');
+            if (!data || !data.success) { projectUnits = []; return; }
+            projectUnits = data.units || [];
+            projectUnits.forEach(u => {
+                const o = document.createElement('option');
+                o.value = u.id;
+                o.textContent = u.name;
+                uSel.appendChild(o);
+            });
+        }
+
+        function openCreateModal() {
+            editingId = null;
+            document.getElementById('workModalTitle').textContent = 'Assign Work';
+            document.getElementById('waAssignee').value = '';
+            document.getElementById('waPriority').value = 'normal';
+            document.getElementById('waDue').value = '';
+            document.getElementById('waProject').value = '';
+            document.getElementById('waUnit').innerHTML = '<option value="">No unit</option>';
+            document.getElementById('waTitle').value = '';
+            document.getElementById('waDesc').value = '';
+            document.getElementById('waStatusRow').style.display = 'none';
+            document.getElementById('workSaveBtn').innerHTML = '<i class="fas fa-paper-plane"></i> Assign';
+            document.getElementById('workModal').classList.add('active');
+        }
+
+        function openEditModal(id) {
+            const a = assignments.find(x => x.id === id);
+            if (!a) return;
+            editingId = id;
+            document.getElementById('workModalTitle').textContent = 'Edit Assignment';
+            document.getElementById('waAssignee').value = a.assigned_to;
+            document.getElementById('waPriority').value = a.priority || 'normal';
+            document.getElementById('waDue').value = a.due_date ? String(a.due_date).slice(0, 10) : '';
+            document.getElementById('waProject').value = a.project_id ? a.project_id : '';
+            // repopulate units for the current project
+            const currentProject = a.project_id || '';
+            onProjectChange().then(() => {
+                if (currentProject && a.unit_id) document.getElementById('waUnit').value = a.unit_id;
+            });
+            document.getElementById('waTitle').value = a.title || '';
+            document.getElementById('waDesc').value = a.description || '';
+            document.getElementById('waStatusRow').style.display = 'block';
+            fillStatusOptions(a.status);
+            document.getElementById('workSaveBtn').innerHTML = '<i class="fas fa-save"></i> Save';
+            document.getElementById('workModal').classList.add('active');
+        }
+
+        function closeWorkModal() {
+            document.getElementById('workModal').classList.remove('active');
+        }
+
+        async function saveAssignment() {
+            const assignedTo = document.getElementById('waAssignee').value;
+            const title = document.getElementById('waTitle').value.trim();
+            if (!assignedTo) { showToast('Please select an employee', 'error'); return; }
+            if (!title) { showToast('Task title is required', 'error'); return; }
+            const payload = {
+                assignedTo: parseInt(assignedTo, 10),
+                title: title,
+                description: document.getElementById('waDesc').value.trim() || null,
+                priority: document.getElementById('waPriority').value,
+                dueDate: document.getElementById('waDue').value || null,
+                projectId: document.getElementById('waProject').value ? parseInt(document.getElementById('waProject').value, 10) : null,
+                unitId: document.getElementById('waUnit').value ? parseInt(document.getElementById('waUnit').value, 10) : null
+            };
+            if (editingId) payload.status = document.getElementById('waStatus').value;
+            const btn = document.getElementById('workSaveBtn');
+            btn.disabled = true;
+            const r = editingId
+                ? await apiCall('/work-assignments/' + editingId, 'PUT', payload)
+                : await apiCall('/work-assignments', 'POST', payload);
+            btn.disabled = false;
+            if (r && r.success) {
+                showToast(editingId ? 'Assignment updated' : 'Work assigned', 'success');
+                closeWorkModal();
+                loadAssignments();
+            } else if (r && r.message) {
+                showToast(r.message, 'error');
+            }
+        }
+
+        async function withdraw(id) {
+            const a = assignments.find(x => x.id === id);
+            if (!a) return;
+            if (!confirm('Withdraw this assignment for ' + (a.assigned_to_first || '') + ' ' + (a.assigned_to_last || '') + '?')) return;
+            const r = await apiCall('/work-assignments/' + id, 'DELETE');
+            if (r && r.success) {
+                showToast('Assignment withdrawn', 'success');
+                loadAssignments();
+            } else if (r && r.message) {
+                showToast(r.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

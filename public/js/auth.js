@@ -345,6 +345,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const link = document.getElementById('myTeamLink');
             if (link) link.style.display = 'flex';
         }
+        // Team Work link: managers/TL/HR plus admin (full assignment overview).
+        if (u && (u.role === 'admin' || u.role === 'manager' || u.role === 'team_lead' || u.role === 'hr')) {
+            const link = document.getElementById('teamWorkLink');
+            if (link) link.style.display = 'flex';
+        }
     } catch (e) {}
 });
 

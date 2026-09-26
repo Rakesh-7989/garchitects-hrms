@@ -107,6 +107,25 @@ router.get('/', verifyToken, isManager, async (req, res) => {
 });
 
 /**
+ * GET /api/work-assignments/projects
+ * Lightweight project list for the assignment picker (project dropdown).
+ * Scoped to isManager (same guard as POST /) so team_lead/manager/hr/admin
+ * can assign to any project without needing the admin-only /api/projects.
+ */
+router.get('/projects', verifyToken, isManager, async (req, res) => {
+    try {
+        const result = await q(
+            `SELECT id, name, status FROM projects
+             ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'on_hold' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END, name`
+        );
+        res.json({ success: true, projects: result.rows });
+    } catch (error) {
+        console.error('Error listing projects for assignment picker:', error);
+        res.status(500).json({ success: false, message: (error && error.message) || 'Server error' });
+    }
+});
+
+/**
  * POST /api/work-assignments
  * Create an assignment. Any team_lead/manager/hr/admin may assign to ANY active
  * employee (D3 — no reporting-tree restriction).

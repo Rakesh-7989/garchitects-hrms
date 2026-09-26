@@ -94,9 +94,7 @@ function servePortalPage(section) {
 app.get('/login', (req, res) => {
     res.sendFile(path.join(__dirname, '../public/pages/login.html'));
 });
-app.get('/manager/my-team', (req, res) => {
-    res.sendFile(path.join(__dirname, '../public/pages/manager/my-team.html'));
-});
+app.get('/manager/:page', servePortalPage('manager'));
 app.get('/employee/:page', servePortalPage('employee'));
 app.get('/admin/:page', servePortalPage('admin'));
 
