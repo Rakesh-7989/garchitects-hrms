@@ -96,4 +96,62 @@ router.get('/attendance', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
+// @route   GET /api/reports/work-assignments
+// @desc    Work assignment report: status summary, per-employee, per-project,
+//          plus the 10 most recent assignments.
+// @access  Private (Admin)
+router.get('/work-assignments', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const openFilter = `wa.status IN ('assigned','in_progress')`;
+        const [byStatus, byEmployee, byProject, recent] = await Promise.all([
+            query(`SELECT wa.status, COUNT(*)::int as count FROM work_assignments wa GROUP BY wa.status`),
+            query(
+                `SELECT at2.employee_id, at2.first_name, at2.last_name, wa.assigned_to,
+                        SUM(CASE WHEN ${openFilter} THEN 1 ELSE 0 END)::int as open_count,
+                        SUM(CASE WHEN wa.status = 'completed' THEN 1 ELSE 0 END)::int as completed_count,
+                        COUNT(*)::int as total
+                 FROM work_assignments wa
+                 JOIN employees at2 ON at2.id = wa.assigned_to
+                 GROUP BY at2.id, at2.employee_id, at2.first_name, at2.last_name
+                 ORDER BY open_count DESC, at2.first_name`
+            ),
+            query(
+                `SELECT COALESCE(p.name, 'No project') as project, wa.project_id,
+                        COUNT(*)::int as total,
+                        SUM(CASE WHEN ${openFilter} THEN 1 ELSE 0 END)::int as open_count,
+                        SUM(CASE WHEN wa.status = 'completed' THEN 1 ELSE 0 END)::int as completed_count
+                 FROM work_assignments wa
+                 LEFT JOIN projects p ON p.id = wa.project_id
+                 GROUP BY p.id, p.name
+                 ORDER BY total DESC`
+            ),
+            query(
+                `SELECT wa.id, wa.title, wa.status, wa.due_date, wa.completed_at, wa.created_at,
+                        at2.first_name as assignee_first, at2.last_name as assignee_last,
+                        at2.employee_id as assignee_code,
+                        ab.first_name as assigner_first, ab.last_name as assigner_last,
+                        COALESCE(p.name, '') as project_name
+                 FROM work_assignments wa
+                 JOIN employees at2 ON at2.id = wa.assigned_to
+                 JOIN employees ab ON ab.id = wa.assigned_by
+                 LEFT JOIN projects p ON p.id = wa.project_id
+                 ORDER BY wa.created_at DESC
+                 LIMIT 10`
+            )
+        ]);
+        res.json({
+            success: true,
+            report: {
+                byStatus: byStatus.rows,
+                byEmployee: byEmployee.rows,
+                byProject: byProject.rows,
+                recent: recent.rows
+            }
+        });
+    } catch (error) {
+        console.error('Work assignments report error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 module.exports = router;

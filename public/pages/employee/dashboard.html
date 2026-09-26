@@ -125,7 +125,7 @@
                 <div id="birthdayList"></div>
             </div>
 
-            <div class="grid grid-2 mb-3">
+            <div class="grid grid-3 mb-3">
                 <div class="card slide-up stagger-1 checkin-widget">
                     <div class="clock-section">
                         <div class="clock-display" id="liveClock">--:--:--</div>
@@ -153,6 +153,16 @@
                         <div class="today-status-row"><span class="today-status-label">Break Start</span><span class="today-status-value" id="statusBreakStart">--</span></div>
                         <div class="today-status-row"><span class="today-status-label">Break End</span><span class="today-status-value" id="statusBreakEnd">--</span></div>
                         <div class="today-status-row"><span class="today-status-label">Status</span><span class="today-status-value" id="statusBadge"></span></div>
+                    </div>
+                </div>
+
+                <div class="card slide-up stagger-3">
+                    <div class="card-header">
+                        <h3 style="font-weight:600;font-size:1.05rem;"><i class="fas fa-list-check" style="color:var(--success);margin-right:8px;"></i>My Work</h3>
+                        <a href="/employee/my-work" style="font-size:0.85rem;color:var(--primary);text-decoration:none;font-weight:500;">View All</a>
+                    </div>
+                    <div id="dashboardMyWork">
+                        <div style="text-align:center;padding:20px;color:var(--text-secondary);"><div class="spinner" style="margin:0 auto;"></div></div>
                     </div>
                 </div>
             </div>
@@ -193,6 +203,20 @@
                     <span class="quick-action-label">My Documents</span>
                     <span class="quick-action-desc">Manage documents</span>
                 </a>
+            </div>
+
+            <div class="card slide-up stagger-1 mb-3" id="managerWorkCard" style="display:none;">
+                <div class="card-header">
+                    <h3 style="font-weight:600;font-size:1.05rem;"><i class="fas fa-tasks" style="color:var(--primary);margin-right:8px;"></i>Work Assignments Pulse</h3>
+                    <a href="/manager/team-work" style="font-size:0.85rem;color:var(--primary);text-decoration:none;font-weight:500;">Manage</a>
+                </div>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+                    <div style="flex:1;min-width:120px;text-align:center;padding:12px 8px;background:var(--primary-50);border-radius:12px;"><div style="font-size:1.4rem;font-weight:700;" id="waPulseOpen">0</div><div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">Open</div></div>
+                    <div style="flex:1;min-width:120px;text-align:center;padding:12px 8px;background:#FEF3C7;border-radius:12px;"><div style="font-size:1.4rem;font-weight:700;" id="waPulseProgress">0</div><div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">In Progress</div></div>
+                    <div style="flex:1;min-width:120px;text-align:center;padding:12px 8px;background:#D1FAE5;border-radius:12px;"><div style="font-size:1.4rem;font-weight:700;" id="waPulseDone">0</div><div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">Completed</div></div>
+                    <div style="flex:1;min-width:120px;text-align:center;padding:12px 8px;background:#FEE2E2;border-radius:12px;"><div style="font-size:1.4rem;font-weight:700;" id="waPulseOverdue">0</div><div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">Overdue</div></div>
+                </div>
+                <div id="managerPulseList"></div>
             </div>
 
             <div class="grid grid-2 mb-3">
@@ -286,6 +310,11 @@
             loadUpcomingHolidays();
             loadLatestAnnouncements();
             loadBirthdays();
+            loadMyWorkWidget();
+            if (user && ['admin', 'manager', 'team_lead', 'hr'].includes(user.role)) {
+                document.getElementById('managerWorkCard').style.display = 'block';
+                loadManagerPulse();
+            }
         });
 
         function getTotalBreakSeconds(attendance, now) {
@@ -812,6 +841,89 @@
             } else {
                 showEmptyState(container, 'fa-bullhorn', 'No Announcements', 'No announcements yet');
             }
+        }
+
+        // ---------- Work assignments widgets (Phase: assignment awareness) ----------
+        function isOpenWA(t) {
+            return t.status === 'assigned' || t.status === 'in_progress';
+        }
+        function isOverdueWA(t) {
+            if (!t.due_date || !isOpenWA(t)) return false;
+            return String(t.due_date).slice(0, 10) < getTodayIST();
+        }
+        function waBadgeClass(s) {
+            return s === 'completed' ? 'badge-success' : s === 'cancelled' ? 'badge-secondary' : 'badge-warning';
+        }
+        function waStatusLabel(s) {
+            const lbl = String(s || 'assigned').replace('_', ' ');
+            return lbl.charAt(0).toUpperCase() + lbl.slice(1);
+        }
+        function waMiniRow(t) {
+            const overdue = isOverdueWA(t);
+            const ctx = overdue ? '<span style="color:var(--danger);font-weight:600;">(overdue)</span>' : '';
+            return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border-light);border-radius:8px;margin-bottom:6px;font-size:0.8rem;">' +
+                '<div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(t.title) + ' ' + ctx + '</div>' +
+                '<a href="/employee/my-work" style="color:var(--primary);font-weight:600;white-space:nowrap;">Open <i class="fas fa-arrow-right"></i></a>' +
+                '</div>';
+        }
+
+        async function loadMyWorkWidget() {
+            const el = document.getElementById('dashboardMyWork');
+            if (!el) return;
+            const data = await apiCall('/work-assignments/my');
+            if (!data || !data.success) {
+                el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:0.82rem;">Could not load your work.</div>';
+                return;
+            }
+            const list = data.assignments || [];
+            const open = list.filter(t => t.status === 'assigned');
+            const prog = list.filter(t => t.status === 'in_progress');
+            const overdue = list.filter(isOverdueWA);
+            const urgent = list.filter(isOpenWA)
+                .sort((a, b) => (isOverdueWA(b) ? 1 : 0) - (isOverdueWA(a) ? 1 : 0))
+                .slice(0, 3);
+            let html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">' +
+                '<div style="text-align:center;padding:10px 6px;background:var(--primary-50);border-radius:10px;"><div style="font-size:1.3rem;font-weight:700;">' + open.length + '</div><div style="font-size:0.7rem;color:var(--text-secondary);">Open</div></div>' +
+                '<div style="text-align:center;padding:10px 6px;background:#FEF3C7;border-radius:10px;"><div style="font-size:1.3rem;font-weight:700;">' + prog.length + '</div><div style="font-size:0.7rem;color:var(--text-secondary);">In Progress</div></div>' +
+                '<div style="text-align:center;padding:10px 6px;background:#FEE2E2;border-radius:10px;"><div style="font-size:1.3rem;font-weight:700;color:' + (overdue.length ? 'var(--danger)' : 'inherit') + ';">' + overdue.length + '</div><div style="font-size:0.7rem;color:var(--text-secondary);">Overdue</div></div>' +
+                '</div>';
+            if (urgent.length === 0) {
+                html += '<div style="text-align:center;padding:10px;color:var(--text-secondary);font-size:0.8rem;">No open assignments 🎉</div>';
+            } else {
+                html += urgent.map(waMiniRow).join('');
+            }
+            el.innerHTML = html;
+        }
+
+        async function loadManagerPulse() {
+            const el = document.getElementById('managerPulseList');
+            if (!el) return;
+            const data = await apiCall('/work-assignments');
+            if (!data || !data.success) {
+                el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:0.82rem;">Could not load assignments.</div>';
+                return;
+            }
+            const list = data.assignments || [];
+            document.getElementById('waPulseOpen').textContent = list.filter(t => t.status === 'assigned').length;
+            document.getElementById('waPulseProgress').textContent = list.filter(t => t.status === 'in_progress').length;
+            document.getElementById('waPulseDone').textContent = list.filter(t => t.status === 'completed').length;
+            document.getElementById('waPulseOverdue').textContent = list.filter(isOverdueWA).length;
+            if (list.length === 0) {
+                el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:0.82rem;">No assignments yet — <a href="/manager/team-work" style="color:var(--primary);">assign work</a>.</div>';
+                return;
+            }
+            const recent = list.slice(0, 5);
+            el.innerHTML = recent.map(a => {
+                const who = escapeHtml((a.assigned_to_first || '') + ' ' + (a.assigned_to_last || ''));
+                const meta = (a.project_name ? escapeHtml(a.project_name) : 'No project') + (a.due_date ? ' &middot; due ' + formatDate(a.due_date) : '');
+                return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border-light);border-radius:8px;margin-bottom:6px;font-size:0.82rem;">' +
+                    '<div style="min-width:0;overflow:hidden;">' +
+                    '<div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(a.title) + ' <span style="color:var(--text-secondary);font-weight:400;">&rarr; ' + who + '</span></div>' +
+                    '<div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">' + meta + '</div>' +
+                    '</div>' +
+                    '<span class="badge ' + waBadgeClass(a.status) + '" style="font-size:0.64rem;white-space:nowrap;">' + waStatusLabel(a.status) + '</span>' +
+                    '</div>';
+            }).join('');
         }
     </script>
 </body>

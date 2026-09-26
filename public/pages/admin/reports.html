@@ -122,6 +122,56 @@
                     </table>
                 </div>
             </div>
+
+            <div class="card" id="waReportCard">
+                <div class="card-header">
+                    <h3 style="font-weight:600;"><i class="fas fa-tasks" style="color:var(--primary);"></i> Work Assignments Report</h3>
+                    <a href="/manager/team-work" style="font-size:0.85rem;color:var(--primary);text-decoration:none;font-weight:500;">Manage &rarr;</a>
+                </div>
+
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
+                    <div style="flex:1;min-width:100px;text-align:center;padding:12px 8px;background:var(--bg-secondary);border-radius:12px;"><div style="font-size:1.4rem;font-weight:700;" id="waTotal">0</div><div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">Total</div></div>
+                    <div style="flex:1;min-width:100px;text-align:center;padding:12px 8px;background:var(--primary-50);border-radius:12px;"><div style="font-size:1.4rem;font-weight:700;" id="waOpen">0</div><div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">Open</div></div>
+                    <div style="flex:1;min-width:100px;text-align:center;padding:12px 8px;background:#FEF3C7;border-radius:12px;"><div style="font-size:1.4rem;font-weight:700;" id="waProgress">0</div><div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">In Progress</div></div>
+                    <div style="flex:1;min-width:100px;text-align:center;padding:12px 8px;background:#D1FAE5;border-radius:12px;"><div style="font-size:1.4rem;font-weight:700;" id="waCompleted">0</div><div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">Completed</div></div>
+                    <div style="flex:1;min-width:100px;text-align:center;padding:12px 8px;background:#F3F4F6;border-radius:12px;"><div style="font-size:1.4rem;font-weight:700;" id="waCancelled">0</div><div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">Cancelled</div></div>
+                </div>
+
+                <div class="grid grid-2" style="margin-bottom:20px;gap:20px;">
+                    <div>
+                        <h4 style="font-weight:600;font-size:0.95rem;margin-bottom:10px;"><i class="fas fa-users" style="color:var(--secondary);margin-right:6px;"></i> By Employee</h4>
+                        <div class="table-container" style="max-height:320px;overflow-y:auto;">
+                            <table>
+                                <thead><tr><th>Employee</th><th>Code</th><th>Open</th><th>Completed</th><th>Total</th></tr></thead>
+                                <tbody id="waByEmployee">
+                                    <tr><td colspan="5" style="text-align:center;padding:20px;"><div class="spinner" style="margin:0 auto;"></div></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="font-weight:600;font-size:0.95rem;margin-bottom:10px;"><i class="fas fa-building" style="color:var(--info);margin-right:6px;"></i> By Project</h4>
+                        <div class="table-container" style="max-height:320px;overflow-y:auto;">
+                            <table>
+                                <thead><tr><th>Project</th><th>Open</th><th>Completed</th><th>Total</th></tr></thead>
+                                <tbody id="waByProject">
+                                    <tr><td colspan="4" style="text-align:center;padding:20px;"><div class="spinner" style="margin:0 auto;"></div></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <h4 style="font-weight:600;font-size:0.95rem;margin-bottom:10px;"><i class="fas fa-history" style="color:var(--accent);margin-right:6px;"></i> Recent Assignments</h4>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Assignment</th><th>Assignee</th><th>Assigned By</th><th>Project</th><th>Status</th><th>Due</th></tr></thead>
+                        <tbody id="waRecent">
+                            <tr><td colspan="6" style="text-align:center;padding:20px;"><div class="spinner" style="margin:0 auto;"></div></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -142,12 +192,14 @@
             document.getElementById('attYear').value = currentYear;
             loadDeptReport();
             loadAttendanceReport();
+            loadWorkAssignmentsReport();
         });
 
         // Re-render charts with theme-appropriate colors when dark mode toggles.
         document.addEventListener('themechange', () => {
             loadDeptReport();
             loadAttendanceReport();
+            loadWorkAssignmentsReport();
         });
 
         function getChartColors() {
@@ -259,6 +311,66 @@
                             x: { ticks: { color: chartColors.text }, grid: { display: false } }
                         }
                     }
+                });
+            }
+        }
+
+        async function loadWorkAssignmentsReport() {
+            const d = await apiCall('/reports/work-assignments');
+            const statusMap = {};
+            if (d && d.success) {
+                const r = d.report;
+                (r.byStatus || []).forEach(s => { statusMap[s.status] = s.count; });
+                const count = key => parseInt(statusMap[key] || 0, 10);
+                document.getElementById('waTotal').textContent = (r.byStatus || []).reduce((sum, s) => sum + parseInt(s.count, 10), 0);
+                document.getElementById('waOpen').textContent = count('assigned');
+                document.getElementById('waProgress').textContent = count('in_progress');
+                document.getElementById('waCompleted').textContent = count('completed');
+                document.getElementById('waCancelled').textContent = count('cancelled');
+
+                const empEl = document.getElementById('waByEmployee');
+                if ((r.byEmployee || []).length === 0) {
+                    empEl.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-secondary);">No assignments yet</td></tr>';
+                } else {
+                    empEl.innerHTML = r.byEmployee.map(e =>
+                        '<tr><td>' + escapeHtml(e.first_name + ' ' + (e.last_name || '')) + '</td>' +
+                        '<td>' + escapeHtml(e.employee_id || '') + '</td>' +
+                        '<td><span class="badge badge-warning">' + e.open_count + '</span></td>' +
+                        '<td><span class="badge badge-success">' + e.completed_count + '</span></td>' +
+                        '<td>' + e.total + '</td></tr>'
+                    ).join('');
+                }
+
+                const projEl = document.getElementById('waByProject');
+                if ((r.byProject || []).length === 0) {
+                    projEl.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-secondary);">No assignments yet</td></tr>';
+                } else {
+                    projEl.innerHTML = r.byProject.map(p =>
+                        '<tr><td>' + escapeHtml(p.project) + '</td>' +
+                        '<td><span class="badge badge-warning">' + p.open_count + '</span></td>' +
+                        '<td><span class="badge badge-success">' + p.completed_count + '</span></td>' +
+                        '<td>' + p.total + '</td></tr>'
+                    ).join('');
+                }
+
+                const recentEl = document.getElementById('waRecent');
+                if ((r.recent || []).length === 0) {
+                    recentEl.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-secondary);">No assignments yet</td></tr>';
+                } else {
+                    recentEl.innerHTML = r.recent.map(a =>
+                        '<tr><td style="font-weight:500;">' + escapeHtml(a.title) + '</td>' +
+                        '<td>' + escapeHtml((a.assignee_first || '') + ' ' + (a.assignee_last || '')) + ' <span style="font-size:0.72rem;color:var(--text-secondary);">' + escapeHtml(a.assignee_code || '') + '</span></td>' +
+                        '<td>' + escapeHtml((a.assigner_first || '') + ' ' + (a.assigner_last || '')) + '</td>' +
+                        '<td>' + escapeHtml(a.project_name || '—') + '</td>' +
+                        '<td><span class="badge badge-' + (a.status === 'completed' ? 'success' : a.status === 'cancelled' ? 'secondary' : 'warning') + '">' + escapeHtml(String(a.status || '').replace('_', ' ')) + '</span></td>' +
+                        '<td>' + (a.due_date ? escapeHtml(String(a.due_date).slice(0, 10)) : '—') + '</td></tr>'
+                    ).join('');
+                }
+            } else {
+                document.getElementById('waTotal').textContent = '—';
+                ['waByEmployee', 'waByProject', 'waRecent'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-secondary);">Could not load report</td></tr>';
                 });
             }
         }
