@@ -518,6 +518,15 @@ was already admin-only (verified in Phase C: HR POST /projects 403), and the TL 
 your-team flow (led-projects.html) was already restricted to the TL's led projects +
 own reporting tree.
 
+**Suggested + approved (same day): one-line "Latest" on employee project cards.**
+Instead of a full feed, each card in `my-projects.html` now shows the most recent
+management progress note as a compact highlighted line: `Latest — <category>
+[<unit>] <description…> · <date> · <author> (<role>)`. It prefers project-level or
+the units the employee is actually assigned to (`/projects/my` returns only the
+caller's own assignment units), falling back to the newest note of any scope on the
+project. Powered by the same read-only `GET /api/project-status-updates` (employee
+scoping already asserted live SU-13); employees still never author.
+
 ### 13.5 Verification
 
 - `node --check` on all touched JS + every inline `<script>` of the four pages (extraction
@@ -531,3 +540,6 @@ own reporting tree.
 - Designation matrix (this follow-up): designator = admin/manager only — asserted live
   (HR POST /project-leads 403, manager POST 201, HR GET + non-lead TL GET
   /project-leads 200 read-only).
+- "Latest" line: page-level live check — `my-projects.html` serves 200 with the
+  `latestForProject` / `statusLatestLine` markers; the underlying read-only GET is
+  already covered by SU-13 (assigned employee sees their project updates).
