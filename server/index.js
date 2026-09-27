@@ -61,6 +61,7 @@ app.use('/api/project-reports', require('./routes/project-reports'));
 app.use('/api/work-assignments', require('./routes/work-assignments'));
 app.use('/api/project-leads', require('./routes/project-leads'));
 app.use('/api/project-updates', require('./routes/project-updates'));
+app.use('/api/project-status-updates', require('./routes/project-status-updates'));
 app.use('/api/project-documents', require('./routes/project-documents'));
 
 // Static files (mounted after API routes so API paths always take precedence)

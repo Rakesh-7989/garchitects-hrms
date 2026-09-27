@@ -678,6 +678,9 @@
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'updates')">
                                 <i class="fas fa-calendar-day"></i> Daily Updates
                             </button>
+                            <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'pstatus')">
+                                <i class="fas fa-bullhorn"></i> Status Updates
+                            </button>
                             <button class="btn btn-secondary btn-sm" onclick="toggleExpand(${p.id}, 'documents')">
                                 <i class="fas fa-folder-open"></i> Documents
                             </button>
@@ -694,6 +697,9 @@
                     </div>
                     <div id="expand-updates-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="updates-content-${p.id}"></div>
+                    </div>
+                    <div id="expand-pstatus-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
+                        <div id="pstatus-content-${p.id}"></div>
                     </div>
                     <div id="expand-documents-${p.id}" style="display:none;border-top:1px solid var(--border);padding:16px 20px;background:var(--bg-light);">
                         <div id="documents-content-${p.id}"></div>
@@ -788,6 +794,7 @@
             expandedSections[key] = true;
             if (type === 'documents') await loadDocuments(projectId);
             else if (type === 'updates') await loadUpdates(projectId);
+            else if (type === 'pstatus') await loadStatusUpdates(projectId);
             else if (type === 'units') await loadUnits(projectId);
             else await loadEmployeesForProject(projectId);
         }
@@ -1725,6 +1732,164 @@
                 showToast('Daily update deleted');
                 await loadUpdates(projectId);
                 if (typeof overviewLoaded !== 'undefined' && overviewLoaded) loadOverview();
+            } else {
+                showToast(data?.message || 'Failed to delete update', 'error');
+            }
+        }
+
+        // ===================== PROJECT / UNIT STATUS UPDATES =====================
+        // Management-level progress notes — posted by team leads & managers.
+        // Admin page user is always an admin here, so the composer is always
+        // shown and every post can be edited/deleted.
+        let psuCache = {};
+        let psuEdit = {};
+
+        function psuCategoryLabel(cat) {
+            const m = { progress: 'Progress', site_status: 'Site Status', coordination: 'Coordination', risk: 'Risk', milestone: 'Milestone', approval: 'Approval', other: 'Other' };
+            return m[cat] || String(cat || 'other').replace(/_/g, ' ');
+        }
+
+        const PSU_CATEGORY_OPTIONS = [
+            ['progress', 'Progress'], ['site_status', 'Site Status'], ['coordination', 'Coordination'],
+            ['risk', 'Risk'], ['milestone', 'Milestone'], ['approval', 'Approval'], ['other', 'Other']
+        ].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+
+        function resetPsuForm(projectId) {
+            psuEdit[projectId] = null;
+            const unitEl = document.getElementById(`psuUnit-${projectId}`);
+            if (unitEl) unitEl.value = '';
+            const catEl = document.getElementById(`psuCat-${projectId}`);
+            if (catEl) catEl.value = 'progress';
+            const descEl = document.getElementById(`psuDesc-${projectId}`);
+            if (descEl) descEl.value = '';
+            const dateEl = document.getElementById(`psuDate-${projectId}`);
+            if (dateEl) dateEl.value = new Date().toISOString().slice(0, 10);
+            const badge = document.getElementById(`psuBadge-${projectId}`);
+            if (badge) badge.style.display = 'none';
+            const cancel = document.getElementById(`psuCancel-${projectId}`);
+            if (cancel) cancel.style.display = 'none';
+            const btn = document.getElementById(`psuBtn-${projectId}`);
+            if (btn) btn.innerHTML = '<i class="fas fa-paper-plane"></i> Post Update';
+        }
+
+        async function loadStatusUpdates(projectId) {
+            const container = document.getElementById(`pstatus-content-${projectId}`);
+            if (!container) return;
+            const data = await apiCall(`/project-status-updates?projectId=${projectId}&limit=100`);
+            const ups = (data && data.success && data.updates) || [];
+            psuCache[projectId] = ups;
+
+            let unitsStr = '';
+            try {
+                const udata = await apiCall(`/projects/${projectId}/units`);
+                const units = (udata && udata.success && (udata.units || udata.data)) || [];
+                if (Array.isArray(units) && units.length) {
+                    unitsStr = units.map(u => `<option value="${u.id}">${esc(u.name || '')}${u.code ? ' (' + esc(u.code) + ')' : ''}</option>`).join('');
+                }
+            } catch (e) { /* unit load is optional */ }
+
+            const feed = ups.length ? ups.map(u => {
+                const author = `${esc(u.first_name || '')} ${esc(u.last_name || '')}`.trim() || esc(u.emp_code || '');
+                return `
+                    <div style="padding:10px 0;border-bottom:1px dashed var(--border);">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+                            <div style="min-width:0;flex:1;">
+                                <div style="font-size:0.85rem;font-weight:600;">${String(u.update_date).slice(0, 10)} &middot; ${u.unit_name ? `<span class="badge badge-secondary" style="margin-right:4px;"><i class="fas fa-layer-group"></i> ${esc(u.unit_name)}</span>` : ''}<span class="badge badge-info">${esc(psuCategoryLabel(u.category))}</span></div>
+                                <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">${author}${u.author_role ? ' <span style="color:var(--text-tertiary);">' + esc(String(u.author_role).replace('_', ' ')) + '</span>' : ''}${u.notes ? ` <span style="color:var(--text-tertiary);">&middot; ${esc(u.notes)}</span>` : ''}</div>
+                                <div style="font-size:0.82rem;margin-top:4px;color:var(--text-primary);">${esc(u.description)}</div>
+                            </div>
+                            <div style="display:flex;gap:6px;flex-shrink:0;">
+                                <button class="btn btn-secondary btn-sm" onclick="editPsu(${projectId}, ${u.id})" title="Edit"><i class="fas fa-pen"></i></button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteStatusUpdate(${projectId}, ${u.id})" title="Delete"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('') : '<div style="padding:8px 0;color:var(--text-secondary);font-size:0.85rem;">No project/unit updates yet. Post the first one.</div>';
+
+            container.innerHTML = `
+                <div style="font-weight:600;font-size:0.9rem;margin-bottom:10px;"><i class="fas fa-bullhorn" style="color:var(--primary);margin-right:6px;"></i>Project / Unit Status Updates <span style="font-size:0.75rem;color:var(--text-secondary);font-weight:400;"> — posted by team leads &amp; managers</span></div>
+                <div style="border:1px solid var(--border);background:var(--bg-card);border-radius:8px;padding:12px 14px;margin-bottom:12px;">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px;">
+                        <div>
+                            <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">Unit (optional)</label>
+                            <select class="form-control" id="psuUnit-${projectId}" style="font-size:0.85rem;"><option value="">-- Project (no unit) --</option>${unitsStr}</select>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">Date</label>
+                            <input type="date" class="form-control" id="psuDate-${projectId}" value="${new Date().toISOString().slice(0, 10)}" style="font-size:0.85rem;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">Category *</label>
+                            <select class="form-control" id="psuCat-${projectId}" style="font-size:0.85rem;">${PSU_CATEGORY_OPTIONS}</select>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">What is the update? *</label>
+                        <input type="text" class="form-control" id="psuDesc-${projectId}" placeholder="e.g. Tower A slab work completed, excavation for Tower B started" style="font-size:0.85rem;">
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <button type="button" class="btn btn-sm btn-primary" onclick="postStatusUpdate(${projectId})" id="psuBtn-${projectId}"><i class="fas fa-paper-plane"></i> Post Update</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="resetPsuForm(${projectId})" id="psuCancel-${projectId}" style="display:none;"><i class="fas fa-times"></i> Cancel Edit</button>
+                        <span id="psuBadge-${projectId}" style="display:none;font-size:0.78rem;color:#d97706;font-weight:600;">Editing an update</span>
+                    </div>
+                </div>
+                <div id="psuFeed-${projectId}">${feed}</div>
+            `;
+        }
+
+        function editPsu(projectId, id) {
+            const u = (psuCache[projectId] || []).find(x => String(x.id) === String(id));
+            if (!u) { showToast('Update not found', 'error'); return; }
+            psuEdit[projectId] = u.id;
+            const unitEl = document.getElementById(`psuUnit-${projectId}`);
+            if (unitEl) unitEl.value = u.unit_id ? String(u.unit_id) : '';
+            const dateEl = document.getElementById(`psuDate-${projectId}`);
+            if (dateEl) dateEl.value = String(u.update_date).slice(0, 10);
+            const catEl = document.getElementById(`psuCat-${projectId}`);
+            if (catEl) catEl.value = u.category;
+            const descEl = document.getElementById(`psuDesc-${projectId}`);
+            if (descEl) descEl.value = u.description;
+            const badge = document.getElementById(`psuBadge-${projectId}`);
+            if (badge) badge.style.display = 'inline';
+            const cancel = document.getElementById(`psuCancel-${projectId}`);
+            if (cancel) cancel.style.display = 'inline-flex';
+            const btn = document.getElementById(`psuBtn-${projectId}`);
+            if (btn) btn.innerHTML = '<i class="fas fa-save"></i> Save';
+            if (descEl) descEl.focus();
+        }
+
+        async function postStatusUpdate(projectId) {
+            const descEl = document.getElementById(`psuDesc-${projectId}`);
+            const description = descEl.value.trim();
+            if (!description) { showToast('Describe the update', 'error'); return; }
+            const body = {
+                projectId: parseInt(projectId, 10),
+                unitId: document.getElementById(`psuUnit-${projectId}`).value ? parseInt(document.getElementById(`psuUnit-${projectId}`).value, 10) : null,
+                updateDate: document.getElementById(`psuDate-${projectId}`).value,
+                category: document.getElementById(`psuCat-${projectId}`).value,
+                description: description
+            };
+            const btn = document.getElementById(`psuBtn-${projectId}`);
+            btn.disabled = true;
+            const data = psuEdit[projectId]
+                ? await apiCall(`/project-status-updates/${psuEdit[projectId]}`, 'PUT', body)
+                : await apiCall('/project-status-updates', 'POST', body);
+            btn.disabled = false;
+            if (data && data.success) {
+                showToast(data.message || 'Project update saved');
+                resetPsuForm(projectId);
+                await loadStatusUpdates(projectId);
+            } else {
+                showToast(data?.message || 'Failed to save update', 'error');
+            }
+        }
+
+        async function deleteStatusUpdate(projectId, id) {
+            if (!(await confirmAction('Delete this project update? The activity log keeps a record.'))) return;
+            const data = await apiCall(`/project-status-updates/${id}`, 'DELETE');
+            if (data && data.success) {
+                showToast('Project update deleted');
+                await loadStatusUpdates(projectId);
             } else {
                 showToast(data?.message || 'Failed to delete update', 'error');
             }

@@ -460,3 +460,54 @@ surfaces. Fixed:
 Node-level parity kept: managers cannot reach HR-module APIs (403), HR cannot reach
 admin-only APIs (settings PUT, projects POST, audit-logs GET → 403), and the TL tree
 scoping + manager full-power behaviour from Phase B is unchanged (re-asserted in QA).
+
+## 13. Project / Unit status updates — team-lead & manager only
+
+User request (2026-09-27): employees post their **personal** daily updates — but there
+was no place to post a **project/unit-level** management update. That facility should
+exist **only for Team Leads and Managers**.
+
+### 13.1 Concept & data model
+
+New table `project_status_updates` (schema.sql section 22b + self-heal DDL in
+`schemaRepair.js`, so the live DB auto-creates on first request):
+
+| Column | Meaning |
+|---|---|
+| `project_id` | the project the update is about (FK CASCADE) |
+| `unit_id` (NULL = project-level) | a specific unit/sub-project the update is about (FK SET NULL) |
+| `author_id` | the TL / manager / admin who posted it (FK CASCADE) |
+| `update_date` | when the update applies (defaults to today) |
+| `category` | CHECK in `progress, site_status, coordination, risk, milestone, approval, other` |
+| `description` / `notes` | the update text + optional follow-up notes |
+
+Distinct from `project_daily_updates` (each employee's personal daily log).
+
+### 13.2 API — `server/routes/project-status-updates.js`, mounted at `/api/project-status-updates`
+
+| Route | Access |
+|---|---|
+| `GET /` | admin/manager/TL/hr see all (project/unit/date filters); **employees** see only updates on projects they are assigned to (read-only) |
+| `POST /` | **admin / manager / team_lead only** — HR 403, employees 403. A team_lead may only post on projects/units they lead (P9/D11 `leadCovers`); unit must belong to the project; date/category validated. |
+| `PUT /:id` | author, manager or admin (manager = oversight over TL posts); HR read-only |
+| `DELETE /:id` | author, manager or admin; HR read-only |
+
+### 13.3 UI
+
+| Page | What |
+|---|---|
+| `admin/project-management.html` | new "Status Updates" expander per project — composer (project-level or per unit) + feed; admin edits/deletes any |
+| `manager/team-projects.html` | "Project / Unit Updates" panel under the selected project — admin/manager/TL post, HR reads |
+| `manager/led-projects.html` | "Updates" button on each led project card — TL posts + own feed; unit dropdown limited to the units that TL leads |
+| `employee/my-projects.html` | read-only "PROJECT UPDATES" card — employees see what their TL/manager posted on their projects (no composer) |
+
+### 13.4 Verification
+
+- `node --check` on all touched JS + every inline `<script>` of the four pages (extraction
+  check script) → clean.
+- Live QA `qa-status-updates-live.cjs`: employees/HR POST **403**, manager & TL POST **200**
+  (project-level + unit-level), non-lead TL POST **403**, invalid category/missing
+  description **400** leak-free, assigned employee GET sees updates, unassigned employee
+  GET **empty**, TL edits own **200** / cannot edit manager's **403**, manager edits+deletes
+  TL's post (oversight) **200**, employee PUT/DELETE **403**. World rolled back (test
+  project + units + leads + employees permanently deleted) → DB pristine.

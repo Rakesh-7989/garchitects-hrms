@@ -126,6 +126,49 @@
         </div>
     </div>
 
+    <div class="modal" id="ledUpdateModal">
+        <div class="modal-content" style="max-width:640px;">
+            <div class="modal-header">
+                <h2 id="ledUpdateTitle">Project Updates</h2>
+                <button onclick="closeLedUpdateModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="padding:12px;border:1px solid var(--border-light);border-radius:8px;margin-bottom:14px;background:var(--bg-secondary);">
+                    <div style="font-weight:600;font-size:0.85rem;margin-bottom:10px;"><i class="fas fa-bullhorn" style="color:var(--primary);margin-right:6px;"></i>Post a project / unit update</div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px;">
+                        <div>
+                            <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">Unit</label>
+                            <select class="form-control" id="luUnit" style="font-size:0.85rem;"></select>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">Date</label>
+                            <input type="date" class="form-control" id="luDate" style="font-size:0.85rem;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">Category *</label>
+                            <select class="form-control" id="luCategory" style="font-size:0.85rem;">
+                                <option value="progress">Progress</option>
+                                <option value="site_status">Site Status</option>
+                                <option value="coordination">Coordination</option>
+                                <option value="risk">Risk</option>
+                                <option value="milestone">Milestone</option>
+                                <option value="approval">Approval</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">What is the update? *</label>
+                        <input type="text" class="form-control" id="luDescription" placeholder="e.g. Tower A slab work completed, excavation for Tower B started" style="font-size:0.85rem;">
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="postLedUpdate()" id="luSubmitBtn"><i class="fas fa-paper-plane"></i> Post Update</button>
+                </div>
+                <div style="font-weight:600;font-size:0.85rem;margin-bottom:8px;"><i class="fas fa-stream" style="color:var(--primary);margin-right:6px;"></i>Updates</div>
+                <div id="luFeed" style="font-size:0.85rem;">Loading updates...</div>
+            </div>
+        </div>
+    </div>
+
     <script src="../../js/auth.js"></script>
     <script src="../../js/dashboard.js"></script>
     <script>
@@ -163,7 +206,8 @@
                     '<div class="lp-proj-header"><div><div style="font-weight:600;">' + esc(p.projectName) +
                     ' <span class="badge badge-info" style="font-size:0.68rem;">' + esc(String(p.projectStatus || '').replace('_',' ')) + '</span></div>' +
                     '<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px;">' +
-                    (p.wholeProject ? 'Whole project lead · ' : 'Unit lead · ') + p.units.length + ' unit(s)' + '</div></div></div>';
+                    (p.wholeProject ? 'Whole project lead · ' : 'Unit lead · ') + p.units.length + ' unit(s)' + '</div></div>' +
+                    '<button class="btn btn-sm btn-secondary" onclick="openLedUpdates(' + p.projectId + ')"><i class="fas fa-bullhorn"></i> Updates</button></div>';
 
                 let unitsHtml = '';
                 if (p.units.length > 0) {
@@ -273,6 +317,130 @@
                 showToast(r.message, 'error');
             } else {
                 showToast('Could not place members. Try again.', 'error');
+            }
+        }
+
+        // ---------- Project / Unit Status Updates (lead posts, manager/admin oversight) ----------
+        let luProject = null;   // { projectId, wholeProject, units[] }
+        let luEditId = null;
+        let luCache = [];
+
+        function luCategoryLabel(cat) {
+            const m = { progress: 'Progress', site_status: 'Site Status', coordination: 'Coordination', risk: 'Risk', milestone: 'Milestone', approval: 'Approval', other: 'Other' };
+            return m[cat] || String(cat || 'other').replace(/_/g, ' ');
+        }
+
+        async function openLedUpdates(projectId) {
+            const p = ledProjects.find(x => x.projectId === projectId);
+            if (!p) return;
+            luProject = { projectId: p.projectId, wholeProject: p.wholeProject, units: p.units || [] };
+            document.getElementById('ledUpdateTitle').textContent = 'Project Updates — ' + p.projectName;
+            const uSel = document.getElementById('luUnit');
+            uSel.innerHTML = (luProject.wholeProject && luProject.units.length ? '<option value="">Project (no unit)</option>' : (luProject.wholeProject ? '<option value="">Project (no units)</option>' : '')) +
+                luProject.units.map(u => '<option value="' + u.id + '">' + esc(u.name) + '</option>').join('');
+            if (!luProject.wholeProject && luProject.units.length > 0) uSel.value = String(luProject.units[0].id);
+            document.getElementById('luDate').value = getTodayIST();
+            document.getElementById('luCategory').value = 'progress';
+            document.getElementById('luDescription').value = '';
+            document.getElementById('luSubmitBtn').innerHTML = '<i class="fas fa-paper-plane"></i> Post Update';
+            luEditId = null;
+            document.getElementById('luFeed').innerHTML = '<div class="spinner" style="margin:0 auto;width:18px;height:18px;"></div>';
+            await loadLedUpdates();
+            document.getElementById('ledUpdateModal').classList.add('active');
+        }
+
+        function closeLedUpdateModal() {
+            document.getElementById('ledUpdateModal').classList.remove('active');
+        }
+
+        async function loadLedUpdates() {
+            const feed = document.getElementById('luFeed');
+            const data = await apiCall('/project-status-updates?projectId=' + luProject.projectId + '&limit=100');
+            const user = getCurrentUser();
+            if (!data || !data.success) {
+                feed.innerHTML = '<span style="color:var(--danger);font-size:0.85rem;">Could not load updates.</span>';
+                return;
+            }
+            const ups = data.updates || [];
+            luCache = ups;
+            if (ups.length === 0) {
+                feed.innerHTML = '<span style="font-size:0.85rem;color:var(--text-secondary);">No project/unit updates yet — post the first one above.</span>';
+                return;
+            }
+            const canManage = user && ['admin', 'manager'].includes(user.role);
+            feed.innerHTML = ups.map(u => {
+                const canEdit = canManage || (user && String(u.author_id) === String(user.id));
+                const author = ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || u.emp_code || '';
+                const roleTag = String(u.author_role || '').replace('_', ' ');
+                return '<div style="padding:10px 0;border-bottom:1px dashed var(--border-light);">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">' +
+                    '<div style="min-width:0;flex:1;">' +
+                    '<div style="font-size:0.85rem;font-weight:600;">' + formatDate(u.update_date) +
+                    (u.unit_name ? ' <span style="font-size:0.72rem;font-weight:600;background:var(--bg-light);border:1px solid var(--border-light);border-radius:10px;padding:1px 8px;color:var(--text-secondary);"><i class="fas fa-layer-group"></i> ' + esc(u.unit_name) + '</span>' : '') +
+                    ' <span style="font-size:0.72rem;font-weight:600;background:#EFF6FF;color:#1D4ED8;border-radius:10px;padding:1px 8px;">' + esc(luCategoryLabel(u.category)) + '</span></div>' +
+                    '<div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">' + esc(author) +
+                    (roleTag ? ' <span style="color:var(--text-tertiary);">' + esc(roleTag) + '</span>' : '') +
+                    (u.notes ? ' <span style="color:var(--text-tertiary);">- ' + esc(u.notes) + '</span>' : '') + '</div>' +
+                    '<div style="font-size:0.82rem;margin-top:4px;color:var(--text-primary);">' + esc(u.description) + '</div>' +
+                    '</div>' +
+                    (canEdit ? '<div style="display:flex;gap:6px;flex-shrink:0;">' +
+                        '<button type="button" class="btn btn-secondary" style="padding:5px 10px;font-size:0.75rem;" onclick="editLedUpdate(' + u.id + ')"><i class="fas fa-pen"></i></button>' +
+                        '<button type="button" class="btn btn-danger" style="padding:5px 10px;font-size:0.75rem;" onclick="deleteLedUpdate(' + u.id + ')"><i class="fas fa-trash"></i></button>' +
+                        '</div>' : '') +
+                    '</div></div>';
+            }).join('');
+        }
+
+        function editLedUpdate(id) {
+            const u = luCache.find(x => String(x.id) === String(id));
+            if (!u) return;
+            luEditId = u.id;
+            document.getElementById('luUnit').value = u.unit_id ? String(u.unit_id) : (luProject.wholeProject ? '' : '');
+            document.getElementById('luDate').value = String(u.update_date).slice(0, 10);
+            document.getElementById('luCategory').value = u.category;
+            document.getElementById('luDescription').value = u.description;
+            document.getElementById('luSubmitBtn').innerHTML = '<i class="fas fa-save"></i> Save';
+            document.getElementById('luDescription').focus();
+        }
+
+        async function postLedUpdate() {
+            if (!luProject) return;
+            const category = document.getElementById('luCategory').value;
+            const description = document.getElementById('luDescription').value.trim();
+            if (!description) { showToast('Describe the update', 'error'); return; }
+            const unitVal = document.getElementById('luUnit').value;
+            const body = {
+                projectId: luProject.projectId,
+                unitId: unitVal === '' ? null : parseInt(unitVal, 10),
+                updateDate: document.getElementById('luDate').value,
+                category: category,
+                description: description
+            };
+            const btn = document.getElementById('luSubmitBtn');
+            btn.disabled = true;
+            const data = luEditId
+                ? await apiCall('/project-status-updates/' + luEditId, 'PUT', body)
+                : await apiCall('/project-status-updates', 'POST', body);
+            btn.disabled = false;
+            if (data && data.success) {
+                showToast(data.message || 'Project update posted', 'success');
+                luEditId = null;
+                document.getElementById('luDescription').value = '';
+                document.getElementById('luSubmitBtn').innerHTML = '<i class="fas fa-paper-plane"></i> Post Update';
+                await loadLedUpdates();
+            } else {
+                showToast(data?.message || 'Failed to save update', 'error');
+            }
+        }
+
+        async function deleteLedUpdate(id) {
+            if (!confirm('Delete this project update?')) return;
+            const data = await apiCall('/project-status-updates/' + id, 'DELETE');
+            if (data && data.success) {
+                showToast('Project update deleted');
+                await loadLedUpdates();
+            } else {
+                showToast(data?.message || 'Failed to delete update', 'error');
             }
         }
     </script>

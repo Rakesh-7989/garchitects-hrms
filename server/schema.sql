@@ -717,6 +717,30 @@ CREATE INDEX IF NOT EXISTS idx_project_daily_updates_employee_date ON project_da
 CREATE INDEX IF NOT EXISTS idx_pdu_unit ON project_daily_updates(unit_id);
 
 -- ============================================================
+-- 22b. PROJECT STATUS UPDATES (team-lead / manager progress notes)
+-- ============================================================
+-- Management-level progress updates posted against a PROJECT or a UNIT by
+-- team leads / managers (admin included; HR read-only). Distinct from
+-- project_daily_updates, which are the individual employees' personal work
+-- logs. unit_id NULL = the update is about the whole project; unit_id set =
+-- the update is about that unit only.
+CREATE TABLE IF NOT EXISTS project_status_updates (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
+    author_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    update_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    category VARCHAR(30) NOT NULL CHECK (category IN ('progress','site_status','coordination','risk','milestone','approval','other')),
+    description TEXT NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_psu_project_date ON project_status_updates(project_id, update_date DESC);
+CREATE INDEX IF NOT EXISTS idx_psu_unit ON project_status_updates(unit_id);
+CREATE INDEX IF NOT EXISTS idx_psu_author ON project_status_updates(author_id);
+
+-- ============================================================
 -- 23. WORK ASSIGNMENTS (team-lead / manager assigns work to employees)
 -- ============================================================
 -- A concrete task assigned by a team_lead/manager/hr (or admin) to an active

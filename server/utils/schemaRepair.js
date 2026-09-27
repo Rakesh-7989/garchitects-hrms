@@ -297,6 +297,26 @@ const ENSURE_TABLE_DDL = {
         `CREATE UNIQUE INDEX IF NOT EXISTS uq_project_lead_unit ON project_leads(project_id, unit_id, lead_id) WHERE unit_id IS NOT NULL`,
         `CREATE INDEX IF NOT EXISTS idx_project_leads_lead ON project_leads(lead_id)`,
         `CREATE INDEX IF NOT EXISTS idx_project_leads_project ON project_leads(project_id)`
+    ],
+    // Management-level project/unit status updates - posted by team_leads and
+    // managers only (project-status-updates route). Lazy-created just like the
+    // other project-module tables; additive and idempotent, never touches data.
+    project_status_updates: [
+        `CREATE TABLE IF NOT EXISTS project_status_updates (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
+            author_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            update_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            category VARCHAR(30) NOT NULL CHECK (category IN ('progress','site_status','coordination','risk','milestone','approval','other')),
+            description TEXT NOT NULL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_psu_project_date ON project_status_updates(project_id, update_date DESC)`,
+        `CREATE INDEX IF NOT EXISTS idx_psu_unit ON project_status_updates(unit_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_psu_author ON project_status_updates(author_id)`
     ]
 };
 

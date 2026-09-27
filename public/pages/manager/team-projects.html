@@ -115,6 +115,43 @@
                     </div>
                     <div id="tpLeadsList" style="font-size:0.85rem;color:var(--text-secondary);">Select a project first.</div>
                 </div>
+                <div id="tpStatusUpdates" style="margin-top:20px;border-top:1px solid var(--border-light);padding-top:14px;display:none;">
+                    <div style="font-weight:600;font-size:0.9rem;margin-bottom:10px;"><i class="fas fa-bullhorn" style="color:var(--primary);margin-right:6px;"></i>Project / Unit Updates <span style="font-size:0.72rem;color:var(--text-secondary);font-weight:400;"> — progress notes posted by team leads &amp; managers</span></div>
+                    <div id="psuComposer" style="border:1px solid var(--border-light);border-radius:8px;padding:14px;margin-bottom:14px;display:none;">
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:10px;">
+                            <div>
+                                <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">Unit (optional)</label>
+                                <select class="form-control" id="psuUnit" style="font-size:0.85rem;"><option value="">-- Project (no unit) --</option></select>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">Date</label>
+                                <input type="date" class="form-control" id="psuDate" style="font-size:0.85rem;">
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">Category *</label>
+                                <select class="form-control" id="psuCategory" style="font-size:0.85rem;">
+                                    <option value="progress">Progress</option>
+                                    <option value="site_status">Site Status</option>
+                                    <option value="coordination">Coordination</option>
+                                    <option value="risk">Risk</option>
+                                    <option value="milestone">Milestone</option>
+                                    <option value="approval">Approval</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="margin-bottom:10px;">
+                            <label style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:4px;">What is the update? *</label>
+                            <input type="text" class="form-control" id="psuDescription" placeholder="e.g. Tower A slab work completed, excavation for Tower B started" style="font-size:0.85rem;">
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <button type="button" class="btn btn-sm btn-primary" onclick="postStatusUpdate()" id="psuSubmitBtn"><i class="fas fa-paper-plane"></i> Post Update</button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="resetStatusUpdateForm()" id="psuCancelEditBtn" style="display:none;"><i class="fas fa-times"></i> Cancel Edit</button>
+                            <span id="psuEditBadge" style="display:none;font-size:0.78rem;color:#d97706;font-weight:600;">Editing an update</span>
+                        </div>
+                    </div>
+                    <div id="psuFeed" style="font-size:0.85rem;color:var(--text-secondary);">Select a project to see its updates.</div>
+                </div>
             </div>
         </div>
     </main>
@@ -183,6 +220,7 @@
                 return;
             }
             designator = ['admin', 'manager', 'hr'].includes(user.role);
+            psuCanAuthor = ['admin', 'manager', 'team_lead'].includes(user.role);
             loadProjects();
             loadEmployeesForPicker();
         });
@@ -196,6 +234,7 @@
         let designator = false; // admin/hr/manager (D6) — can designate leads
         let leadCandidates = [];
         let currentLeads = [];
+        let psuCanAuthor = false; // admin/manager/team_lead — may post status updates
 
         async function loadProjects(manual) {
             // P9/D9: a team_lead sees ONLY the projects they lead
@@ -238,6 +277,7 @@
             const pid = sel.value ? parseInt(sel.value, 10) : null;
             document.getElementById('tpStats').style.display = 'none';
             document.getElementById('assignBtn').disabled = !pid;
+            document.getElementById('tpStatusUpdates').style.display = 'none';
             if (!pid) {
                 document.getElementById('tpRoster').innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.9rem;">Select a project to see who is assigned and assign team members into its units.</div>';
                 renderLeads([]);
@@ -254,6 +294,13 @@
             roster = data.employees || (Array.isArray(data.data) ? data.data : []);
             renderRoster(pr);
             await loadLeadsForProject(pid);
+            // Project / Unit status updates panel.
+            document.getElementById('tpStatusUpdates').style.display = 'block';
+            const unitSel = document.getElementById('psuUnit');
+            unitSel.innerHTML = '<option value="">-- Project (no unit) --</option>' + projectUnits.map(u => '<option value="' + u.id + '">' + escapeHtml(u.name) + '</option>').join('');
+            document.getElementById('psuComposer').style.display = psuCanAuthor ? 'block' : 'none';
+            resetStatusUpdateForm();
+            await loadStatusUpdates(pid);
         }
 
         // ---------- Project Leads panel (P9) ----------
@@ -479,6 +526,126 @@
                 await onProjectChange();
             } else if (r && r.message) {
                 showToast(r.message, 'error');
+            }
+        }
+
+        // ---------- Project / Unit Status Updates (TL & manager notes) ----------
+        let statusUpdatesCache = {};
+        let statusEditId = null;
+
+        function psuCategoryLabel(cat) {
+            const m = { progress: 'Progress', site_status: 'Site Status', coordination: 'Coordination', risk: 'Risk', milestone: 'Milestone', approval: 'Approval', other: 'Other' };
+            return m[cat] || String(cat || 'other').replace(/_/g, ' ');
+        }
+
+        function resetStatusUpdateForm() {
+            statusEditId = null;
+            const unitSel = document.getElementById('psuUnit');
+            if (unitSel) unitSel.value = '';
+            const catSel = document.getElementById('psuCategory');
+            if (catSel) catSel.value = 'progress';
+            const descEl = document.getElementById('psuDescription');
+            if (descEl) descEl.value = '';
+            const dateEl = document.getElementById('psuDate');
+            if (dateEl) dateEl.value = getTodayIST();
+            const badge = document.getElementById('psuEditBadge');
+            if (badge) badge.style.display = 'none';
+            const cancelBtn = document.getElementById('psuCancelEditBtn');
+            if (cancelBtn) cancelBtn.style.display = 'none';
+            const submitBtn = document.getElementById('psuSubmitBtn');
+            if (submitBtn) submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Post Update';
+        }
+
+        async function loadStatusUpdates(pid) {
+            const feed = document.getElementById('psuFeed');
+            if (!feed) return;
+            feed.innerHTML = '<div class="spinner" style="margin:0 auto;width:18px;height:18px;"></div>';
+            const data = await apiCall('/project-status-updates?projectId=' + pid + '&limit=100');
+            const user = getCurrentUser();
+            if (!data || !data.success) {
+                feed.innerHTML = '<span style="color:var(--danger);font-size:0.85rem;">Could not load updates.</span>';
+                return;
+            }
+            const ups = data.updates || [];
+            statusUpdatesCache[pid] = ups;
+            if (ups.length === 0) {
+                feed.innerHTML = '<span style="font-size:0.85rem;">No project/unit updates yet' + (psuCanAuthor ? ' — post the first one above.' : '.') + '</span>';
+                return;
+            }
+            const canManage = ['admin', 'manager'].includes(currentRole);
+            feed.innerHTML = ups.map(u => {
+                const canEdit = canManage || String(u.author_id) === String(user.id);
+                const author = ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || u.emp_code || '';
+                const roleTag = String(u.author_role || '').replace('_', ' ');
+                return '<div style="padding:10px 0;border-bottom:1px dashed var(--border-light);">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">' +
+                    '<div style="min-width:0;flex:1;">' +
+                    '<div style="font-size:0.85rem;font-weight:600;">' + formatDate(u.update_date) +
+                    (u.unit_name ? ' <span style="font-size:0.72rem;font-weight:600;background:var(--bg-light);border:1px solid var(--border-light);border-radius:10px;padding:1px 8px;color:var(--text-secondary);"><i class="fas fa-layer-group"></i> ' + escapeHtml(u.unit_name) + '</span>' : '') +
+                    ' <span style="font-size:0.72rem;font-weight:600;background:#EFF6FF;color:#1D4ED8;border-radius:10px;padding:1px 8px;">' + escapeHtml(psuCategoryLabel(u.category)) + '</span></div>' +
+                    '<div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">' + escapeHtml(author) +
+                    (roleTag ? ' <span style="color:var(--text-tertiary);">' + escapeHtml(roleTag) + '</span>' : '') +
+                    (u.notes ? ' <span style="color:var(--text-tertiary);">- ' + escapeHtml(u.notes) + '</span>' : '') + '</div>' +
+                    '<div style="font-size:0.82rem;margin-top:4px;color:var(--text-primary);">' + escapeHtml(u.description) + '</div>' +
+                    '</div>' +
+                    (canEdit ? '<div style="display:flex;gap:6px;flex-shrink:0;">' +
+                        '<button type="button" class="btn btn-secondary" style="padding:5px 10px;font-size:0.75rem;" onclick="editStatusUpdate(' + pid + ',' + u.id + ')"><i class="fas fa-pen"></i></button>' +
+                        '<button type="button" class="btn btn-danger" style="padding:5px 10px;font-size:0.75rem;" onclick="deleteStatusUpdate(' + pid + ',' + u.id + ')"><i class="fas fa-trash"></i></button>' +
+                        '</div>' : '') +
+                    '</div></div>';
+            }).join('');
+        }
+
+        function editStatusUpdate(pid, id) {
+            const u = (statusUpdatesCache[pid] || []).find(x => String(x.id) === String(id));
+            if (!u) { showToast('Update not found', 'error'); return; }
+            statusEditId = u.id;
+            document.getElementById('psuUnit').value = u.unit_id ? String(u.unit_id) : '';
+            document.getElementById('psuDate').value = String(u.update_date).slice(0, 10);
+            document.getElementById('psuCategory').value = u.category;
+            document.getElementById('psuDescription').value = u.description;
+            document.getElementById('psuEditBadge').style.display = 'inline';
+            document.getElementById('psuCancelEditBtn').style.display = 'inline-flex';
+            document.getElementById('psuSubmitBtn').innerHTML = '<i class="fas fa-save"></i> Save';
+            document.getElementById('psuDescription').focus();
+        }
+
+        async function postStatusUpdate() {
+            const pid = document.getElementById('tpProject').value;
+            if (!pid) { showToast('Select a project first', 'error'); return; }
+            const category = document.getElementById('psuCategory').value;
+            const description = document.getElementById('psuDescription').value.trim();
+            if (!description) { showToast('Describe the update', 'error'); return; }
+            const body = {
+                projectId: parseInt(pid, 10),
+                unitId: document.getElementById('psuUnit').value ? parseInt(document.getElementById('psuUnit').value, 10) : null,
+                updateDate: document.getElementById('psuDate').value,
+                category: category,
+                description: description
+            };
+            const btn = document.getElementById('psuSubmitBtn');
+            btn.disabled = true;
+            const data = statusEditId
+                ? await apiCall('/project-status-updates/' + statusEditId, 'PUT', body)
+                : await apiCall('/project-status-updates', 'POST', body);
+            btn.disabled = false;
+            if (data && data.success) {
+                showToast(data.message || 'Project update saved', 'success');
+                resetStatusUpdateForm();
+                await loadStatusUpdates(parseInt(pid, 10));
+            } else {
+                showToast(data?.message || 'Failed to save update', 'error');
+            }
+        }
+
+        async function deleteStatusUpdate(pid, id) {
+            if (!confirm('Delete this project update?')) return;
+            const data = await apiCall('/project-status-updates/' + id, 'DELETE');
+            if (data && data.success) {
+                showToast('Project update deleted');
+                await loadStatusUpdates(pid);
+            } else {
+                showToast(data?.message || 'Failed to delete update', 'error');
             }
         }
     </script>
