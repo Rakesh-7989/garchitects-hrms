@@ -165,18 +165,6 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Project Status Updates (posted by team leads &amp; managers - read only) -->
-            <div id="projStatusCard" class="card mb-3" style="display:none;">
-                <div class="card-header">
-                    <h3 style="font-weight:600;"><i class="fas fa-bullhorn" style="margin-right:6px;"></i> PROJECT UPDATES <span style="font-size:0.75rem;color:var(--text-secondary);font-weight:400;"> — posted by your team leads &amp; managers</span></h3>
-                </div>
-                <div class="card-body">
-                    <div id="projStatusFeed">
-                        <p style="color:var(--text-secondary);padding:16px 0;text-align:center;">No project updates yet.</p>
-                    </div>
-                </div>
-            </div>
         </div>
     </main>
 
@@ -230,7 +218,6 @@
             document.getElementById('dailyUpdateCard').style.display = 'block';
             document.getElementById('updateDate').value = getTodayIST();
             loadMyUpdates();
-            loadProjectStatusUpdates();
         }
 
         function renderProjectCard(project) {
@@ -399,34 +386,6 @@
             } else {
                 showToast(data?.message || 'Failed to save update', 'error');
             }
-        }
-
-        // ===================== PROJECT STATUS UPDATES (read-only) =====================
-        // Management-level progress notes posted by team leads & managers against
-        // a project or a unit. Employees see the ones on their assigned projects.
-        function psuCategoryLabel(cat) {
-            const m = { progress: 'Progress', site_status: 'Site Status', coordination: 'Coordination', risk: 'Risk', milestone: 'Milestone', approval: 'Approval', other: 'Other' };
-            return m[cat] || String(cat || 'other').replace(/_/g, ' ');
-        }
-
-        async function loadProjectStatusUpdates() {
-            const card = document.getElementById('projStatusCard');
-            const feed = document.getElementById('projStatusFeed');
-            const data = await apiCall('/project-status-updates?limit=50');
-            if (!data || !data.success || !data.updates || data.updates.length === 0) {
-                card.style.display = 'none';
-                return;
-            }
-            card.style.display = 'block';
-            feed.innerHTML = data.updates.map(u => {
-                const author = escapeHtml(((u.first_name || '') + ' ' + (u.last_name || '')).trim() || (u.emp_code || ''));
-                return `
-                    <div style="padding:12px 0;border-bottom:1px dashed var(--border-light);">
-                        <div style="font-size:0.85rem;font-weight:600;">${formatDate(u.update_date)} &middot; ${escapeHtml(u.project_name)}${u.unit_name ? ' <span style="font-size:0.72rem;font-weight:600;background:var(--bg-light);border:1px solid var(--border-light);border-radius:10px;padding:1px 8px;color:var(--text-secondary);"><i class="fas fa-layer-group"></i> ' + escapeHtml(u.unit_name) + '</span>' : ''} <span style="font-size:0.72rem;font-weight:600;background:#EFF6FF;color:#1D4ED8;border-radius:10px;padding:1px 8px;">${escapeHtml(psuCategoryLabel(u.category))}</span></div>
-                        <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">${author}${u.author_role ? ' <span style="color:var(--text-tertiary);">' + escapeHtml(String(u.author_role).replace(/_/g, ' ')) + '</span>' : ''}${u.notes ? ` <span style="color:var(--text-tertiary);">&middot; ${escapeHtml(u.notes)}</span>` : ''}</div>
-                        <div style="font-size:0.82rem;margin-top:4px;color:var(--text-primary);">${escapeHtml(u.description)}</div>
-                    </div>`;
-            }).join('');
         }
 
         document.addEventListener('DOMContentLoaded', async () => {

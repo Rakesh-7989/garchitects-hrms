@@ -219,7 +219,7 @@
                 location.href = '/employee/dashboard';
                 return;
             }
-            designator = ['admin', 'manager', 'hr'].includes(user.role);
+            designator = ['admin', 'manager'].includes(user.role);
             psuCanAuthor = ['admin', 'manager', 'team_lead'].includes(user.role);
             loadProjects();
             loadEmployeesForPicker();
@@ -231,7 +231,7 @@
         let allEmployees = [];
         let selected = new Set();
         let currentRole = null;
-        let designator = false; // admin/hr/manager (D6) — can designate leads
+        let designator = false; // admin/manager (D6, narrowed) — may designate project leads
         let leadCandidates = [];
         let currentLeads = [];
         let psuCanAuthor = false; // admin/manager/team_lead — may post status updates

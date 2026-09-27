@@ -499,9 +499,26 @@ Distinct from `project_daily_updates` (each employee's personal daily log).
 | `admin/project-management.html` | new "Status Updates" expander per project — composer (project-level or per unit) + feed; admin edits/deletes any |
 | `manager/team-projects.html` | "Project / Unit Updates" panel under the selected project — admin/manager/TL post, HR reads |
 | `manager/led-projects.html` | "Updates" button on each led project card — TL posts + own feed; unit dropdown limited to the units that TL leads |
-| `employee/my-projects.html` | read-only "PROJECT UPDATES" card — employees see what their TL/manager posted on their projects (no composer) |
+| `employee/my-projects.html` | **no management-update surface** — employees already see their project cards (status badge, type, dates, location, unit chips) via `/projects/my`; they keep posting only their personal daily updates |
 
-### 13.4 Verification
+### 13.4 Follow-up (same day): employee visibility narrowed + designation = admin/manager only
+
+Per user: employees do not need the management-update feed — they just need to know
+**which project/unit they are in and its status** (already covered by the project cards).
+Removed the read-only "PROJECT UPDATES" card + `loadProjectStatusUpdates` from
+`my-projects.html` (feed API stays; it is what powers the admin/manager/TL surfaces).
+
+Also per user: assigning a project (and its units) to a team lead is a **management-only**
+action. `server/routes/project-leads.js` `DESIGNATOR_ROLES` went from
+`['admin','manager','hr']` → **`['admin','manager']`** — HR can no longer designate or
+remove leads (POST + DELETE 403), and `team-projects.html` hides the "Assign Lead" /
+"Remove" controls for HR. Read-only viewing of who-leads-what stays open to
+admin/manager/team_lead/hr (`VIEWER_ROLES` + message updates). Project/unit creation
+was already admin-only (verified in Phase C: HR POST /projects 403), and the TL place-
+your-team flow (led-projects.html) was already restricted to the TL's led projects +
+own reporting tree.
+
+### 13.5 Verification
 
 - `node --check` on all touched JS + every inline `<script>` of the four pages (extraction
   check script) → clean.
@@ -509,5 +526,8 @@ Distinct from `project_daily_updates` (each employee's personal daily log).
   (project-level + unit-level), non-lead TL POST **403**, invalid category/missing
   description **400** leak-free, assigned employee GET sees updates, unassigned employee
   GET **empty**, TL edits own **200** / cannot edit manager's **403**, manager edits+deletes
-  TL's post (oversight) **200**, employee PUT/DELETE **403**. World rolled back (test
-  project + units + leads + employees permanently deleted) → DB pristine.
+  TL's post (oversight) **200**, employee PUT/DELETE **403**, HR GET **200**, no token **401**.
+  World rolled back (test project + units + leads + employees permanently deleted) → DB pristine.
+- Designation matrix (this follow-up): designator = admin/manager only — asserted live
+  (HR POST /project-leads 403, manager POST 201, HR GET + non-lead TL GET
+  /project-leads 200 read-only).

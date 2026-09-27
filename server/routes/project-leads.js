@@ -21,11 +21,21 @@ const { logAudit } = require('../utils/audit');
 // Self-healing query wrapper (creates missing tables on cold instances).
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
 
-// Designation power (D6): admin / manager / hr only (team_lead cannot designate).
-const DESIGNATOR_ROLES = ['admin', 'hr', 'manager'];
+// Designation power (D6, narrowed 2026-09-27): admin / manager only — the
+// project→team-lead assignment is management-only per user decision. HR stays
+// read-only on the projects module; team_lead can never designate.
+const DESIGNATOR_ROLES = ['admin', 'manager'];
+
+// Read-only viewers of lead designations (informational list on the Team
+// Projects page) — the role can SEE who leads projects but never assign.
+const VIEWER_ROLES = ['admin', 'manager', 'team_lead', 'hr'];
 
 function isDesignator(role) {
     return DESIGNATOR_ROLES.includes(role);
+}
+
+function isDesignationViewer(role) {
+    return VIEWER_ROLES.includes(role);
 }
 
 // Reporting-tree of `me` (recursive chain via reporting_manager_id, self excluded).
@@ -107,7 +117,7 @@ router.get('/my-team', verifyToken, async (req, res) => {
 // ============================================================
 router.get('/leads-options', verifyToken, async (req, res) => {
     if (!isDesignator(req.user.role)) {
-        return res.status(403).json({ success: false, message: 'Only admin/manager/hr can view lead candidates' });
+        return res.status(403).json({ success: false, message: 'Only admins and managers can assign project leads' });
     }
     try {
         const r = await q(
@@ -129,8 +139,8 @@ router.get('/leads-options', verifyToken, async (req, res) => {
 // GET /api/project-leads — all designations (overview).
 // ============================================================
 router.get('/', verifyToken, async (req, res) => {
-    if (!isDesignator(req.user.role)) {
-        return res.status(403).json({ success: false, message: 'Only admin/manager/hr can view project leads' });
+    if (!isDesignationViewer(req.user.role)) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
     }
     try {
         const r = await q(
@@ -231,7 +241,7 @@ router.get('/mine', verifyToken, async (req, res) => {
 // ============================================================
 router.post('/', verifyToken, async (req, res) => {
     if (!isDesignator(req.user.role)) {
-        return res.status(403).json({ success: false, message: 'Only admin/manager/hr can assign project leads' });
+        return res.status(403).json({ success: false, message: 'Only admins and managers can assign project leads' });
     }
     try {
         const projectId = parseInt(req.body.projectId, 10);
@@ -326,7 +336,7 @@ router.post('/', verifyToken, async (req, res) => {
 // ============================================================
 router.delete('/:id', verifyToken, async (req, res) => {
     if (!isDesignator(req.user.role)) {
-        return res.status(403).json({ success: false, message: 'Only admin/manager/hr can remove project leads' });
+        return res.status(403).json({ success: false, message: 'Only admins and managers can remove project leads' });
     }
     try {
         const id = parseInt(req.params.id, 10);
