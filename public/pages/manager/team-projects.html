@@ -120,7 +120,15 @@
                     <div id="tpAccessList" style="font-size:0.85rem;color:var(--text-secondary);">Select a project first.</div>
                 </div>
                 <div id="tpStatusUpdates" style="margin-top:20px;border-top:1px solid var(--border-light);padding-top:14px;display:none;">
-                    <div style="font-weight:600;font-size:0.9rem;margin-bottom:10px;"><i class="fas fa-bullhorn" style="color:var(--primary);margin-right:6px;"></i>Project / Unit Updates <span style="font-size:0.72rem;color:var(--text-secondary);font-weight:400;"> — progress notes posted by team leads &amp; managers</span></div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+                        <div style="font-weight:600;font-size:0.9rem;"><i class="fas fa-bullhorn" style="color:var(--primary);margin-right:6px;"></i>Project / Unit Updates <span style="font-size:0.72rem;color:var(--text-secondary);font-weight:400;"> — status notes + team activity</span></div>
+                        <div style="display:flex;gap:6px;">
+                            <button type="button" class="btn btn-sm btn-primary" id="psuTabStatus" onclick="setPsuTab('status')"><i class="fas fa-bullhorn"></i> Status notes</button>
+                            <button type="button" class="btn btn-sm btn-secondary" id="psuTabTimeline" onclick="setPsuTab('timeline')"><i class="fas fa-stream"></i> Activity timeline</button>
+                        </div>
+                    </div>
+                    <div id="tpLatestStrip"></div>
+                    <div id="psuStatusArea">
                     <div id="psuComposer" style="border:1px solid var(--border-light);border-radius:8px;padding:14px;margin-bottom:14px;display:none;">
                         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:10px;">
                             <div>
@@ -155,6 +163,8 @@
                         </div>
                     </div>
                     <div id="psuFeed" style="font-size:0.85rem;color:var(--text-secondary);">Select a project to see its updates.</div>
+                    </div>
+                    <div id="psuTimeline" style="display:none;font-size:0.85rem;color:var(--text-secondary);">Select a project to see its activity timeline.</div>
                 </div>
             </div>
         </div>
@@ -310,6 +320,7 @@
             document.getElementById('psuComposer').style.display = psuCanAuthor ? 'block' : 'none';
             resetStatusUpdateForm();
             await loadStatusUpdates(pid);
+            await loadProjectTimeline(pid);
             await loadAccessPanel(pid);
         }
 
@@ -709,6 +720,8 @@
         function editStatusUpdate(pid, id) {
             const u = (statusUpdatesCache[pid] || []).find(x => String(x.id) === String(id));
             if (!u) { showToast('Update not found', 'error'); return; }
+            // The composer lives in the status-notes tab — switch to it first.
+            setPsuTab('status');
             statusEditId = u.id;
             document.getElementById('psuUnit').value = u.unit_id ? String(u.unit_id) : '';
             document.getElementById('psuDate').value = String(u.update_date).slice(0, 10);
@@ -743,6 +756,7 @@
                 showToast(data.message || 'Project update saved', 'success');
                 resetStatusUpdateForm();
                 await loadStatusUpdates(parseInt(pid, 10));
+                await loadProjectTimeline(parseInt(pid, 10));
             } else {
                 showToast(data?.message || 'Failed to save update', 'error');
             }
@@ -754,9 +768,133 @@
             if (data && data.success) {
                 showToast('Project update deleted');
                 await loadStatusUpdates(pid);
+                await loadProjectTimeline(pid);
             } else {
                 showToast(data?.message || 'Failed to delete update', 'error');
             }
+        }
+
+        // ---------- Combined Activity Timeline (status notes + team daily updates) ----------
+        let psuTimelineTab = 'timeline'; // 'timeline' | 'status'
+        let timelineCache = {};          // pid -> { status: [...], daily: [...] }
+
+        function setPsuTab(tab) {
+            psuTimelineTab = tab;
+            const st = document.getElementById('psuTabStatus');
+            const tl = document.getElementById('psuTabTimeline');
+            if (st) st.className = 'btn btn-sm ' + (tab === 'status' ? 'btn-primary' : 'btn-secondary');
+            if (tl) tl.className = 'btn btn-sm ' + (tab === 'timeline' ? 'btn-primary' : 'btn-secondary');
+            const area = document.getElementById('psuStatusArea');
+            const tml = document.getElementById('psuTimeline');
+            if (area) area.style.display = tab === 'status' ? '' : 'none';
+            if (tml) tml.style.display = tab === 'timeline' ? '' : 'none';
+        }
+
+        // Employees' daily work-note categories (project_daily_updates).
+        function pduCatLabel(cat) {
+            const m = { design: 'Design', drafting: 'Drafting', site_visit: 'Site Visit', coordination: 'Coordination', approvals: 'Approvals', documentation: 'Documentation', meeting: 'Meeting', other: 'Other' };
+            return m[cat] || String(cat || 'other').replace(/_/g, ' ');
+        }
+
+        function clip(s, n) {
+            s = String(s || '');
+            return s.length > n ? s.slice(0, n).trimEnd() + '&hellip;' : s;
+        }
+
+        // Loads both the status notes and the team's daily work-notes for the
+        // selected project, then renders the compact "latest" strip and the
+        // merged chronological activity feed.
+        async function loadProjectTimeline(pid) {
+            const strip = document.getElementById('tpLatestStrip');
+            const feed = document.getElementById('psuTimeline');
+            if (!strip || !feed) return;
+            strip.style.display = 'none';
+            feed.style.display = 'none';
+            const [su, du] = await Promise.all([
+                apiCall('/project-status-updates?projectId=' + pid + '&limit=100'),
+                apiCall('/project-updates?projectId=' + pid + '&limit=100')
+            ]);
+            const status = (su && su.success && su.updates) || [];
+            const daily = (du && du.success && du.updates) || [];
+            timelineCache[pid] = { status: status, daily: daily };
+            renderLatestStrip(pid, status, daily);
+            renderTimeline(pid, timelineCache[pid]);
+            setPsuTab(psuTimelineTab);
+        }
+
+        // Compact "Latest activity" strip — newest status note + newest daily note.
+        function renderLatestStrip(pid, status, daily) {
+            const el = document.getElementById('tpLatestStrip');
+            if (!el) return;
+            const rows = [];
+            if (status.length) {
+                const u = status[0];
+                rows.push('<span style="min-width:0;"><i class="fas fa-bullhorn" style="color:var(--primary);margin-right:4px;"></i><b>' + formatDate(u.update_date) + '</b> <span style="color:var(--text-tertiary);">' + escapeHtml(psuCategoryLabel(u.category)) + '</span> — ' + escapeHtml(clip(u.description, 80)) + '</span>');
+            }
+            if (daily.length) {
+                const u = daily[0];
+                rows.push('<span style="min-width:0;"><i class="fas fa-calendar-day" style="color:#15803D;margin-right:4px;"></i><b>' + escapeHtml(pduCatLabel(u.task_cat)) + '</b> ' + escapeHtml(((u.first_name || '') + ' ' + (u.last_name || '')).trim()) + ' — ' + escapeHtml(clip(u.description, 80)) + '</span>');
+            }
+            if (!rows.length) return;
+            el.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px;padding:8px 12px;background:var(--bg-light);border:1px solid var(--border-light);border-left:3px solid var(--primary);border-radius:6px;margin-bottom:14px;font-size:0.8rem;">' +
+                '<span style="font-weight:700;color:var(--primary);"><i class="fas fa-bolt" style="margin-right:4px;"></i>Latest activity</span>' + rows.join('<span style="opacity:0.4;">|</span>') + '</div>';
+            el.style.display = '';
+        }
+
+        // Merged chronological feed: status notes + team daily work-notes sorted
+        // newest-first by update_date (status notes win ties — posted at mgmt level).
+        function renderTimeline(pid, data) {
+            const el = document.getElementById('psuTimeline');
+            if (!el) return;
+            const status = (data && data.status) || [];
+            const daily = (data && data.daily) || [];
+            const items = [];
+            status.forEach(u => items.push({ kind: 'status', ts: String(u.update_date || ''), u: u }));
+            daily.forEach(u => items.push({ kind: 'daily', ts: String(u.update_date || ''), u: u }));
+            items.sort((a, b) => (b.ts > a.ts ? 1 : b.ts < a.ts ? -1 : (a.kind === 'daily' && b.kind === 'status' ? 1 : -1)));
+            if (items.length === 0) {
+                el.innerHTML = '<span style="font-size:0.85rem;color:var(--text-secondary);">No status notes or team daily updates for this project yet.</span>';
+                el.style.display = '';
+                return;
+            }
+            el.innerHTML = items.map(it => {
+                const u = it.u;
+                if (it.kind === 'status') {
+                    const canEdit = ['admin', 'manager'].includes(currentRole) || String(u.author_id) === String((getCurrentUser() || {}).id);
+                    const author = ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || u.emp_code || '';
+                    const roleTag = String(u.author_role || '').replace('_', ' ');
+                    return '<div style="padding:10px 0;border-bottom:1px dashed var(--border-light);">' +
+                        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">' +
+                        '<div style="min-width:0;flex:1;">' +
+                        '<div style="font-size:0.85rem;font-weight:600;">' + formatDate(u.update_date) +
+                        (u.unit_name ? ' <span style="font-size:0.72rem;font-weight:600;background:var(--bg-light);border:1px solid var(--border-light);border-radius:10px;padding:1px 8px;color:var(--text-secondary);"><i class="fas fa-layer-group"></i> ' + escapeHtml(u.unit_name) + '</span>' : '') +
+                        ' <span style="font-size:0.72rem;font-weight:600;background:#EFF6FF;color:#1D4ED8;border-radius:10px;padding:1px 8px;">' + escapeHtml(psuCategoryLabel(u.category)) + '</span>' +
+                        ' <span style="font-size:0.68rem;font-weight:700;background:#F3F4F6;color:#4B5563;border-radius:10px;padding:1px 8px;border:1px solid var(--border-light);"><i class="fas fa-bullhorn" style="margin-right:2px;"></i>STATUS</span></div>' +
+                        '<div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">' + escapeHtml(author) +
+                        (roleTag ? ' <span style="color:var(--text-tertiary);">' + escapeHtml(roleTag) + '</span>' : '') +
+                        (u.notes ? ' <span style="color:var(--text-tertiary);">- ' + escapeHtml(u.notes) + '</span>' : '') + '</div>' +
+                        '<div style="font-size:0.82rem;margin-top:4px;color:var(--text-primary);">' + escapeHtml(u.description) + '</div>' +
+                        '</div>' +
+                        (canEdit ? '<div style="display:flex;gap:6px;flex-shrink:0;">' +
+                            '<button type="button" class="btn btn-secondary" style="padding:5px 10px;font-size:0.75rem;" onclick="editStatusUpdate(' + pid + ',' + u.id + ')"><i class="fas fa-pen"></i></button>' +
+                            '<button type="button" class="btn btn-danger" style="padding:5px 10px;font-size:0.75rem;" onclick="deleteStatusUpdate(' + pid + ',' + u.id + ')"><i class="fas fa-trash"></i></button>' +
+                            '</div>' : '') +
+                        '</div></div>';
+                }
+                // Daily work-note
+                const who = ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || u.emp_code || '';
+                return '<div style="padding:10px 0;border-bottom:1px dashed var(--border-light);">' +
+                    '<div style="font-size:0.85rem;font-weight:600;">' + formatDate(u.update_date) +
+                    (u.unit_name ? ' <span style="font-size:0.72rem;font-weight:600;background:var(--bg-light);border:1px solid var(--border-light);border-radius:10px;padding:1px 8px;color:var(--text-secondary);"><i class="fas fa-layer-group"></i> ' + escapeHtml(u.unit_name) + '</span>' : '') +
+                    ' <span style="font-size:0.72rem;font-weight:600;background:#F0FDF4;color:#15803D;border-radius:10px;padding:1px 8px;">' + escapeHtml(pduCatLabel(u.task_cat)) + '</span>' +
+                    (Number(u.hours) > 0 ? ' <span style="font-size:0.75rem;color:var(--text-tertiary);">' + u.hours + 'h</span>' : '') +
+                    ' <span style="font-size:0.68rem;font-weight:700;background:#F3F4F6;color:#4B5563;border-radius:10px;padding:1px 8px;border:1px solid var(--border-light);"><i class="fas fa-calendar-day" style="margin-right:2px;"></i>DAILY</span></div>' +
+                    '<div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">' + escapeHtml(who) + ' <span style="color:var(--text-tertiary);">daily work note</span></div>' +
+                    '<div style="font-size:0.82rem;margin-top:4px;color:var(--text-primary);">' + escapeHtml(u.description) + '</div>' +
+                    (u.notes ? '<div style="font-size:0.76rem;color:var(--text-tertiary);margin-top:2px;">Note: ' + escapeHtml(u.notes) + '</div>' : '') +
+                    '</div>';
+            }).join('');
+            el.style.display = '';
         }
     </script>
 </body>

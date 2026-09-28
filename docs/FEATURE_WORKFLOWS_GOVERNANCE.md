@@ -247,6 +247,23 @@ DB pristine after rollback (0 `QA-TR-*` employees / 0 QA projects).
   role-gates + GET scoping (SU-13 assigned sees 4 / SU-14 unassigned sees 0)
   preserved after the OR-grant scope fix.
 
+### Updates-visibility UI pass (2026-09-28, no backend changes)
+User asked (Telugu): "updates koda projects lo chupisthe better" — project
+updates were buried behind buttons/tabs. Shipped inline visibility across the
+three projects pages (commit `9b2393b` on `master`):
+
+| Page | What changed |
+|------|--------------|
+| `manager/team-projects.html` | Selected-project panel gains a **"Latest activity" strip** (newest STATUS note + newest team DAILY note) plus an **"Activity timeline"** tab that merges status notes (`/project-status-updates`) and team daily work-notes (`/project-updates`) into one chronological feed with STATUS/DAILY tags + per-unit chips. Status notes still have their dedicated tab (composer + edit/delete). Both feeds refresh after post/edit/delete. |
+| `manager/led-projects.html` | Each led-project card shows an inline **"Latest activity"** strip (newest status + newest daily from the team) right on the card — no modal click needed; a small "Open updates" button still deep-links to the full modal feed. |
+| `employee/my-projects.html` | The per-card **"Updates (N)"** block now renders the **full list** of management status notes for that project (scrollable, newest-first) instead of a single "Latest" line. |
+
+Role scoping is untouched (reads only; employee cards still only surface updates
+the GET scope already returns — assigned ∪ granted projects). Daily notes on
+manager pages are read-only views (employees/admins author through their own
+flows). Gates: inline-JS checker 3/3 clean; `formatDate`/`escapeHtml` from
+`auth.js` used consistently.
+
 ---
 
 ## 9. Known, honest limits (not shipped yet)

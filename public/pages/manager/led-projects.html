@@ -191,6 +191,49 @@
             }
             ledProjects = data.led || [];
             renderLed();
+            loadLedLatest(); // fire-and-forget inline "latest" strip per card
+        }
+
+        // ---------- Inline "Latest" strip (status note + team daily note) ----------
+        async function loadLedLatest() {
+            const slots = ledProjects.map(p => ({
+                p, slot: document.getElementById('lpLatest_' + p.projectId)
+            })).filter(x => x.slot);
+            await Promise.all(slots.map(async ({ p, slot }) => {
+                slot.innerHTML = '<div class="spinner" style="margin:0 auto;width:14px;height:14px;"></div>';
+                const [su, du] = await Promise.all([
+                    apiCall('/project-status-updates?projectId=' + p.projectId + '&limit=100'),
+                    apiCall('/project-updates?projectId=' + p.projectId + '&limit=100')
+                ]);
+                const status = (su && su.success && su.updates) || [];
+                const daily = (du && du.success && du.updates) || [];
+                const rows = [];
+                if (status.length) {
+                    const u = status[0];
+                    rows.push('<span style="min-width:0;"><i class="fas fa-bullhorn" style="color:var(--primary);margin-right:4px;"></i><b>' + formatDate(u.update_date) + '</b> <span style="color:var(--text-tertiary);">' + esc(luCategoryLabel(u.category)) + '</span> — ' + esc(clip(u.description, 70)) + '</span>');
+                }
+                if (daily.length) {
+                    const u = daily[0];
+                    rows.push('<span style="min-width:0;"><i class="fas fa-calendar-day" style="color:#15803D;margin-right:4px;"></i><b>' + esc(pduCatLabel(u.task_cat)) + '</b> ' + esc(((u.first_name || '') + ' ' + (u.last_name || '')).trim()) + ' — ' + esc(clip(u.description, 70)) + '</span>');
+                }
+                slot.innerHTML = rows.length === 0
+                    ? ''
+                    : '<div style="display:flex;flex-direction:column;gap:5px;padding:8px 12px;background:var(--bg-light);border-left:3px solid var(--primary);border-radius:6px;font-size:0.8rem;color:var(--text-secondary);">' +
+                        '<span style="font-weight:700;color:var(--primary);font-size:0.75rem;"><i class="fas fa-bolt" style="margin-right:4px;"></i>Latest activity</span>' +
+                        rows.join('<span style="opacity:0.4;">|</span>') +
+                        '<button type="button" class="btn btn-sm btn-secondary" style="align-self:flex-start;padding:4px 12px;font-size:0.75rem;" onclick="openLedUpdates(' + p.projectId + ')"><i class="fas fa-bullhorn"></i> Open updates</button>' +
+                        '</div>';
+            }));
+        }
+
+        function pduCatLabel(cat) {
+            const m = { design: 'Design', drafting: 'Drafting', site_visit: 'Site Visit', coordination: 'Coordination', approvals: 'Approvals', documentation: 'Documentation', meeting: 'Meeting', other: 'Other' };
+            return m[cat] || String(cat || 'other').replace(/_/g, ' ');
+        }
+
+        function clip(s, n) {
+            s = String(s || '');
+            return s.length > n ? s.slice(0, n).trimEnd() + '&hellip;' : s;
         }
 
         function esc(s) { const d = document.createElement('div'); d.textContent = (s === null || s === undefined) ? '' : String(s); return d.innerHTML; }
@@ -232,7 +275,9 @@
                     ? '<button class="btn btn-sm btn-secondary" onclick="openPlace(' + p.projectId + ',null)" style="margin-top:4px;"><i class="fas fa-user-plus"></i> Assign to Project (' + p.projectLevelCount + ')</button>'
                     : '';
 
-                return '<div class="lp-proj">' + coverBanner + projectLine + unitsHtml + projectBtn + '</div>';
+                const latestSlot = '<div id="lpLatest_' + p.projectId + '" style="margin-top:10px;"></div>';
+
+                return '<div class="lp-proj">' + coverBanner + projectLine + latestSlot + unitsHtml + projectBtn + '</div>';
             }).join('');
         }
 
