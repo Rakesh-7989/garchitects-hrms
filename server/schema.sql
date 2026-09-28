@@ -866,3 +866,97 @@ INSERT INTO company_settings (setting_key, setting_value, description) VALUES
 ('weekly_working_days', '6', 'Expected working days per week'),
 ('monthly_leave_quota', '1', 'Paid leave days an employee earns per month')
 ON CONFLICT (setting_key) DO NOTHING;
+
+-- ============================================================
+-- 25. TEAM TRANSFER REQUESTS (cross-team employee movement)
+-- ============================================================
+-- A team_lead/manager who needs headcount requests an employee who currently
+-- reports to ANOTHER team lead. The source lead (the employee's CURRENT
+-- reporting manager at decision time) approves/rejects the release; on approval
+-- the employee's reporting_manager_id moves to the requester, so the requester
+-- can then place them (reporting tree) and assign work. Manager/admin keep
+-- oversight and may also approve/reject; HR stays read-only.
+CREATE TABLE IF NOT EXISTS team_transfer_requests (
+    id SERIAL PRIMARY KEY,
+    employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    from_tl_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    to_tl_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    reason TEXT,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+    decided_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    decided_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ttr_to ON team_transfer_requests(to_tl_id, status);
+CREATE INDEX IF NOT EXISTS idx_ttr_from ON team_transfer_requests(from_tl_id, status);
+CREATE INDEX IF NOT EXISTS idx_ttr_emp ON team_transfer_requests(employee_id, status);
+
+-- ============================================================
+-- 26. TEAM HANDOVERS (TL leave / absence coverage)
+-- ============================================================
+-- An absent team_lead (self-declared, or manager/admin on their behalf) asks
+-- another team_lead/manager to COVER their team + led projects for a window.
+-- The cover lead must ACCEPT. While active (status='active' and today inside
+-- [start_date, end_date]) the cover lead inherits READ + status-update
+-- authoring on the absent lead's projects/units; structural moves (place,
+-- designate, transfer) are NOT inherited. Manager/admin are notified and can
+-- cancel anytime. An active row past end_date reads as ended (and is lazily
+-- flipped).
+CREATE TABLE IF NOT EXISTS team_handovers (
+    id SERIAL PRIMARY KEY,
+    absent_tl_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    cover_tl_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    reason TEXT,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending','active','declined','cancelled','ended')),
+    requested_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    decided_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    decided_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    ended_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_th_cover ON team_handovers(cover_tl_id, status);
+CREATE INDEX IF NOT EXISTS idx_th_absent ON team_handovers(absent_tl_id, status);
+
+-- ============================================================
+-- 27. PROJECT ACCESS REQUESTS + GRANTS (read access to non-assigned projects)
+-- ============================================================
+-- Anyone may request READ access to a project they are not assigned to (or not
+-- leading). Approvers = the project's whole-project leads, or any manager/admin.
+--  - scope 'role'    → the grant mirrors the requester's own role level
+--                      (employee → employee-level read, team_lead → TL-view, ...)
+--  - scope 'extended' → the requester explicitly asks for a HIGHER level
+--                       (requested_role ∈ employee|team_lead|manager) and the
+--                       approver can grant it (audited). Optional expires_at.
+CREATE TABLE IF NOT EXISTS project_access_requests (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    requester_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    reason TEXT,
+    scope VARCHAR(10) DEFAULT 'role' CHECK (scope IN ('role','extended')),
+    requested_role VARCHAR(20),
+    expires_at TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+    decided_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    decided_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_par_req ON project_access_requests(requester_id, status);
+CREATE INDEX IF NOT EXISTS idx_par_proj ON project_access_requests(project_id, status);
+
+CREATE TABLE IF NOT EXISTS project_access_grants (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    granted_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    scope VARCHAR(10) DEFAULT 'role' CHECK (scope IN ('role','extended')),
+    role_level VARCHAR(20) NOT NULL DEFAULT 'employee' CHECK (role_level IN ('employee','team_lead','manager')),
+    reason TEXT,
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    revoked_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    revoked_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pag_emp ON project_access_grants(employee_id);
+CREATE INDEX IF NOT EXISTS idx_pag_project ON project_access_grants(project_id);

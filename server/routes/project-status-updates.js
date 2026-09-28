@@ -4,7 +4,7 @@ const { query } = require('../config/database');
 const { verifyToken } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
-const { leadCovers } = require('./project-leads');
+const { coversProjectArea } = require('./project-leads');
 
 // Self-healing query wrapper: heals missing projects-module tables per request.
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
@@ -36,9 +36,13 @@ router.get('/', verifyToken, async (req, res) => {
         let p = 0;
 
         if (!canViewAll) {
+            // Employees: updates on assigned projects OR projects granted to
+            // them via project_access_grants (active, not revoked/expired).
             p++;
-            conditions.push(`pu.project_id IN (SELECT project_id FROM project_employees WHERE employee_id = $${p})`);
-            params.push(req.user.id);
+            conditions.push(`(pu.project_id IN (SELECT project_id FROM project_employees WHERE employee_id = $${p})`);
+            p++;
+            conditions.push(`pu.project_id IN (SELECT project_id FROM project_access_grants WHERE employee_id = $${p} AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())))`);
+            params.push(req.user.id, req.user.id);
         }
         if (projectId) {
             p++;
@@ -143,11 +147,13 @@ router.post('/', verifyToken, async (req, res) => {
             }
         }
 
-        // P9/D11: a team lead posts only on projects/units they lead.
+        // P9/D11 + P10: a team lead posts only on projects/units they lead —
+        // or, while an active handover is in force, on the absent lead's
+        // projects/units they are covering (authoring scope carried along).
         if (req.user.role === 'team_lead') {
-            const covers = await leadCovers(proj, unit, req.user.id);
+            const covers = await coversProjectArea(proj, unit, req.user.id);
             if (!covers) {
-                return res.status(403).json({ success: false, message: 'You can only post updates on projects/units you lead' });
+                return res.status(403).json({ success: false, message: 'You can only post updates on projects/units you lead (or cover during a handover)' });
             }
         }
 

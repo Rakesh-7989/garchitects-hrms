@@ -165,6 +165,39 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Project Access (workflow release C): request read access to any active project -->
+            <div id="accessCard" class="card mb-3" style="display:none;">
+                <div class="card-header">
+                    <h3 style="font-weight:600;"><i class="fas fa-key" style="margin-right:6px;"></i> PROJECT ACCESS</h3>
+                </div>
+                <div class="card-body">
+                    <p style="font-size:0.85rem;color:var(--text-secondary);margin-top:0;">Need to see a project you aren't assigned to? Request read access — your project lead / manager / admin approves.</p>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+                        <select id="paProject" class="form-control" style="flex:2;min-width:240px;"><option value="">-- Select project --</option></select>
+                        <select id="paScope" class="form-control" style="flex:1;min-width:150px;" onchange="onPaScopeChange()">
+                            <option value="role">Role-level (my own level)</option>
+                            <option value="extended">Extended (higher level)</option>
+                        </select>
+                        <select id="paRequestedRole" class="form-control" style="flex:1;min-width:150px;display:none;">
+                            <option value="">-- Requested level --</option>
+                            <option value="employee">Employee</option>
+                            <option value="team_lead">Team Lead</option>
+                            <option value="manager">Manager</option>
+                        </select>
+                        <input type="text" id="paReason" class="form-control" style="flex:2;min-width:220px;" placeholder="Why do you need access? (optional)">
+                        <button class="btn btn-primary" onclick="submitAccessRequest()" style="padding:10px 18px;font-weight:600;"><i class="fas fa-paper-plane"></i> Request Access</button>
+                    </div>
+                    <div id="paRequests" style="margin-top:10px;">
+                        <div style="font-weight:600;font-size:0.85rem;margin-bottom:6px;">My requests</div>
+                        <div id="paRequestsList" style="font-size:0.85rem;color:var(--text-secondary);">Loading…</div>
+                    </div>
+                    <div id="paGrants" style="margin-top:14px;display:none;">
+                        <div style="font-weight:600;font-size:0.85rem;margin-bottom:6px;">My grants <span style="font-weight:400;color:var(--text-secondary);">(granted read access)</span></div>
+                        <div id="paGrantsList" style="font-size:0.85rem;color:var(--text-secondary);"></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -445,10 +478,121 @@
                 return;
             }
 
-            loadMyProjectsData();
+            await loadMyProjectsData();
+            await loadAccessPanel();
 
             document.getElementById('dailyUpdateForm').addEventListener('submit', submitDailyUpdate);
         });
+
+        // ===================== PROJECT ACCESS (workflow release C) =====================
+        let paCatalog = [];
+        let paMyRequests = [];
+
+        async function loadAccessPanel() {
+            const card = document.getElementById('accessCard');
+            if (!card) return;
+            card.style.display = 'block';
+            const data = await apiCall('/project-access/projects');
+            if (!data || !data.success) {
+                document.getElementById('paProject').innerHTML = '<option value="">Failed to load projects</option>';
+                return;
+            }
+            // Hide projects I'm already on, or already granted access to.
+            const mine = new Set((allProjects || []).map(p => String(p.id)));
+            const [reqData, grantData] = await Promise.all([
+                apiCall('/project-access/requests'),
+                apiCall('/project-access/grants/my')
+            ]);
+            paMyRequests = (reqData && reqData.success) ? (reqData.requests || []) : [];
+            const granted = new Set(
+                ((grantData && grantData.success) ? (grantData.grants || []) : []).map(g => String(g.project_id))
+            );
+            paCatalog = (data.projects || []).filter(p => !mine.has(String(p.id)) && !granted.has(String(p.id)));
+            const sel = document.getElementById('paProject');
+            sel.innerHTML = '<option value="">-- Select project --</option>' +
+                paCatalog.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+            renderPaRequests();
+            renderPaGrants(grantData);
+        }
+
+        function renderPaRequests() {
+            const el = document.getElementById('paRequestsList');
+            if (!paMyRequests.length) {
+                el.innerHTML = '<div style="color:var(--text-secondary);">No access requests yet.</div>';
+                return;
+            }
+            el.innerHTML = paMyRequests.map(r => {
+                const badge = r.status === 'approved' ? '#10b981'
+                    : (r.status === 'rejected' || r.status === 'cancelled') ? 'var(--text-tertiary)' : '#d97706';
+                const canCancel = r.status === 'pending';
+                return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px dashed var(--border-light);flex-wrap:wrap;">' +
+                    '<div style="min-width:0;flex:1;">' +
+                    '<div style="font-size:0.85rem;font-weight:600;">' + escapeHtml(r.project_name) +
+                    ' <span style="font-size:0.72rem;font-weight:600;background:var(--bg-light);border:1px solid var(--border-light);border-radius:10px;padding:1px 8px;color:var(--text-secondary);">' +
+                    (r.scope === 'extended' ? 'EXTENDED (' + escapeHtml(r.requested_role || '') + ')' : 'role-level') + '</span></div>' +
+                    (r.reason ? '<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px;">' + escapeHtml(r.reason) + '</div>' : '') +
+                    '<div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:2px;">Requested ' + formatDate(r.created_at, { hour: '2-digit', minute: '2-digit' }) +
+                    (r.status !== 'pending' ? ' · ' + r.status + (r.decided_by_name ? ' by ' + escapeHtml(r.decided_by_name) : '') : '') + '</div>' +
+                    '</div>' +
+                    '<div style="display:flex;gap:8px;align-items:center;">' +
+                    '<span style="font-size:0.7rem;font-weight:700;text-transform:capitalize;color:' + badge + ';">' + escapeHtml(r.status) + '</span>' +
+                    (canCancel ? '<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.72rem;" onclick="cancelAccessRequest(' + r.id + ')">Cancel</button>' : '') +
+                    '</div></div>';
+            }).join('');
+        }
+
+        function renderPaGrants(grantData) {
+            const el = document.getElementById('paGrantsList');
+            const wrap = document.getElementById('paGrants');
+            const grants = (grantData && grantData.success) ? (grantData.grants || []) : [];
+            if (!grants.length) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+            el.innerHTML = grants.map(g => {
+                return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px dashed var(--border-light);flex-wrap:wrap;">' +
+                    '<div style="min-width:0;flex:1;">' +
+                    '<div style="font-size:0.85rem;font-weight:600;">' + escapeHtml(g.project_name) +
+                    ' <span style="font-size:0.72rem;font-weight:600;background:#10b981;color:#fff;border-radius:10px;padding:1px 8px;">level: ' + escapeHtml(g.role_level) + '</span></div>' +
+                    (g.reason ? '<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px;">' + escapeHtml(g.reason) + '</div>' : '') +
+                    '<div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:2px;">Granted by ' + escapeHtml(g.granted_by_name || '') + ' · ' + formatDate(g.created_at) +
+                    (g.expires_at ? ' · till ' + escapeHtml(String(g.expires_at).slice(0, 10)) : '') + '</div>' +
+                    '</div></div>';
+            }).join('');
+        }
+
+        function onPaScopeChange() {
+            const extended = document.getElementById('paScope').value === 'extended';
+            document.getElementById('paRequestedRole').style.display = extended ? 'block' : 'none';
+        }
+
+        async function submitAccessRequest() {
+            const pid = parseInt(document.getElementById('paProject').value, 10);
+            const scope = document.getElementById('paScope').value;
+            const requestedRole = scope === 'extended' ? document.getElementById('paRequestedRole').value : null;
+            const reason = document.getElementById('paReason').value.trim();
+            if (!pid) { showToast('Select a project first', 'error'); return; }
+            if (scope === 'extended' && !requestedRole) { showToast('Pick the requested access level', 'error'); return; }
+            const body = { project_id: pid, reason, scope };
+            if (scope === 'extended') body.requested_role = requestedRole;
+            const data = await apiCall('/project-access/requests', 'POST', body);
+            if (data && data.success) {
+                showToast('Access request sent for approval', 'success');
+                document.getElementById('paReason').value = '';
+                await loadAccessPanel();
+                loadNotifBadge();
+            } else {
+                showToast(data?.message || 'Failed to send request', 'error');
+            }
+        }
+
+        async function cancelAccessRequest(id) {
+            const data = await apiCall('/project-access/requests/' + id + '/cancel', 'POST', {});
+            if (data && data.success) {
+                showToast('Request cancelled', 'success');
+                await loadAccessPanel();
+            } else {
+                showToast(data?.message || 'Cancel failed', 'error');
+            }
+        }
     </script>
 </body>
 </html>

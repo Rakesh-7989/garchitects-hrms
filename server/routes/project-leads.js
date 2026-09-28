@@ -69,6 +69,37 @@ async function leadCovers(projectId, unitId, meId) {
     return false;
 }
 
+// ── Team-handover coverage (P10) ─────────────────────────────────────────────
+// An active team_handover makes `me` the acting cover for an absent lead's
+// projects/units. Cover inherits READ + status-update authoring only — the
+// designation-scope powers (/place, designate, transfers) stay lead-only.
+async function activeCoverRows(meId) {
+    const r = await q(
+        `SELECT th.id, th.absent_tl_id, th.cover_tl_id, th.start_date, th.end_date,
+                e.first_name, e.last_name, e.employee_id AS emp_code
+         FROM team_handovers th
+         JOIN employees e ON e.id = th.absent_tl_id
+         WHERE th.cover_tl_id = $1 AND th.status = 'active'
+           AND th.start_date <= CURRENT_DATE AND th.end_date >= CURRENT_DATE
+         ORDER BY th.end_date`,
+        [meId]
+    );
+    return r.rows;
+}
+
+// Whether `me` may treat project/unit as "in scope": designated lead OR active
+// cover of the designated lead (authoring scope). LinkedList-safe: if the cover
+// window is somehow nested, the chain still terminates because coverage is
+// directly checked against the DESIGNATED lead only.
+async function coversProjectArea(projectId, unitId, meId) {
+    if (await leadCovers(projectId, unitId, meId)) return true;
+    const covers = await activeCoverRows(meId);
+    for (const c of covers) {
+        if (await leadCovers(projectId, unitId, c.absent_tl_id)) return true;
+    }
+    return false;
+}
+
 // ============================================================
 // GET /api/project-leads/my-team — the caller's placement pool.
 // team_lead/manager → their reporting tree (mirrors /place enforcement);
@@ -168,23 +199,15 @@ router.get('/', verifyToken, async (req, res) => {
 // ============================================================
 router.get('/mine', verifyToken, async (req, res) => {
     try {
-        // My designation rows (project-level and/or unit-level).
-        const rows = await q(
-            `SELECT pl.project_id, pl.unit_id
-             FROM project_leads pl
-             WHERE pl.lead_id = $1
-             ORDER BY pl.id`,
-            [req.user.id]
-        );
-        const projectIds = [...new Set(rows.rows.map(r => r.project_id))];
-        const led = [];
-        for (const pid of projectIds) {
-            const wholeProject = rows.rows.some(r => r.project_id === pid && r.unit_id === null);
+        // Build one led entry (designated or covered) for `pid` from its
+        // designation rows; `coveringFor` = the absent TL header when covered.
+        const buildEntry = async (pid, rows, coveringFor) => {
+            const wholeProject = rows.some(r => r.project_id === pid && r.unit_id === null);
             const projRes = await q(
                 `SELECT p.id, p.name, p.status FROM projects p WHERE p.id = $1`,
                 [pid]
             );
-            if (projRes.rows.length === 0) continue;
+            if (projRes.rows.length === 0) return null;
             const p = projRes.rows[0];
 
             let unitRows;
@@ -197,7 +220,7 @@ router.get('/mine', verifyToken, async (req, res) => {
                 unitRows = u.rows;
             } else {
                 // Unit-scoped: only the designated units.
-                const unitIds = rows.rows.filter(r => r.project_id === pid && r.unit_id !== null).map(r => r.unit_id);
+                const unitIds = rows.filter(r => r.project_id === pid && r.unit_id !== null).map(r => r.unit_id);
                 const u = await q(
                     `SELECT u.id, u.name, u.status FROM project_units u WHERE u.project_id = $1 AND u.id = ANY($2::int[]) AND u.status = 'active' ORDER BY u.name`,
                     [pid, unitIds]
@@ -213,7 +236,7 @@ router.get('/mine', verifyToken, async (req, res) => {
             const countMap = {};
             for (const c of counts.rows) countMap[c.unit_id === null ? 'null' : c.unit_id] = parseInt(c.n, 10);
 
-            led.push({
+            return {
                 projectId: p.id,
                 projectName: p.name,
                 projectStatus: p.status,
@@ -224,8 +247,42 @@ router.get('/mine', verifyToken, async (req, res) => {
                     name: u.name,
                     status: u.status,
                     memberCount: countMap[u.id] || 0
-                }))
-            });
+                })),
+                coveringFor: coveringFor || null
+            };
+        };
+
+        // My designation rows (project-level and/or unit-level).
+        const rows = await q(
+            `SELECT pl.project_id, pl.unit_id
+             FROM project_leads pl
+             WHERE pl.lead_id = $1
+             ORDER BY pl.id`,
+            [req.user.id]
+        );
+        const seen = new Set();
+        const led = [];
+        for (const pid of [...new Set(rows.rows.map(r => r.project_id))]) {
+            const entry = await buildEntry(pid, rows.rows, null);
+            if (entry) { seen.add(pid); led.push(entry); }
+        }
+
+        // Active handover coverage (P10): the absent leads' projects appear too
+        // (read + status updates only — structural powers are not inherited).
+        for (const cv of await activeCoverRows(req.user.id)) {
+            const absentRows = (await q(
+                `SELECT project_id, unit_id FROM project_leads WHERE lead_id = $1 ORDER BY id`,
+                [cv.absent_tl_id]
+            )).rows;
+            for (const pid of [...new Set(absentRows.map(r => r.project_id))]) {
+                if (seen.has(pid)) continue;
+                const entry = await buildEntry(pid, absentRows, {
+                    id: cv.absent_tl_id,
+                    name: ((cv.first_name || '') + ' ' + (cv.last_name || '')).trim(),
+                    emp: cv.emp_code
+                });
+                if (entry) { seen.add(pid); led.push(entry); }
+            }
         }
         res.json({ success: true, led });
     } catch (error) {
@@ -464,3 +521,7 @@ module.exports = router;
 // "my team + my units" rule on the general P8 routes for team_leads (D9).
 module.exports.leadCovers = leadCovers;
 module.exports.myTreeIds = myTreeIds;
+// Team-handover coverage (P10): active cover rows + the authoring scope that
+// lets a cover lead read/post status updates on the absent lead's projects.
+module.exports.activeCoverRows = activeCoverRows;
+module.exports.coversProjectArea = coversProjectArea;

@@ -137,6 +137,8 @@
                     <button class="tab-btn" onclick="switchTab('tickets')">Queries <span class="tab-badge" id="ticketTabBadge" style="display:none;">0</span></button>
                     <button class="tab-btn" onclick="switchTab('regularization')">Regularizations <span class="tab-badge" id="regTabBadge" style="display:none;">0</span></button>
                     <button class="tab-btn" onclick="switchTab('attendance')">Team Attendance</button>
+                    <button class="tab-btn" onclick="switchTab('transfers')">Transfers <span class="tab-badge" id="transferTabBadge" style="display:none;">0</span></button>
+                    <button class="tab-btn" onclick="switchTab('handover')">Handover <span class="tab-badge" id="handoverTabBadge" style="display:none;">0</span></button>
                 </div>
                 <div id="tabLeaves"></div>
                 <div id="tabWfh" style="display:none;"></div>
@@ -152,6 +154,8 @@
                     </div>
                     <div id="attContainer"><div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading…</div></div>
                 </div>
+                <div id="tabTransfers" style="display:none;"></div>
+                <div id="tabHandover" style="display:none;"></div>
             </div>
         </div>
     </main>
@@ -209,6 +213,8 @@
             loadWfh();
             loadTickets();
             loadRegularizations();
+            loadTransfers();
+            loadHandovers();
             // Init Team Attendance month/year picker
             const attMonth = document.getElementById('attMonth');
             if (attMonth) {
@@ -219,7 +225,7 @@
             }
             // Deep link support: notification bell URLs carry ?tab=...
             const wanted = new URLSearchParams(window.location.search).get('tab');
-            if (wanted && ['leaves', 'wfh', 'tickets', 'regularization', 'attendance'].includes(wanted)) {
+            if (wanted && ['leaves', 'wfh', 'tickets', 'regularization', 'attendance', 'transfers', 'handover'].includes(wanted)) {
                 switchTab(wanted);
             }
         });
@@ -662,7 +668,320 @@
             document.getElementById('tabTickets').style.display = tab === 'tickets' ? 'block' : 'none';
             document.getElementById('tabRegularization').style.display = tab === 'regularization' ? 'block' : 'none';
             document.getElementById('tabAttendance').style.display = tab === 'attendance' ? 'block' : 'none';
+            document.getElementById('tabTransfers').style.display = tab === 'transfers' ? 'block' : 'none';
+            document.getElementById('tabHandover').style.display = tab === 'handover' ? 'block' : 'none';
             if (tab === 'attendance') loadTeamAttendance();
+            if (tab === 'transfers') loadTransfers();
+            if (tab === 'handover') loadHandovers();
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // WORKFLOW RELEASE — Team Transfers (cross-team movement)
+        // ─────────────────────────────────────────────────────────────
+        const TRANSFER_ACTORS = ['team_lead', 'manager', 'admin'];
+        const isTransferActor = (role) => TRANSFER_ACTORS.includes(role);
+        const isOverlord = (role) => role === 'manager' || role === 'admin';
+
+        async function loadTransfers() {
+            const container = document.getElementById('tabTransfers');
+            const user = getCurrentUser();
+            if (!user) return;
+            const canCreate = isTransferActor(user.role);
+            const canSeeAll = ['admin', 'manager', 'hr'].includes(user.role);
+
+            const [myData, allData, candData] = await Promise.all([
+                canCreate ? apiCall('/team-transfers/my') : Promise.resolve(null),
+                canSeeAll ? apiCall('/team-transfers') : Promise.resolve(null),
+                canCreate ? apiCall('/team-transfers/candidates') : Promise.resolve(null)
+            ]);
+
+            let html = '';
+
+            if (canCreate) {
+                const candidates = (candData && candData.success) ? (candData.candidates || []) : [];
+                html += '<div class="request-card">' +
+                    '<div style="font-weight:600;font-size:0.9rem;margin-bottom:8px;"><i class="fas fa-user-plus" style="color:var(--primary);margin-right:6px;"></i>Request an employee from another team</div>' +
+                    '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+                    '<select id="transferEmp" class="form-control" style="flex:1;min-width:220px;"><option value="">— Select employee (another TL\'s team) —</option>' +
+                    candidates.map(c =>
+                        '<option value="' + c.id + '">' + escapeHtml(c.full_name) + ' (' + escapeHtml(c.employee_id) + ') · ' + escapeHtml(c.current_tl_name || '') + (c.designation_name ? ' · ' + escapeHtml(c.designation_name) : '') + '</option>'
+                    ).join('') +
+                    '</select>' +
+                    '<input type="text" id="transferReason" class="form-control" style="flex:2;min-width:240px;" placeholder="Why do you need this employee?">' +
+                    '<button class="btn btn-sm btn-primary" onclick="createTransfer()"><i class="fas fa-paper-plane"></i> Send Request</button>' +
+                    '</div>' +
+                    '<div class="req-meta">The employee\'s current team lead approves or rejects the release; manager/admin are notified.</div>' +
+                    '</div>';
+            }
+
+            const mine = (myData && myData.success) ? (myData.requests || []) : [];
+            const incoming = canCreate ? mine.filter(r => r.from_tl_id === user.id && r.status === 'pending') : [];
+            const outgoing = canCreate ? mine.filter(r => r.to_tl_id === user.id && r.status === 'pending') : [];
+            const history = canCreate ? mine.filter(r => r.status !== 'pending') : [];
+
+            if (canCreate) {
+                html += '<div style="font-weight:600;font-size:0.85rem;margin:14px 0 8px;">Incoming — release approval needed' + (incoming.length ? ' (' + incoming.length + ')' : '') + '</div>';
+                html += incoming.length
+                    ? incoming.map(r => transferCard(r)).join('')
+                    : '<div style="color:var(--text-secondary);font-size:0.85rem;padding:4px 0;">No pending release requests for your team.</div>';
+
+                html += '<div style="font-weight:600;font-size:0.85rem;margin:14px 0 8px;">My requests' + (outgoing.length ? ' (' + outgoing.length + ')' : '') + '</div>';
+                html += outgoing.length
+                    ? outgoing.map(r => transferCard(r)).join('')
+                    : '<div style="color:var(--text-secondary);font-size:0.85rem;padding:4px 0;">No pending requests from you.</div>';
+            }
+
+            if (canSeeAll) {
+                const all = (allData && allData.success) ? (allData.requests || []) : [];
+                html += '<div style="border-top:1px solid var(--border-light);margin:18px 0;"></div>';
+                html += '<div style="font-weight:600;font-size:0.85rem;margin-bottom:8px;">All requests (monitor)' + (all.length ? ' (' + all.length + ')' : '') + '</div>';
+                html += all.length
+                    ? all.filter(r => r.status === 'pending').map(r => transferCard(r)).join('')
+                    : '<div style="color:var(--text-secondary);font-size:0.85rem;">None yet.</div>';
+            }
+
+            if (canCreate) {
+                html += '<div style="border-top:1px solid var(--border-light);margin:18px 0;"></div>';
+                html += '<div style="font-weight:600;font-size:0.85rem;margin-bottom:8px;">Resolved' + (history.length ? ' (' + history.length + ')' : '') + '</div>';
+                html += history.length
+                    ? history.map(r => transferCard(r)).join('')
+                    : '<div style="color:var(--text-secondary);font-size:0.85rem;">No past transfer requests.</div>';
+            }
+
+            const badgeEl = document.getElementById('transferTabBadge');
+            if (badgeEl) {
+                badgeEl.textContent = incoming.length;
+                badgeEl.style.display = incoming.length ? 'inline-block' : 'none';
+            }
+            container.innerHTML = html;
+        }
+
+        function transferCard(r) {
+            const u = getCurrentUser();
+            const s = r.status || 'pending';
+            const badge = s === 'approved' ? 'success' : s === 'rejected' ? 'danger' : s === 'cancelled' ? 'secondary' : 'warning';
+            const isSourceNow = r.from_tl_id === u.id && r.current_rm === r.from_tl_id;
+            const canDecide = s === 'pending' && u.role !== 'hr' && (isOverlord(u.role) || (u.role === 'team_lead' && isSourceNow));
+            const canCancel = s === 'pending' && (u.role === 'admin' || r.to_tl_id === u.id || r.from_tl_id === u.id);
+            let actions = '';
+            if (canDecide) {
+                actions += '<button class="btn btn-sm btn-success" onclick="decideTransfer(' + r.id + ', \'approve\')"><i class="fas fa-check"></i> Approve</button>';
+                actions += '<button class="btn btn-sm btn-danger" onclick="decideTransfer(' + r.id + ', \'reject\')"><i class="fas fa-times"></i> Reject</button>';
+            }
+            if (canCancel) {
+                actions += '<button class="btn btn-sm btn-secondary" onclick="cancelTransfer(' + r.id + ')"><i class="fas fa-times-circle"></i> Cancel</button>';
+            }
+            return '<div class="request-card">' +
+                '<div class="req-top"><div><div class="req-emp">' + escapeHtml(r.employee_name) +
+                    ' <span class="badge badge-secondary" style="font-size:0.68rem;">' + escapeHtml(r.emp_code) + '</span></div>' +
+                    '<div class="req-meta"><i class="fas fa-arrow-right" style="margin-right:4px;"></i>' + escapeHtml(r.from_tl_name) + ' → ' + escapeHtml(r.to_tl_name) + '</div>' +
+                    (r.reason ? '<div class="req-sub"><strong>Reason:</strong> ' + escapeHtml(r.reason) + '</div>' : '') +
+                    '<div class="req-meta">Requested ' + formatDate(r.created_at, { hour: '2-digit', minute: '2-digit' }) + (s !== 'pending' ? ' · Decided by ' + escapeHtml(r.decided_by_name || '') : '') + '</div></div>' +
+                    '<span class="badge badge-' + badge + '">' + escapeHtml(s) + '</span></div>' +
+                    (actions ? '<div class="req-actions">' + actions + '</div>' : '') +
+                '</div>';
+        }
+
+        async function createTransfer() {
+            const employeeId = parseInt(document.getElementById('transferEmp').value, 10);
+            const reason = document.getElementById('transferReason').value.trim();
+            if (!employeeId) { showToast('Select an employee to request', 'error'); return; }
+            const data = await apiCall('/team-transfers', 'POST', { employeeId, reason });
+            if (data && data.success) {
+                showToast('Transfer request sent for approval', 'success');
+                loadTransfers();
+                loadNotifBadge();
+            } else {
+                showToast(data?.message || 'Failed to send request', 'error');
+            }
+        }
+
+        async function decideTransfer(id, action) {
+            const data = await apiCall('/team-transfers/' + id + '/' + action, 'POST', {});
+            if (data && data.success) {
+                showToast(action === 'approve' ? 'Transfer approved — employee moved teams' : 'Transfer rejected', 'success');
+                loadTransfers();
+                loadNotifBadge();
+            } else {
+                showToast(data?.message || 'Action failed', 'error');
+            }
+        }
+
+        async function cancelTransfer(id) {
+            const data = await apiCall('/team-transfers/' + id + '/cancel', 'POST', {});
+            if (data && data.success) {
+                showToast('Transfer request cancelled', 'success');
+                loadTransfers();
+                loadNotifBadge();
+            } else {
+                showToast(data?.message || 'Cancel failed', 'error');
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // WORKFLOW RELEASE — Team Handover (TL leave / absence cover)
+        // ─────────────────────────────────────────────────────────────
+        async function loadHandovers() {
+            const container = document.getElementById('tabHandover');
+            const user = getCurrentUser();
+            if (!user) return;
+            const canCreate = ['team_lead', 'manager', 'admin'].includes(user.role);
+            const canSeeAll = ['admin', 'manager', 'hr'].includes(user.role);
+
+            const [myData, allData, covData, leadsData] = await Promise.all([
+                canCreate ? apiCall('/team-handovers/my') : Promise.resolve(null),
+                canSeeAll ? apiCall('/team-handovers') : Promise.resolve(null),
+                canCreate ? apiCall('/team-handovers/covers-options') : Promise.resolve(null),
+                (user.role === 'manager' || user.role === 'admin') ? apiCall('/team-handovers/leads-options') : Promise.resolve(null)
+            ]);
+
+            let html = '';
+
+            if (canCreate) {
+                const covers = (covData && covData.success) ? (covData.covers || []) : [];
+                const leads = (leadsData && leadsData.success) ? (leadsData.leads || []) : [];
+                const today = new Date().toLocaleDateString('en-CA');
+                const endDefault = new Date(Date.now() + 7 * 86400000).toLocaleDateString('en-CA');
+                html += '<div class="request-card">' +
+                    '<div style="font-weight:600;font-size:0.9rem;margin-bottom:8px;"><i class="fas fa-user-shield" style="color:var(--primary);margin-right:6px;"></i>Hand over your team while you are away</div>' +
+                    (user.role === 'team_lead' ? '' :
+                        '<div style="margin-bottom:8px;"><select id="handoverAbsent" class="form-control" style="width:100%;"><option value="">— Absent team lead (manager/admin hand over on their behalf) —</option>' +
+                        leads.map(l => '<option value="' + l.id + '">' + escapeHtml(l.full_name) + ' (' + escapeHtml(l.employee_id) + ')</option>').join('') +
+                        '</select></div>') +
+                    '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+                    '<select id="handoverCover" class="form-control" style="flex:1;min-width:180px;"><option value="">— Select cover lead —</option>' +
+                    covers.map(c => '<option value="' + c.id + '">' + escapeHtml(c.full_name) + ' (' + escapeHtml(c.employee_id) + ') · ' + escapeHtml(c.designation_name || '') + '</option>').join('') +
+                    '</select>' +
+                    '<input type="date" id="handoverStart" class="form-control" style="width:auto;" value="' + today + '">' +
+                    '<input type="date" id="handoverEnd" class="form-control" style="width:auto;" value="' + endDefault + '">' +
+                    '<input type="text" id="handoverReason" class="form-control" style="flex:1;min-width:200px;" placeholder="Reason (leave, travel, …)">' +
+                    '<button class="btn btn-sm btn-primary" onclick="createHandover()"><i class="fas fa-paper-plane"></i> Request Cover</button>' +
+                    '</div>' +
+                    '<div class="req-meta">The cover lead must accept. Manager/admin are notified. While active the cover lead can post status updates on your led projects — structural moves stay with the designated lead.</div>' +
+                    '</div>';
+            }
+
+            const mine = (myData && myData.success) ? (myData.handovers || []) : [];
+            const toAccept = canCreate ? mine.filter(h => h.cover_tl_id === user.id && h.status === 'pending') : [];
+            const active = canCreate ? mine.filter(h => h.status === 'active') : [];
+            const rest = canCreate ? mine.filter(h => h.status !== 'pending' && h.status !== 'active') : [];
+
+            if (canCreate) {
+                html += '<div style="font-weight:600;font-size:0.85rem;margin:14px 0 8px;">Cover requests waiting for you' + (toAccept.length ? ' (' + toAccept.length + ')' : '') + '</div>';
+                html += toAccept.length
+                    ? toAccept.map(h => handoverCard(h, 'accept')).join('')
+                    : '<div style="color:var(--text-secondary);font-size:0.85rem;padding:4px 0;">None.</div>';
+
+                html += '<div style="font-weight:600;font-size:0.85rem;margin:14px 0 8px;">Active / my covers' + (active.length ? ' (' + active.length + ')' : '') + '</div>';
+                html += active.length
+                    ? active.map(h => handoverCard(h, 'active')).join('')
+                    : '<div style="color:var(--text-secondary);font-size:0.85rem;padding:4px 0;">No active covers. While active, covered projects appear in “My Led Projects”.</div>';
+            }
+
+            if (canSeeAll) {
+                const all = (allData && allData.success) ? (allData.handovers || []) : [];
+                html += '<div style="border-top:1px solid var(--border-light);margin:18px 0;"></div>';
+                html += '<div style="font-weight:600;font-size:0.85rem;margin-bottom:8px;">All handovers (monitor)' + (all.length ? ' (' + all.length + ')' : '') + '</div>';
+                html += all.length
+                    ? all.map(h => handoverCard(h, 'monitor')).join('')
+                    : '<div style="color:var(--text-secondary);font-size:0.85rem;">None yet.</div>';
+            }
+
+            if (canCreate) {
+                html += '<div style="border-top:1px solid var(--border-light);margin:18px 0;"></div>';
+                html += '<div style="font-weight:600;font-size:0.85rem;margin-bottom:8px;">History' + (rest.length ? ' (' + rest.length + ')' : '') + '</div>';
+                html += rest.length
+                    ? rest.map(h => handoverCard(h, 'history')).join('')
+                    : '<div style="color:var(--text-secondary);font-size:0.85rem;">No past handovers.</div>';
+            }
+
+            const badgeEl = document.getElementById('handoverTabBadge');
+            if (badgeEl) {
+                const n = toAccept.length + active.length;
+                badgeEl.textContent = n;
+                badgeEl.style.display = n ? 'inline-block' : 'none';
+            }
+            container.innerHTML = html;
+        }
+
+        function handoverCard(h, mode) {
+            const u = getCurrentUser();
+            const s = h.status || 'pending';
+            const badge = s === 'active' ? 'success' : (s === 'cancelled' || s === 'declined' || s === 'ended') ? 'secondary' : 'warning';
+            const isCover = h.cover_tl_id === u.id;
+            const isAbsent = h.absent_tl_id === u.id;
+            const isOver = ['manager', 'admin'].includes(u.role);
+            let actions = '';
+            if (mode === 'accept' && isCover && s === 'pending') {
+                actions += '<button class="btn btn-sm btn-success" onclick="decideHandover(' + h.id + ', \'accept\')"><i class="fas fa-check"></i> Accept</button>';
+                actions += '<button class="btn btn-sm btn-danger" onclick="decideHandover(' + h.id + ', \'decline\')"><i class="fas fa-times"></i> Decline</button>';
+            }
+            if ((isCover || isAbsent || isOver) && ['pending', 'active'].includes(s) && u.role !== 'hr') {
+                actions += '<button class="btn btn-sm btn-secondary" onclick="cancelHandover(' + h.id + ')"><i class="fas fa-times-circle"></i> Cancel</button>';
+            }
+            return '<div class="request-card">' +
+                '<div class="req-top"><div><div class="req-emp">' + escapeHtml(h.absent_name) + ' → ' + escapeHtml(h.cover_name) +
+                    ' <span class="badge badge-secondary" style="font-size:0.68rem;">' + escapeHtml(h.absent_code || '') + '/' + escapeHtml(h.cover_code || '') + '</span></div>' +
+                    '<div class="req-meta"><i class="fas fa-calendar" style="margin-right:4px;"></i>' + formatDate(h.start_date) + ' → ' + formatDate(h.end_date) + '</div>' +
+                    (h.reason ? '<div class="req-sub"><strong>Reason:</strong> ' + escapeHtml(h.reason) + '</div>' : '') +
+                    (h.requested_by_name ? '<div class="req-meta">Requested by ' + escapeHtml(h.requested_by_name) + '</div>' : '') +
+                    (s === 'active' ? '<div class="req-sub" style="color:var(--primary);font-size:0.78rem;"><i class="fas fa-user-shield" style="margin-right:4px;"></i>' + (isCover ? 'You are covering this team. Covered projects appear in My Led Projects.' : 'This team is being covered.') + '</div>' : '') +
+                    '</div>' +
+                    '<span class="badge badge-' + badge + '">' + escapeHtml(s) + '</span></div>' +
+                    (actions ? '<div class="req-actions">' + actions + '</div>' : '') +
+                '</div>';
+        }
+
+        async function createHandover() {
+            const u = getCurrentUser();
+            const coverTlId = parseInt(document.getElementById('handoverCover').value, 10);
+            const startDate = document.getElementById('handoverStart').value;
+            const endDate = document.getElementById('handoverEnd').value;
+            const reason = document.getElementById('handoverReason').value.trim();
+            if (!coverTlId) { showToast('Select a cover lead', 'error'); return; }
+            if (!startDate || !endDate) { showToast('Pick cover dates', 'error'); return; }
+            const body = {};
+            if (u.role === 'team_lead') {
+                body.cover_tl_id = coverTlId;
+            } else {
+                const absentEl = document.getElementById('handoverAbsent');
+                body.absent_tl_id = parseInt(absentEl ? absentEl.value : '', 10);
+                body.cover_tl_id = coverTlId;
+                if (!body.absent_tl_id) { showToast('Select the absent team lead', 'error'); return; }
+            }
+            body.start_date = startDate;
+            body.end_date = endDate;
+            if (reason) body.reason = reason;
+            const data = await apiCall('/team-handovers', 'POST', body);
+            if (data && data.success) {
+                showToast('Handover request sent to the cover lead', 'success');
+                loadHandovers();
+                loadNotifBadge();
+            } else {
+                showToast(data?.message || 'Failed to create handover', 'error');
+            }
+        }
+
+        async function decideHandover(id, action) {
+            const data = await apiCall('/team-handovers/' + id + '/' + action, 'POST', {});
+            if (data && data.success) {
+                showToast(action === 'accept' ? 'Handover accepted — you now cover the team for the window' : 'Handover declined', 'success');
+                loadHandovers();
+                loadNotifBadge();
+            } else {
+                showToast(data?.message || 'Action failed', 'error');
+            }
+        }
+
+        async function cancelHandover(id) {
+            const data = await apiCall('/team-handovers/' + id + '/cancel', 'POST', {});
+            if (data && data.success) {
+                showToast('Handover cancelled', 'success');
+                loadHandovers();
+                loadNotifBadge();
+            } else {
+                showToast(data?.message || 'Cancel failed', 'error');
+            }
         }
 
         let pendingDecision = null;

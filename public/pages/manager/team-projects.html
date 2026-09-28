@@ -115,6 +115,10 @@
                     </div>
                     <div id="tpLeadsList" style="font-size:0.85rem;color:var(--text-secondary);">Select a project first.</div>
                 </div>
+                <div id="tpAccess" style="margin-top:20px;border-top:1px solid var(--border-light);padding-top:14px;display:none;">
+                    <div style="font-weight:600;font-size:0.9rem;margin-bottom:10px;"><i class="fas fa-key" style="color:var(--primary);margin-right:6px;"></i>Project Access <span style="font-size:0.72rem;color:var(--text-secondary);font-weight:400;"> — read-access requests &amp; grants for this project (approve by project lead / manager / admin)</span></div>
+                    <div id="tpAccessList" style="font-size:0.85rem;color:var(--text-secondary);">Select a project first.</div>
+                </div>
                 <div id="tpStatusUpdates" style="margin-top:20px;border-top:1px solid var(--border-light);padding-top:14px;display:none;">
                     <div style="font-weight:600;font-size:0.9rem;margin-bottom:10px;"><i class="fas fa-bullhorn" style="color:var(--primary);margin-right:6px;"></i>Project / Unit Updates <span style="font-size:0.72rem;color:var(--text-secondary);font-weight:400;"> — progress notes posted by team leads &amp; managers</span></div>
                     <div id="psuComposer" style="border:1px solid var(--border-light);border-radius:8px;padding:14px;margin-bottom:14px;display:none;">
@@ -285,6 +289,7 @@
             if (!pid) {
                 document.getElementById('tpRoster').innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.9rem;">Select a project to see who is assigned and assign team members into its units.</div>';
                 renderLeads([]);
+                document.getElementById('tpAccess').style.display = 'none';
                 return;
             }
             const pr = projects.find(p => p.id === pid) || { units: [] };
@@ -305,6 +310,99 @@
             document.getElementById('psuComposer').style.display = psuCanAuthor ? 'block' : 'none';
             resetStatusUpdateForm();
             await loadStatusUpdates(pid);
+            await loadAccessPanel(pid);
+        }
+
+        // ---------- Project Access panel (workflow release) ----------
+        async function loadAccessPanel(pid) {
+            const panel = document.getElementById('tpAccess');
+            if (!pid) { panel.style.display = 'none'; return; }
+            panel.style.display = 'block';
+            const list = document.getElementById('tpAccessList');
+            list.innerHTML = '<div class="spinner" style="margin:0 auto;"></div>';
+            const user = getCurrentUser() || {};
+            // team_lead gets approver-scoped (whole-led) data; manager/admin/hr see all.
+            const [reqData, grantData] = await Promise.all([
+                apiCall('/project-access/requests?scope=incoming'),
+                apiCall('/project-access/grants')
+            ]);
+            const requests = (reqData && reqData.success) ? (reqData.requests || []).filter(r => r.project_id === pid && r.status === 'pending') : [];
+            const grants = (grantData && grantData.success) ? (grantData.grants || []).filter(g => g.project_id === pid) : [];
+            renderAccessPanel(requests, grants, user);
+        }
+
+        function renderAccessPanel(requests, grants, user) {
+            const list = document.getElementById('tpAccessList');
+            const isHR = user.role === 'hr';
+            // team_lead gets approver-scoped data (whole-led projects only) → they may
+            // decide requests + revoke grants shown to them; manager/admin see all and
+            // may act on all; HR is read-only.
+            const canDecide = !isHR && ['admin', 'manager', 'team_lead'].includes(user.role);
+            const canRevoke = !isHR && ['admin', 'manager', 'team_lead'].includes(user.role);
+            let html = '';
+            if (requests.length === 0 && grants.length === 0) {
+                list.innerHTML = '<div style="color:var(--text-secondary);">No pending access requests or grants for this project.</div>';
+                return;
+            }
+            if (requests.length > 0) {
+                html += '<div style="font-weight:600;font-size:0.82rem;margin:8px 0 6px;">Pending requests (' + requests.length + ')</div>';
+                html += requests.map(r => {
+                    const actions = canDecide
+                        ? '<div class="req-actions">' +
+                            '<button class="btn btn-sm btn-success" onclick="decideAccess(' + r.id + ', \'approve\')"><i class="fas fa-check"></i> Approve</button>' +
+                            '<button class="btn btn-sm btn-danger" onclick="decideAccess(' + r.id + ', \'reject\')"><i class="fas fa-times"></i> Reject</button>' +
+                        '</div>'
+                        : '';
+                    return '<div class="request-card">' +
+                        '<div class="req-top"><div><div class="req-emp">' + escapeHtml(r.employee_name) + ' <span class="badge badge-secondary" style="font-size:0.68rem;">' + escapeHtml(r.emp_code) + '</span></div>' +
+                        '<div class="req-meta">' + escapeHtml(r.project_name) + ' · ' + (r.scope === 'extended' ? '<b>EXTENDED (' + escapeHtml(r.requested_role || '') + ')</b>' : 'role-level') + '</div>' +
+                        (r.reason ? '<div class="req-sub"><strong>Reason:</strong> ' + escapeHtml(r.reason) + '</div>' : '') +
+                        '<div class="req-meta">Requested ' + formatDate(r.created_at, { hour: '2-digit', minute: '2-digit' }) + '</div></div>' +
+                        '<span class="badge badge-warning">Pending</span></div>' + actions +
+                    '</div>';
+                }).join('');
+            }
+            if (grants.length > 0) {
+                html += '<div style="font-weight:600;font-size:0.82rem;margin:14px 0 6px;">Active grants (' + grants.length + ')</div>';
+                html += grants.map(g => {
+                    const actions = canRevoke
+                        ? '<div class="req-actions"><button class="btn btn-sm btn-secondary" onclick="revokeGrant(' + g.id + ')"><i class="fas fa-ban"></i> Revoke</button></div>'
+                        : '';
+                    const badge = g.revoked_at ? 'secondary' : 'success';
+                    return '<div class="request-card">' +
+                        '<div class="req-top"><div><div class="req-emp">' + escapeHtml(g.employee_name) + ' <span class="badge badge-secondary" style="font-size:0.68rem;">' + escapeHtml(g.emp_code) + '</span></div>' +
+                        '<div class="req-meta">' + escapeHtml(g.project_name) + ' · level: <b>' + escapeHtml(g.role_level) + '</b> · ' + (g.scope === 'extended' ? 'extended' : 'role') +
+                        (g.expires_at ? ' · till ' + escapeHtml(String(g.expires_at).substring(0, 10)) : ' · no expiry') +
+                        '</div>' +
+                        '<div class="req-meta">Granted by ' + escapeHtml(g.granted_by_name || '') + (g.revoked_at ? ' · revoked ' + formatDate(g.revoked_at) : '') + '</div></div>' +
+                        '<span class="badge badge-' + badge + '">' + (g.revoked_at ? 'Revoked' : 'Active') + '</span></div>' + actions +
+                    '</div>';
+                }).join('');
+            }
+            list.innerHTML = html;
+        }
+
+        async function decideAccess(id, action) {
+            const data = await apiCall('/project-access/requests/' + id + '/' + action, 'POST', {});
+            if (data && data.success) {
+                showToast(action === 'approve' ? 'Access granted to the requester' : 'Access request rejected', 'success');
+                const pid = parseInt(document.getElementById('tpProject').value, 10);
+                if (pid) await loadAccessPanel(pid);
+                loadNotifBadge();
+            } else {
+                showToast(data?.message || 'Action failed', 'error');
+            }
+        }
+
+        async function revokeGrant(id) {
+            const data = await apiCall('/project-access/grants/' + id, 'DELETE');
+            if (data && data.success) {
+                showToast('Access revoked', 'success');
+                const pid = parseInt(document.getElementById('tpProject').value, 10);
+                if (pid) await loadAccessPanel(pid);
+            } else {
+                showToast(data?.message || 'Revoke failed', 'error');
+            }
         }
 
         // ---------- Project Leads panel (P9) ----------

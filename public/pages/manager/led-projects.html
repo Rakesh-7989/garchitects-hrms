@@ -203,6 +203,13 @@
                 return;
             }
             el.innerHTML = ledProjects.map(p => {
+                // Handover coverage (P10): the project is LED by the absent TL we
+                // cover — read + status updates only, structural moves blocked.
+                const covering = p.coveringFor || null;
+                const structuralBlocked = hrRO || !!covering;
+                const coverBanner = covering
+                    ? '<div style="margin:6px 0 10px;padding:8px 12px;background:var(--primary-50);border-left:4px solid var(--primary);border-radius:6px;font-size:0.8rem;color:var(--primary);"><i class="fas fa-user-shield" style="margin-right:6px;"></i><strong>Covering for ' + esc(covering.name) + (covering.emp ? ' (' + esc(covering.emp) + ')' : '') + '</strong> — read + status updates only while the handover is active (no structural changes).</div>'
+                    : '';
                 const projectLine =
                     '<div class="lp-proj-header"><div><div style="font-weight:600;">' + esc(p.projectName) +
                     ' <span class="badge badge-info" style="font-size:0.68rem;">' + esc(String(p.projectStatus || '').replace('_',' ')) + '</span></div>' +
@@ -215,17 +222,17 @@
                     unitsHtml = p.units.map(u =>
                         '<div class="lp-unit"><div><div class="u-name">' + esc(u.name) + '</div>' +
                         '<div class="u-count">' + u.memberCount + ' member(s) assigned</div></div>' +
-                        (hrRO ? '' : '<button class="btn btn-sm btn-primary" onclick="openPlace(' + p.projectId + ',' + u.id + ')"><i class="fas fa-user-plus"></i> Assign Team</button>') + '</div>'
+                        (structuralBlocked ? '' : '<button class="btn btn-sm btn-primary" onclick="openPlace(' + p.projectId + ',' + u.id + ')"><i class="fas fa-user-plus"></i> Assign Team</button>') + '</div>'
                     ).join('');
                 } else {
                     unitsHtml = '<div style="font-size:0.82rem;color:var(--text-secondary);margin:6px 0;">No units on this project.</div>';
                 }
 
-                const projectBtn = (!hrRO && (p.wholeProject || p.units.length === 0))
+                const projectBtn = (!structuralBlocked && (p.wholeProject || p.units.length === 0))
                     ? '<button class="btn btn-sm btn-secondary" onclick="openPlace(' + p.projectId + ',null)" style="margin-top:4px;"><i class="fas fa-user-plus"></i> Assign to Project (' + p.projectLevelCount + ')</button>'
                     : '';
 
-                return '<div class="lp-proj">' + projectLine + unitsHtml + projectBtn + '</div>';
+                return '<div class="lp-proj">' + coverBanner + projectLine + unitsHtml + projectBtn + '</div>';
             }).join('');
         }
 

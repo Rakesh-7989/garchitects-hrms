@@ -51,11 +51,23 @@ const PROJECT_SELECT_COLS = `p.id, p.name, COALESCE(p.client, p.customer) as cli
  */
 router.get('/my', verifyToken, async (req, res) => {
     try {
+        // Assigned projects (project_employees)…
         const result = await q(
             `SELECT ${PROJECT_SELECT_COLS}
              FROM projects p
              JOIN project_employees pe ON p.id = pe.project_id
              WHERE pe.employee_id = $1 AND p.status = 'active'
+             ORDER BY p.name`,
+            [req.user.id]
+        );
+        // … plus projects GRANTED via project_access_grants (active, not
+        // revoked/expired) — read-only access with a viaGrant marker.
+        const granted = await q(
+            `SELECT ${PROJECT_SELECT_COLS}, g.role_level AS access_level
+             FROM projects p
+             JOIN project_access_grants g ON g.project_id = p.id
+             WHERE g.employee_id = $1 AND p.status = 'active'
+               AND g.revoked_at IS NULL AND (g.expires_at IS NULL OR g.expires_at > NOW())
              ORDER BY p.name`,
             [req.user.id]
         );
@@ -73,9 +85,15 @@ router.get('/my', verifyToken, async (req, res) => {
             if (!unitsByProject[r.project_id]) unitsByProject[r.project_id] = [];
             unitsByProject[r.project_id].push({ id: r.id, name: r.name, code: r.code });
         });
+        const assignedIds = new Set(result.rows.map(p => p.id));
+        const projects = result.rows.map(p => ({ ...p, units: unitsByProject[p.id] || [], viaGrant: false, accessLevel: null }));
+        for (const g of granted.rows) {
+            if (assignedIds.has(g.id)) continue; // assigned wins
+            projects.push({ ...g, units: [], viaGrant: true, accessLevel: g.access_level });
+        }
         res.json({
             success: true,
-            projects: result.rows.map(p => ({ ...p, units: unitsByProject[p.id] || [] }))
+            projects
         });
     } catch (error) {
         console.error('Error fetching employee projects:', error);

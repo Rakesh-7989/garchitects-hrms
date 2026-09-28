@@ -317,6 +317,79 @@ const ENSURE_TABLE_DDL = {
         `CREATE INDEX IF NOT EXISTS idx_psu_project_date ON project_status_updates(project_id, update_date DESC)`,
         `CREATE INDEX IF NOT EXISTS idx_psu_unit ON project_status_updates(unit_id)`,
         `CREATE INDEX IF NOT EXISTS idx_psu_author ON project_status_updates(author_id)`
+    ],
+    // Team transfer requests (cross-team employee movement, workflow release).
+    // Lazy-created like every other module table; additive and idempotent.
+    team_transfer_requests: [
+        `CREATE TABLE IF NOT EXISTS team_transfer_requests (
+            id SERIAL PRIMARY KEY,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            from_tl_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            to_tl_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            reason TEXT,
+            status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+            decided_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            decided_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_ttr_to ON team_transfer_requests(to_tl_id, status)`,
+        `CREATE INDEX IF NOT EXISTS idx_ttr_from ON team_transfer_requests(from_tl_id, status)`,
+        `CREATE INDEX IF NOT EXISTS idx_ttr_emp ON team_transfer_requests(employee_id, status)`
+    ],
+    // Team handovers (TL leave / absence coverage, workflow release).
+    team_handovers: [
+        `CREATE TABLE IF NOT EXISTS team_handovers (
+            id SERIAL PRIMARY KEY,
+            absent_tl_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            cover_tl_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            reason TEXT,
+            status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending','active','declined','cancelled','ended')),
+            requested_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            decided_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            decided_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW(),
+            ended_at TIMESTAMP
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_th_cover ON team_handovers(cover_tl_id, status)`,
+        `CREATE INDEX IF NOT EXISTS idx_th_absent ON team_handovers(absent_tl_id, status)`
+    ],
+    // Project access requests + grants (read access to non-assigned projects,
+    // workflow release).
+    project_access_requests: [
+        `CREATE TABLE IF NOT EXISTS project_access_requests (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            requester_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            reason TEXT,
+            scope VARCHAR(10) DEFAULT 'role' CHECK (scope IN ('role','extended')),
+            requested_role VARCHAR(20),
+            expires_at TIMESTAMP,
+            status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+            decided_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            decided_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_par_req ON project_access_requests(requester_id, status)`,
+        `CREATE INDEX IF NOT EXISTS idx_par_proj ON project_access_requests(project_id, status)`
+    ],
+    project_access_grants: [
+        `CREATE TABLE IF NOT EXISTS project_access_grants (
+            id SERIAL PRIMARY KEY,
+            project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            granted_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            scope VARCHAR(10) DEFAULT 'role' CHECK (scope IN ('role','extended')),
+            role_level VARCHAR(20) NOT NULL DEFAULT 'employee' CHECK (role_level IN ('employee','team_lead','manager')),
+            reason TEXT,
+            expires_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW(),
+            revoked_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            revoked_at TIMESTAMP
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_pag_emp ON project_access_grants(employee_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_pag_project ON project_access_grants(project_id)`
     ]
 };
 

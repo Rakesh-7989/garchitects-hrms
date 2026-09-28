@@ -25,7 +25,28 @@ router.get('/counts', verifyToken, isManager, async (req, res) => {
         });
         const q = (sql, params) => safe(runWithSchemaRepair(() => query(sql, params)));
 
-        const [pendingLeaves, pendingWfh, pendingTickets, announcementsUnread, pendingProfileUpdates, pendingRegularizations, openWorkAssignments, openLeadProjects] = await Promise.all([
+        // Workflow-release bell sources (team transfers / project access /
+        // handover covers). team_lead sees only items they must act on;
+        // admin/manager/hr see everything. Tables lazy-heal like the rest.
+        let transfersSql, transfersParams, accessSql, accessParams, handoversSql, handoversParams;
+        if (req.user.role === 'team_lead') {
+            transfersSql = `SELECT COUNT(*) as count FROM team_transfer_requests WHERE from_tl_id = $1 AND status = 'pending'`;
+            transfersParams = [req.user.id];
+            accessSql = `SELECT COUNT(*) as count FROM project_access_requests r WHERE r.status = 'pending' AND EXISTS (
+                SELECT 1 FROM project_leads pl WHERE pl.project_id = r.project_id AND pl.lead_id = $1 AND pl.unit_id IS NULL)`;
+            accessParams = [req.user.id];
+            handoversSql = `SELECT COUNT(*) as count FROM team_handovers WHERE status = 'active' AND (cover_tl_id = $1 OR absent_tl_id = $1)`;
+            handoversParams = [req.user.id];
+        } else {
+            transfersSql = `SELECT COUNT(*) as count FROM team_transfer_requests WHERE status = 'pending'`;
+            transfersParams = [];
+            accessSql = `SELECT COUNT(*) as count FROM project_access_requests WHERE status = 'pending'`;
+            accessParams = [];
+            handoversSql = `SELECT COUNT(*) as count FROM team_handovers WHERE status = 'active'`;
+            handoversParams = [];
+        }
+
+        const [pendingLeaves, pendingWfh, pendingTickets, announcementsUnread, pendingProfileUpdates, pendingRegularizations, openWorkAssignments, openLeadProjects, pendingTransfers, pendingAccessRequests, activeHandovers] = await Promise.all([
             safe(query("SELECT COUNT(*) as count FROM leave_applications WHERE status = 'pending'" + scopeClause, scopeParams)),
             safe(query("SELECT COUNT(*) as count FROM wfh_requests WHERE status = 'pending'" + scopeClause, scopeParams)),
             safe(query("SELECT COUNT(*) as count FROM support_tickets WHERE status IN ('open', 'in_progress')" + scopeClause, scopeParams)),
@@ -54,7 +75,10 @@ router.get('/counts', verifyToken, isManager, async (req, res) => {
             // Projects the caller leads (project-level or unit-level rows),
             // distinct per project — lights up the bell / nav badge on
             // "My Led Projects" the moment a lead is designated (P9).
-            q("SELECT COUNT(DISTINCT project_id) as count FROM project_leads WHERE lead_id = $1", [req.user.id])
+            q("SELECT COUNT(DISTINCT project_id) as count FROM project_leads WHERE lead_id = $1", [req.user.id]),
+            q(transfersSql, transfersParams),
+            q(accessSql, accessParams),
+            q(handoversSql, handoversParams)
         ]);
 
         const counts = {
@@ -65,9 +89,12 @@ router.get('/counts', verifyToken, isManager, async (req, res) => {
             pendingTickets: parseInt(pendingTickets.rows[0].count),
             pendingRegularizations: parseInt(pendingRegularizations.rows[0].count),
             openWorkAssignments: parseInt(openWorkAssignments.rows[0].count),
-            openLeadProjects: parseInt(openLeadProjects.rows[0].count)
+            openLeadProjects: parseInt(openLeadProjects.rows[0].count),
+            pendingTransfers: parseInt(pendingTransfers.rows[0].count),
+            pendingAccessRequests: parseInt(pendingAccessRequests.rows[0].count),
+            activeHandovers: parseInt(activeHandovers.rows[0].count)
         };
-        counts.total = counts.pendingLeaves + counts.pendingWfh + counts.pendingProfileUpdates + counts.announcementsUnread + counts.pendingTickets + counts.pendingRegularizations + counts.openWorkAssignments + counts.openLeadProjects;
+        counts.total = counts.pendingLeaves + counts.pendingWfh + counts.pendingProfileUpdates + counts.announcementsUnread + counts.pendingTickets + counts.pendingRegularizations + counts.openWorkAssignments + counts.openLeadProjects + counts.pendingTransfers + counts.pendingAccessRequests + counts.activeHandovers;
 
         res.json({ success: true, counts });
     } catch (error) {
@@ -177,7 +204,50 @@ router.get('/requests', verifyToken, isManager, async (req, res) => {
             };
         }
 
-        const [leaves, wfh, tickets, profiles, regs] = await Promise.all([
+        // Workflow-release feed sources: pending team transfers, pending project
+        // access requests, active handover covers. team_lead sees items they
+        // must act on; admin/manager/hr see everything. New tables — repair/retry
+        // so they can never break the bell.
+        const isTl = req.user.role === 'team_lead';
+        const transfersFeed = {
+            text: `SELECT tr.id, tr.status, tr.created_at,
+                e.employee_id AS emp_code, e.first_name || ' ' || e.last_name AS employee_name,
+                ft.first_name || ' ' || ft.last_name AS from_tl_name,
+                tt.first_name || ' ' || tt.last_name AS to_tl_name
+                FROM team_transfer_requests tr
+                JOIN employees e ON e.id = tr.employee_id
+                JOIN employees ft ON ft.id = tr.from_tl_id
+                JOIN employees tt ON tt.id = tr.to_tl_id
+                WHERE tr.status = 'pending'${isTl ? ' AND tr.from_tl_id = $1' : ''}
+                ORDER BY tr.created_at DESC LIMIT 8`,
+            values: isTl ? [req.user.id] : []
+        };
+        const accessFeed = {
+            text: `SELECT r.id, r.scope, r.requested_role, r.created_at,
+                p.name AS project_name,
+                e.employee_id AS emp_code, e.first_name || ' ' || e.last_name AS employee_name
+                FROM project_access_requests r
+                JOIN projects p ON p.id = r.project_id
+                JOIN employees e ON e.id = r.requester_id
+                WHERE r.status = 'pending'${isTl ? ` AND EXISTS (
+                    SELECT 1 FROM project_leads pl
+                    WHERE pl.project_id = r.project_id AND pl.lead_id = $1 AND pl.unit_id IS NULL)` : ''}
+                ORDER BY r.created_at DESC LIMIT 8`,
+            values: isTl ? [req.user.id] : []
+        };
+        const handoversFeed = {
+            text: `SELECT th.id, th.status, th.start_date, th.end_date, th.created_at,
+                ab.first_name || ' ' || ab.last_name AS absent_name, ab.employee_id AS absent_code,
+                cv.first_name || ' ' || cv.last_name AS cover_name, cv.employee_id AS cover_code
+                FROM team_handovers th
+                JOIN employees ab ON ab.id = th.absent_tl_id
+                JOIN employees cv ON cv.id = th.cover_tl_id
+                WHERE th.status = 'active'${isTl ? ' AND (th.cover_tl_id = $1 OR th.absent_tl_id = $1)' : ''}
+                ORDER BY th.created_at DESC LIMIT 8`,
+            values: isTl ? [req.user.id] : []
+        };
+
+        const [leaves, wfh, tickets, profiles, regs, transfers, accessReqs, handovers] = await Promise.all([
             query(leavesQuery.text, leavesQuery.values),
             query(wfhQuery.text, wfhQuery.values),
             query(ticketsQuery.text, ticketsQuery.values),
@@ -185,7 +255,10 @@ router.get('/requests', verifyToken, isManager, async (req, res) => {
             // Regularizations live in a table that may predate the feature -
             // repair/retry and never let it break the bell.
             regsQuery ? safe(runWithSchemaRepair(() => query(regsQuery.text, regsQuery.values)))
-                .catch(() => ({ rows: [] })) : Promise.resolve({ rows: [] })
+                .catch(() => ({ rows: [] })) : Promise.resolve({ rows: [] }),
+            safe(runWithSchemaRepair(() => query(transfersFeed.text, transfersFeed.values))).catch(() => ({ rows: [] })),
+            safe(runWithSchemaRepair(() => query(accessFeed.text, accessFeed.values))).catch(() => ({ rows: [] })),
+            safe(runWithSchemaRepair(() => query(handoversFeed.text, handoversFeed.values))).catch(() => ({ rows: [] }))
         ]);
 
         const feed = [
@@ -233,6 +306,33 @@ router.get('/requests', verifyToken, isManager, async (req, res) => {
                 subtitle: `${r.emp_id} · ${String(r.date).substring(0, 10)}${r.check_in ? ' · ' + r.check_in : ''}${r.check_out ? '-' + r.check_out : ''}`,
                 created_at: r.created_at,
                 url: regUrl
+            })),
+            ...transfers.rows.map(r => ({
+                type: 'transfer',
+                id: r.id,
+                status: r.status,
+                title: `${r.employee_name} → ${r.to_tl_name}'s team`,
+                subtitle: `${r.emp_code} · from ${r.from_tl_name} · pending`,
+                created_at: r.created_at,
+                url: '/manager/my-team?tab=transfers'
+            })),
+            ...accessReqs.rows.map(r => ({
+                type: 'access_request',
+                id: r.id,
+                status: r.status,
+                title: `${r.employee_name} requested access to ${r.project_name}`,
+                subtitle: `${r.emp_code} · ${r.scope === 'extended' ? 'EXTENDED (' + (r.requested_role || '') + ')' : 'role-level'} · pending`,
+                created_at: r.created_at,
+                url: '/manager/team-projects'
+            })),
+            ...handovers.rows.map(r => ({
+                type: 'handover',
+                id: r.id,
+                status: r.status,
+                title: `Cover: ${r.absent_name} → ${r.cover_name}`,
+                subtitle: `${r.absent_code}/${r.cover_code} · ${r.start_date} → ${r.end_date} · active`,
+                created_at: r.created_at,
+                url: '/manager/my-team?tab=handover'
             }))
         ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 12);
 
