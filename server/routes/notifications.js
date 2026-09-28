@@ -4,6 +4,12 @@ const { query } = require('../config/database');
 const { verifyToken, isManager } = require('../middleware/auth');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
 
+// A failing feed source must never break the whole bell feed.
+const safe = (p) => p.catch((err) => {
+    console.error('Notification query failed:', err.message);
+    return { rows: [] };
+});
+
 // @route   GET /api/notifications/counts
 // @desc    Get pending-action counts for the notification bell
 // @access  Private (Admin/HR sees all, Manager/Team Lead sees own team)
