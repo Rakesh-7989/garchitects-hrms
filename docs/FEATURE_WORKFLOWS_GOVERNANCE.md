@@ -250,7 +250,7 @@ DB pristine after rollback (0 `QA-TR-*` employees / 0 QA projects).
 ### Updates-visibility UI pass (2026-09-28, no backend changes)
 User asked (Telugu): "updates koda projects lo chupisthe better" — project
 updates were buried behind buttons/tabs. Shipped inline visibility across the
-three projects pages (commit `9b2393b` on `master`):
+three projects pages (commit `ca7d90b` on `master`):
 
 | Page | What changed |
 |------|--------------|
