@@ -39,10 +39,11 @@ router.get('/', verifyToken, async (req, res) => {
             // Employees: updates on assigned projects OR projects granted to
             // them via project_access_grants (active, not revoked/expired).
             p++;
-            conditions.push(`(pu.project_id IN (SELECT project_id FROM project_employees WHERE employee_id = $${p})`);
-            p++;
-            conditions.push(`pu.project_id IN (SELECT project_id FROM project_access_grants WHERE employee_id = $${p} AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())))`);
+            const pGrant = p + 1;
+            conditions.push(`(pu.project_id IN (SELECT project_id FROM project_employees WHERE employee_id = $${p})
+                OR pu.project_id IN (SELECT project_id FROM project_access_grants WHERE employee_id = $${pGrant} AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())))`);
             params.push(req.user.id, req.user.id);
+            p++;
         }
         if (projectId) {
             p++;
