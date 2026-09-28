@@ -577,3 +577,9 @@ Genuine gaps closed in this follow-up (commit shipped + live QA `qa-split-mode-l
    other unit → **403** (both TLs), manager project-level → **200**; HR place/assign/
    remove/designate → **403**; manager elevated direct assign → **200**. World rolled
    back → DB pristine.
+
+   **Bug found by the SP QA + fixed:** the DELETE `/:projectId/employees/:employeeId`
+   team_lead branch looked up the placement row with `id` (= `project_employees`
+   row id) while the route contract (and the roster UI) sends the **employee id** —
+   so a team_lead removing a member always 404'd. Fixed to `employee_id = $2`, then
+   re-ran the matrix → **29/29 green**.

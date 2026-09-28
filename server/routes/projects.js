@@ -529,10 +529,10 @@ router.delete('/:projectId/employees/:employeeId', verifyToken, isManager, async
         }
 
         // P9/D9 scope: a team_lead may only remove members from projects/units
-        // they lead. Managers/admin/hr keep the general power.
+        // they lead. Managers/admin keep the general power (HR blocked above).
         if (req.user.role === 'team_lead') {
             const row = await q(
-                `SELECT unit_id FROM project_employees WHERE project_id = $1 AND id = $2`,
+                `SELECT unit_id FROM project_employees WHERE project_id = $1 AND employee_id = $2`,
                 [projectId, employeeId]
             );
             if (row.rows.length === 0) {
