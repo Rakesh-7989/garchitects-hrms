@@ -240,6 +240,13 @@ passed, 0 failed**, including both assertions that failed pre-fix on the first
 full pass (A-21 bell feed → 200 with 3 items; B-08 cover-TL authoring → 200).
 DB pristine after rollback (0 `QA-TR-*` employees / 0 QA projects).
 
+### Regression suites re-run against live prod (same day, 0 failures)
+- **Split-mode** (`qa-split-mode-live.mjs`) — **29/29** — placement/lead
+  scoping untouched by the governance changes.
+- **Status-updates** (`qa-status-updates-live.mjs`) — **34/34** — authoring
+  role-gates + GET scoping (SU-13 assigned sees 4 / SU-14 unassigned sees 0)
+  preserved after the OR-grant scope fix.
+
 ---
 
 ## 9. Known, honest limits (not shipped yet)
