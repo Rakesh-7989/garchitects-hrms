@@ -221,6 +221,10 @@
             }
             designator = ['admin', 'manager'].includes(user.role);
             psuCanAuthor = ['admin', 'manager', 'team_lead'].includes(user.role);
+            // HR is read-only on the projects module — no assign controls.
+            if (user.role === 'hr') {
+                document.getElementById('assignBtn').style.display = 'none';
+            }
             loadProjects();
             loadEmployeesForPicker();
         });
@@ -367,6 +371,12 @@
             if (!pid || !leadId) { showToast('Select a project and a lead', 'error'); return; }
             const allChecked = document.querySelectorAll('.lead-unit-chk:checked');
             const unitIds = allChecked.length > 0 ? Array.from(allChecked).map(c => parseInt(c.value, 10)) : [];
+            // Prevent accidental whole-project ownership: if the project HAS units
+            // but none are checked, the intent is ambiguous — ask explicitly.
+            if (projectUnits.length > 0 && unitIds.length === 0) {
+                showToast('Check the units this lead should own, or check ALL units for whole-project ownership', 'error');
+                return;
+            }
             // All project units checked → send [] so the server creates the whole-project row.
             const allSelected = projectUnits.length > 0 && unitIds.length === projectUnits.length;
             const btn = document.getElementById('leadSubmit');
@@ -419,14 +429,16 @@
             const rows = roster.map(r => {
                 const initials = getInitials(r.first_name, r.last_name);
                 const un = unitName(r.unit_id);
+                const removeBtn = currentRole === 'hr' ? '' :
+                    '<td><button class="btn btn-sm btn-danger" onclick="removeMember(' + r.id + ')"><i class="fas fa-user-minus"></i> Remove</button></td>';
                 return '<tr>' +
                     '<td><div style="display:flex;align-items:center;gap:10px;"><div style="width:34px;height:34px;border-radius:50%;background:var(--primary);color:white;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:600;flex-shrink:0;">' + escapeHtml(initials) + '</div><div><div style="font-weight:500;">' + escapeHtml((r.first_name || '') + ' ' + (r.last_name || '')) + '</div><span style="font-size:0.72rem;color:var(--text-secondary);">' + escapeHtml(r.employee_id || '') + (r.department_name ? ' &middot; ' + escapeHtml(r.department_name) : '') + '</span></div></div></td>' +
                     '<td>' + (un ? '<span class="badge badge-info" style="font-size:0.68rem;">' + escapeHtml(un) + '</span>' : '<span class="badge badge-secondary" style="font-size:0.68rem;">No unit</span>') + '</td>' +
                     '<td>' + (r.created_at ? formatDate(r.created_at) : '—') + '</td>' +
-                    '<td><button class="btn btn-sm btn-danger" onclick="removeMember(' + r.id + ')"><i class="fas fa-user-minus"></i> Remove</button></td>' +
+                    removeBtn +
                     '</tr>';
             }).join('');
-            container.innerHTML = '<div class="table-container"><table><thead><tr><th>Employee</th><th>Unit</th><th>Assigned</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+            container.innerHTML = '<div class="table-container"><table><thead><tr><th>Employee</th><th>Unit</th><th>Assigned</th>' + (currentRole === 'hr' ? '' : '<th></th>') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
         }
 
         async function loadEmployeesForPicker() {

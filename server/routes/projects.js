@@ -383,6 +383,9 @@ router.get('/:projectId/employees', verifyToken, isManager, async (req, res) => 
  * Assign employees to a project
  */
 router.post('/:projectId/employees', verifyToken, isManager, async (req, res) => {
+    if (req.user.role === 'hr') {
+        return res.status(403).json({ success: false, message: 'HR is read-only on the projects module' });
+    }
     try {
         const { employeeIds, assignments } = req.body;
         // Backwards compatible: `{ employeeIds: [1, 2] }` → no-unit assignments.
@@ -515,6 +518,9 @@ router.post('/:projectId/employees', verifyToken, isManager, async (req, res) =>
  * Remove employee from project
  */
 router.delete('/:projectId/employees/:employeeId', verifyToken, isManager, async (req, res) => {
+    if (req.user.role === 'hr') {
+        return res.status(403).json({ success: false, message: 'HR is read-only on the projects module' });
+    }
     try {
         const projectId = parseInt(req.params.projectId, 10);
         const employeeId = parseInt(req.params.employeeId, 10);

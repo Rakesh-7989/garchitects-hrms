@@ -543,3 +543,37 @@ scoping already asserted live SU-13); employees still never author.
 - "Latest" line: page-level live check — `my-projects.html` serves 200 with the
   `latestForProject` / `statusLatestLine` markers; the underlying read-only GET is
   already covered by SU-13 (assigned employee sees their project updates).
+
+### 13.6 Split mode — many unit-scoped TLs on one project + HR read-only close-out
+
+User asked to deep-dive the split scenario (**TL-A → Tower A, TL-B → Tower B**, each
+scoped to their own units; a whole-project lead covers everything). Deep-dive found the
+core was already implemented and enforced at every layer:
+
+- `leadCovers(projectId, unitId, me)` (project-leads.js) — whole-project row grants
+  everything; a unit row grants that unit only. Used by `/place`, the direct
+  `POST/DELETE /projects/:projectId/employees` TL branches, and status-update POST.
+- TL UIs are unit-scoped: led-projects page shows only the TL's own units (no
+  project-level Assign button for a unit lead); the status-update composer's unit
+  dropdown lists only led units; team-projects dropdown lists only led projects (D9).
+
+Genuine gaps closed in this follow-up (commit shipped + live QA `qa-split-mode-live.mjs`):
+
+1. **HR write-blocked on the projects module (was a hole).** HR could still `/place`
+   (`isElevated = ['admin','hr']`) and `POST/DELETE /projects/:projectId/employees`
+   (`isManager` includes `hr`) — contradicting the established read-only direction.
+   Now: `/place` HR → **403** ("HR is read-only on the projects module"),
+   direct assign + remove HR → **403**. Frontend parity: HR sees no "Assign
+   Employees"/"Remove" controls on team-projects and no "Assign Team"/composer on
+   led-projects.
+2. **Assign-Lead all-unchecked trap.** In team-projects, unchecking every unit
+   silently became whole-project ownership. Now blocked with a clear toast ("check
+   the units this lead should own, or check ALL units for whole-project ownership").
+3. **End-to-end split proof (SP-01..17).** Live QA builds one project with units A/B,
+   manager designates TL-A→A and TL-B→B, then asserts: each TL sees only their own
+   unit in `/mine`; placement into another unit (even own team) → **403**; non-tree
+   placement → **403**; direct assign cross-unit/non-tree → **403**; remove other-unit
+   member → **403** / own-unit member → **200**; status update own unit → **200**,
+   other unit → **403** (both TLs), manager project-level → **200**; HR place/assign/
+   remove/designate → **403**; manager elevated direct assign → **200**. World rolled
+   back → DB pristine.

@@ -385,7 +385,13 @@ router.post('/place', verifyToken, isManager, async (req, res) => {
         }
 
         const role = req.user.role;
-        const isElevated = ['admin', 'hr'].includes(role);
+        const isElevated = role === 'admin';
+
+        if (role === 'hr') {
+            // HR is read-only on the projects module (designation, status
+            // updates and placement are all management powers).
+            return res.status(403).json({ success: false, message: 'HR is read-only on the projects module' });
+        }
 
         if (!isElevated) {
             // Non admin/hr: must be a lead covering the target (manager too, D8).

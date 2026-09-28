@@ -133,7 +133,7 @@
                 <button onclick="closeLedUpdateModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
             </div>
             <div class="modal-body">
-                <div style="padding:12px;border:1px solid var(--border-light);border-radius:8px;margin-bottom:14px;background:var(--bg-secondary);">
+                <div style="padding:12px;border:1px solid var(--border-light);border-radius:8px;margin-bottom:14px;background:var(--bg-secondary);" id="luComposer">
                     <div style="font-weight:600;font-size:0.85rem;margin-bottom:10px;"><i class="fas fa-bullhorn" style="color:var(--primary);margin-right:6px;"></i>Post a project / unit update</div>
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px;">
                         <div>
@@ -197,6 +197,7 @@
 
         function renderLed() {
             const el = document.getElementById('lpList');
+            const hrRO = ((getCurrentUser() || {}).role) === 'hr'; // HR read-only on projects
             if (ledProjects.length === 0) {
                 el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.9rem;">You are not the lead of any project yet. Contact an admin/manager to assign you as a project lead.</div>';
                 return;
@@ -214,13 +215,13 @@
                     unitsHtml = p.units.map(u =>
                         '<div class="lp-unit"><div><div class="u-name">' + esc(u.name) + '</div>' +
                         '<div class="u-count">' + u.memberCount + ' member(s) assigned</div></div>' +
-                        '<button class="btn btn-sm btn-primary" onclick="openPlace(' + p.projectId + ',' + u.id + ')"><i class="fas fa-user-plus"></i> Assign Team</button></div>'
+                        (hrRO ? '' : '<button class="btn btn-sm btn-primary" onclick="openPlace(' + p.projectId + ',' + u.id + ')"><i class="fas fa-user-plus"></i> Assign Team</button>') + '</div>'
                     ).join('');
                 } else {
                     unitsHtml = '<div style="font-size:0.82rem;color:var(--text-secondary);margin:6px 0;">No units on this project.</div>';
                 }
 
-                const projectBtn = (p.wholeProject || p.units.length === 0)
+                const projectBtn = (!hrRO && (p.wholeProject || p.units.length === 0))
                     ? '<button class="btn btn-sm btn-secondary" onclick="openPlace(' + p.projectId + ',null)" style="margin-top:4px;"><i class="fas fa-user-plus"></i> Assign to Project (' + p.projectLevelCount + ')</button>'
                     : '';
 
@@ -335,6 +336,9 @@
             if (!p) return;
             luProject = { projectId: p.projectId, wholeProject: p.wholeProject, units: p.units || [] };
             document.getElementById('ledUpdateTitle').textContent = 'Project Updates — ' + p.projectName;
+            // HR is read-only on projects — no composer.
+            const u = getCurrentUser() || {};
+            document.getElementById('luComposer').style.display = u.role === 'hr' ? 'none' : '';
             const uSel = document.getElementById('luUnit');
             uSel.innerHTML = (luProject.wholeProject && luProject.units.length ? '<option value="">Project (no unit)</option>' : (luProject.wholeProject ? '<option value="">Project (no units)</option>' : '')) +
                 luProject.units.map(u => '<option value="' + u.id + '">' + esc(u.name) + '</option>').join('');
