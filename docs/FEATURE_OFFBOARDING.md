@@ -17,7 +17,13 @@ future offboarding flow"); this release wires that type end-to-end.
 Migration is additive + idempotent (`server/index.js`): existing onboarding
 templates keep `type='onboarding'`. Fresh installs get both default checklists
 via `server/schema.sql`; the runtime self-seed (`services/onboarding.js`
-`ensureTemplatesSeeded(type)`) covers migrated DBs per type.
+`ensureTemplatesSeeded(type)`) covers migrated DBs per type. For live DBs that
+lazily created `hr_task_templates` **before** this release (no `type` column),
+`schemaRepair` self-heals the missing column on the first type-aware call
+(42703 → `ALTER TABLE hr_task_templates ADD COLUMN IF NOT EXISTS type ...` +
+type index) — no manual `db:migrate` needed. Verified live end-to-end
+(2026-09-30): seeds 7 offboarding + 6 onboarding templates, start/complete/
+reopen flows, per-type exports, and both pages serve the new tabs.
 
 ## Default offboarding checklist (7 tasks, copied at start)
 
