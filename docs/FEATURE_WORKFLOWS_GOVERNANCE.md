@@ -109,7 +109,8 @@ studio lead/manager actually performs every week:
   **manager/admin**. A unit-level lead is *not* an approver (deliberate).
 - **Reject / cancel**: approver can reject; requester or admin can cancel.
 - **Grant**: soft-revokable (`revoked_at`, no hard delete) by grantor /
-  whole-lead / manager / admin. Optional future `expires_at`.
+  whole-lead / manager / admin. `expires_at` supported (optional — request UI
+  exposes an "expiry date" picker; auto-expired server-side on read).
 - **Enforcement bite — employees (shipped 2026-09-28)**: a grant adds the
   project to the employee's `GET /projects/my` (as `viaGrant: true`) and to
   their `GET /project-status-updates` read scope (assigned OR granted).

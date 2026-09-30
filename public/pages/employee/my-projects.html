@@ -186,6 +186,7 @@
                             <option value="manager">Manager</option>
                         </select>
                         <input type="text" id="paReason" class="form-control" style="flex:2;min-width:220px;" placeholder="Why do you need access? (optional)">
+                        <input type="date" id="paExpiresAt" class="form-control" style="flex:1;min-width:150px;" title="Optional: only need it temporarily? Pick an expiry date (access auto-expires)">
                         <button class="btn btn-primary" onclick="submitAccessRequest()" style="padding:10px 18px;font-weight:600;"><i class="fas fa-paper-plane"></i> Request Access</button>
                     </div>
                     <div id="paRequests" style="margin-top:10px;">
@@ -568,14 +569,21 @@
             const scope = document.getElementById('paScope').value;
             const requestedRole = scope === 'extended' ? document.getElementById('paRequestedRole').value : null;
             const reason = document.getElementById('paReason').value.trim();
+            const expiresAt = document.getElementById('paExpiresAt') ? document.getElementById('paExpiresAt').value : '';
             if (!pid) { showToast('Select a project first', 'error'); return; }
             if (scope === 'extended' && !requestedRole) { showToast('Pick the requested access level', 'error'); return; }
+            if (expiresAt) {
+                const today = new Date().toISOString().substring(0, 10);
+                if (expiresAt <= today) { showToast('Expiry date must be in the future', 'error'); return; }
+            }
             const body = { project_id: pid, reason, scope };
             if (scope === 'extended') body.requested_role = requestedRole;
+            if (expiresAt) body.expires_at = expiresAt;
             const data = await apiCall('/project-access/requests', 'POST', body);
             if (data && data.success) {
                 showToast('Access request sent for approval', 'success');
                 document.getElementById('paReason').value = '';
+                if (document.getElementById('paExpiresAt')) document.getElementById('paExpiresAt').value = '';
                 await loadAccessPanel();
                 loadNotifBadge();
             } else {

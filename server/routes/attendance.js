@@ -460,7 +460,7 @@ router.get('/late-count', verifyToken, isAdminOrHr, async (req, res) => {
                 AND to_char(a.date, 'YYYY') = $2
             WHERE e.status = 'active' AND e.role != 'admin'
             GROUP BY e.id
-            HAVING late_count > 0
+            HAVING COUNT(a.id) > 0
             ORDER BY late_count DESC`,
             [month, year]
         );
