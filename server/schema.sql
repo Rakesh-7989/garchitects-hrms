@@ -579,11 +579,14 @@ CREATE TABLE IF NOT EXISTS hr_task_templates (
     assignee_role VARCHAR(20) NOT NULL DEFAULT 'employee' CHECK (assignee_role IN ('admin', 'employee')),
     sequence INT DEFAULT 0,
     is_active INTEGER DEFAULT 1,
+    type VARCHAR(20) NOT NULL DEFAULT 'onboarding' CHECK (type IN ('onboarding', 'offboarding')),
     created_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_hr_task_templates_active ON hr_task_templates(is_active);
+CREATE INDEX IF NOT EXISTS idx_hr_task_templates_type ON hr_task_templates(type, is_active);
 
--- One onboarding journey per employee (type kept for a future offboarding flow).
+-- Onboarding + offboarding journeys share the employee_processes table
+-- (type='onboarding' defaults; type='offboarding' used for exits).
 CREATE TABLE IF NOT EXISTS employee_processes (
     id SERIAL PRIMARY KEY,
     employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -617,8 +620,8 @@ CREATE INDEX IF NOT EXISTS idx_process_tasks_process ON process_tasks(process_id
 
 -- Default onboarding checklist (idempotent). The onboarding service re-seeds
 -- an empty table at runtime as well, so this only matters for fresh installs.
-INSERT INTO hr_task_templates (title, description, assignee_role, sequence)
-SELECT v.title, v.description, v.assignee_role, v.sequence
+INSERT INTO hr_task_templates (title, description, assignee_role, sequence, type)
+SELECT v.title, v.description, v.assignee_role, v.sequence, 'onboarding'
 FROM (VALUES
     ('Complete your profile details', 'Log in and fill your personal, contact and identification details under My Profile.', 'employee', 1),
     ('Submit bank & statutory details', 'Add bank account, PAN, Aadhaar and UAN/PF/ESI numbers in My Profile for payroll processing.', 'employee', 2),
@@ -627,7 +630,21 @@ FROM (VALUES
     ('Meet reporting manager & team introduction', 'Introductory meeting with the reporting manager and the team.', 'employee', 5),
     ('Acknowledge company policies', 'Read and acknowledge the HR, attendance and leave policies.', 'employee', 6)
 ) AS v(title, description, assignee_role, sequence)
-WHERE NOT EXISTS (SELECT 1 FROM hr_task_templates);
+WHERE NOT EXISTS (SELECT 1 FROM hr_task_templates WHERE type = 'onboarding');
+
+-- Default offboarding checklist (idempotent; seeded when the service runs too).
+INSERT INTO hr_task_templates (title, description, assignee_role, sequence, type)
+SELECT v.title, v.description, v.assignee_role, v.sequence, 'offboarding'
+FROM (VALUES
+    ('Return company assets (laptop, ID card, access badge)', 'Collect the company laptop, ID card and building access from the departing employee.', 'admin', 1),
+    ('Revoke office email & tool access', 'Disable the office email account and revoke access to the tools the employee used.', 'admin', 2),
+    ('Hand over project files & working documents', 'Hand over project drawings, files and working documents to the reporting manager / project lead.', 'employee', 3),
+    ('Complete knowledge-transfer / handover notes', 'Write short handover notes covering open tasks, clients and any follow-ups for the person taking over.', 'employee', 4),
+    ('Office clearance (desk, keys, parking)', 'Clear the desk, return keys and parking access, and confirm nothing is left at the office.', 'employee', 5),
+    ('Final settlement - leave balance, advances & dues', 'Reconcile pending leave balance, advances, expenses and any dues before the last working day.', 'admin', 6),
+    ('Apply for relieving letter & experience certificate', 'Raise the relieving letter / experience certificate request through the Letters module once settled.', 'employee', 7)
+) AS v(title, description, assignee_role, sequence)
+WHERE NOT EXISTS (SELECT 1 FROM hr_task_templates WHERE type = 'offboarding');
 
 -- Attendance: allow 'wfh' status (idempotent migration for existing DBs)
 DO $$ BEGIN

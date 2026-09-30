@@ -20,6 +20,9 @@
         .task-row { display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-bottom:1px solid var(--border-color,#eef2f7); }
         .task-row:last-child { border-bottom:none; }
         .task-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:.85rem; }
+        .journey-tabs { display:inline-flex; background:var(--bg-secondary,#f1f5f9); border-radius:12px; padding:4px; gap:4px; margin-bottom:18px; }
+        .journey-tabs button { border:none; background:transparent; padding:8px 18px; border-radius:9px; font-size:.85rem; font-weight:600; color:var(--text-secondary); cursor:pointer; transition:all .15s ease; }
+        .journey-tabs button.active { background:var(--card-bg,#fff); color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,.12); }
     </style>
 </head>
 <body>
@@ -85,12 +88,17 @@
         </header>
 
         <div class="page-body">
+            <div class="journey-tabs" role="tablist">
+                <button type="button" id="tabOnboarding" class="active" onclick="switchType('onboarding')"><i class="fas fa-user-plus" style="margin-right:6px;"></i>Onboarding</button>
+                <button type="button" id="tabOffboarding" onclick="switchType('offboarding')"><i class="fas fa-user-minus" style="margin-right:6px;"></i>Offboarding</button>
+            </div>
+
             <div class="card mb-3 slide-up stagger-1">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
-                    <h3 style="font-weight:600;"><i class="fas fa-user-plus" style="color:var(--secondary);margin-right:8px;"></i>New Joiner Onboarding</h3>
+                    <h3 style="font-weight:600;" id="journeyHeroTitle"><i class="fas fa-user-plus" style="color:var(--secondary);margin-right:8px;"></i>New Joiner Onboarding</h3>
                     <button class="btn btn-success btn-sm" onclick="exportOnboardingTracker()"><i class="fas fa-file-excel"></i> Export Tracker</button>
                 </div>
-                <p style="font-size:.85rem;color:var(--text-secondary);margin-top:6px;">A checklist starts automatically for every new employee profile you create. Use "Start for existing employee" below to begin onboarding for anyone created earlier.</p>
+                <p style="font-size:.85rem;color:var(--text-secondary);margin-top:6px;" id="journeyHeroDesc">A checklist starts automatically for every new employee profile you create. Use "Start for existing employee" below to begin onboarding for anyone created earlier.</p>
             </div>
 
             <div class="card slide-up stagger-2">
@@ -111,7 +119,7 @@
                     <h3 style="font-weight:600;"><i class="fas fa-list-check" style="color:var(--secondary);margin-right:8px;"></i>Checklist Templates</h3>
                     <button class="btn btn-primary btn-sm" onclick="openTemplateModal()"><i class="fas fa-plus"></i> Add Template</button>
                 </div>
-                <p style="font-size:.82rem;color:var(--text-secondary);margin-top:6px;">These tasks are copied into every new joiner's onboarding checklist. Disabled templates are skipped.</p>
+                <p style="font-size:.82rem;color:var(--text-secondary);margin-top:6px;" id="templateCardDesc">These tasks are copied into every new joiner's onboarding checklist. Disabled templates are skipped.</p>
                 <div class="table-container" style="margin-top:12px;">
                     <table>
                         <thead>
@@ -152,22 +160,22 @@
         </div>
     </div>
 
-    <!-- Start onboarding modal -->
+    <!-- Start journey modal -->
     <div class="modal" id="startModal">
         <div class="modal-content" style="max-width:480px;">
             <div class="modal-header">
-                <h2>Start Onboarding</h2>
+                <h2 id="startModalTitle">Start Onboarding</h2>
                 <button onclick="closeModal('startModal')" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>Select Employee (without an active onboarding)</label>
+                    <label id="startModalLabel">Select Employee (without an active onboarding)</label>
                     <select id="startEmployeeSelect" class="form-control"></select>
                 </div>
-                <p style="font-size:.8rem;color:var(--text-secondary);">The active checklist templates are copied as this employee's pending tasks and they receive a push notification.</p>
+                <p style="font-size:.8rem;color:var(--text-secondary);" id="startModalNote">The active checklist templates are copied as this employee's pending tasks and they receive a push notification.</p>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('startModal')">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="submitStartOnboarding()">Start Onboarding</button>
+                    <button type="button" class="btn btn-primary" onclick="submitStartOnboarding()" id="startModalSubmit">Start Onboarding</button>
                 </div>
             </div>
         </div>
@@ -212,6 +220,40 @@
         let templates = [];
         let currentProcessId = null;
         let allEmployeesCache = [];
+        let currentType = 'onboarding';
+
+        // Per-type labels so the page reads correctly for onboarding & offboarding.
+        function typeInfo(t) {
+            const off = t === 'offboarding';
+            return off
+                ? {
+                    noun: 'Offboarding', nounLower: 'offboarding', person: 'departing employee',
+                    heroTitle: 'Employee Offboarding', icon: 'fa-user-minus',
+                    heroDesc: 'A checklist starts when you hit "Start for existing employee" to begin the exit journey for a departing staff member.',
+                    templateDesc: 'These tasks are copied into every departing employee\'s offboarding checklist. Disabled templates are skipped.',
+                    toasts: { done: 'Task done - offboarding completed!', doneTask: 'Task marked as done', reopen: 'Task re-opened - offboarding is in progress again' }
+                }
+                : {
+                    noun: 'Onboarding', nounLower: 'onboarding', person: 'new joiner',
+                    heroTitle: 'New Joiner Onboarding', icon: 'fa-user-plus',
+                    heroDesc: 'A checklist starts automatically for every new employee profile you create. Use "Start for existing employee" below to begin onboarding for anyone created earlier.',
+                    templateDesc: 'These tasks are copied into every new joiner\'s onboarding checklist. Disabled templates are skipped.',
+                    toasts: { done: 'Task done - onboarding completed!', doneTask: 'Task marked as done', reopen: 'Task re-opened - onboarding is in progress again' }
+                };
+        }
+
+        function switchType(t) {
+            currentType = t === 'offboarding' ? 'offboarding' : 'onboarding';
+            const info = typeInfo(currentType);
+            document.getElementById('tabOnboarding').classList.toggle('active', currentType === 'onboarding');
+            document.getElementById('tabOffboarding').classList.toggle('active', currentType === 'offboarding');
+            document.getElementById('journeyHeroTitle').innerHTML =
+                '<i class="fas ' + info.icon + '" style="color:var(--secondary);margin-right:8px;"></i>' + info.heroTitle;
+            document.getElementById('journeyHeroDesc').textContent = info.heroDesc;
+            document.getElementById('templateCardDesc').textContent = info.templateDesc;
+            loadProcesses();
+            loadTemplates();
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
             loadProcesses();
@@ -220,10 +262,11 @@
 
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
-        // Branded onboarding tracker generated server-side (ExcelJS).
+        // Branded journey tracker generated server-side (ExcelJS).
         function exportOnboardingTracker() {
             showToast('Generating Excel...', 'info');
-            downloadWithAuth('/onboarding/export', 'Onboarding_Tracker_' + new Date().toISOString().split('T')[0] + '.xlsx');
+            const label = typeInfo(currentType).noun;
+            downloadWithAuth('/onboarding/export?type=' + currentType, label + '_Tracker_' + new Date().toISOString().split('T')[0] + '.xlsx');
         }
 
         function progressBar(p) {
@@ -234,12 +277,13 @@
         }
 
         async function loadProcesses() {
-            const d = await apiCall('/onboarding/processes');
+            const info = typeInfo(currentType);
+            const d = await apiCall('/onboarding/processes?type=' + currentType);
             const t = document.getElementById('processTableBody');
             if (d && d.success) {
                 processes = d.processes || [];
                 if (processes.length === 0) {
-                    t.innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fas fa-user-plus"></i><h3>No Onboarding Yet</h3><p>Onboarding starts automatically when you add a new employee.<br>You can also start it manually for existing employees.</p><button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="openStartModal()"><i class="fas fa-play"></i> Start for existing employee</button></div></td></tr>';
+                    t.innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fas ' + info.icon + '"></i><h3>No ' + info.noun + ' Yet</h3><p>' + info.noun + (currentType === 'offboarding' ? ' starts when you kick off the exit journey for a departing employee.' : ' starts automatically when you add a new employee.<br>You can also start it manually for existing employees.') + '</p><button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="openStartModal()"><i class="fas fa-play"></i> Start for existing employee</button></div></td></tr>';
                     return;
                 }
                 t.innerHTML = processes.map(p => {
@@ -257,17 +301,18 @@
                     '</tr>';
                 }).join('');
             } else {
-                t.innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load onboarding data. Did you run the DB migration?</p></div></td></tr>';
+                t.innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load ' + info.nounLower + ' data. Did you run the DB migration?</p></div></td></tr>';
             }
         }
 
         async function loadTemplates() {
-            const d = await apiCall('/onboarding/templates');
+            const info = typeInfo(currentType);
+            const d = await apiCall('/onboarding/templates?type=' + currentType);
             const t = document.getElementById('templateTableBody');
             if (d && d.success) {
                 templates = d.templates || [];
                 if (templates.length === 0) {
-                    t.innerHTML = '<tr><td colspan="6"><div class="empty-state"><i class="fas fa-list-check"></i><h3>No Templates</h3><p>Add checklist templates that new joiners should complete.</p></div></td></tr>';
+                    t.innerHTML = '<tr><td colspan="6"><div class="empty-state"><i class="fas fa-list-check"></i><h3>No Templates</h3><p>Add checklist templates that ' + (currentType === 'offboarding' ? 'departing employees should complete.' : 'new joiners should complete.') + '</p></div></td></tr>';
                     return;
                 }
                 t.innerHTML = templates.map(tp =>
@@ -298,8 +343,9 @@
                 return;
             }
             const p = d.process;
+            const label = typeInfo(p.type === 'offboarding' ? 'offboarding' : 'onboarding').noun;
             document.getElementById('checklistTitle').textContent =
-                'Onboarding - ' + p.first_name + ' ' + p.last_name;
+                label + ' - ' + p.first_name + ' ' + p.last_name;
             document.getElementById('checklistEmployeeInfo').innerHTML =
                 '<span class="badge badge-secondary">' + escapeHtml(p.emp_code || '') + '</span> ' +
                 '<span style="font-size:.85rem;color:var(--text-secondary);margin-left:6px;">Status: ' + (p.status === 'completed' ? 'Completed' : 'In Progress') + '</span>';
@@ -347,10 +393,11 @@
         }
 
         function completeTask(taskId) {
-            showConfirmDialog('Mark Task Done', 'Mark this onboarding task as completed?', 'Mark Done', 'btn-primary', async function() {
+            const info = typeInfo(currentType);
+            showConfirmDialog('Mark Task Done', 'Mark this ' + info.nounLower + ' task as completed?', 'Mark Done', 'btn-primary', async function() {
                 const r = await apiCall('/onboarding/tasks/' + taskId + '/complete', 'POST', {});
                 if (r && r.success) {
-                    showToast(r.process_completed ? 'Task done - onboarding completed!' : 'Task marked as done', 'success');
+                    showToast(r.process_completed ? info.toasts.done : info.toasts.doneTask, 'success');
                     openChecklist(currentProcessId);
                     loadProcesses();
                 } else {
@@ -360,10 +407,11 @@
         }
 
         function reopenTask(taskId) {
+            const info = typeInfo(currentType);
             showConfirmDialog('Re-open Task', 'Re-open this task? The journey goes back to in-progress.', 'Re-open', 'btn-warning', async function() {
                 const r = await apiCall('/onboarding/tasks/' + taskId + '/reopen', 'POST', {});
                 if (r && r.success) {
-                    showToast('Task re-opened', 'success');
+                    showToast(info.toasts.reopen, 'success');
                     openChecklist(currentProcessId);
                     loadProcesses();
                 } else {
@@ -389,8 +437,15 @@
             }
         }
 
-        // ---------- Start onboarding for an existing employee ----------
+        // ---------- Start a journey for an existing employee ----------
         async function openStartModal() {
+            const info = typeInfo(currentType);
+            document.getElementById('startModalTitle').textContent = 'Start ' + info.noun;
+            document.getElementById('startModalLabel').textContent = 'Select Employee (without an active ' + info.nounLower + ')';
+            document.getElementById('startModalNote').textContent = info.noun === 'Offboarding'
+                ? 'The active offboarding templates are copied as the departing employee\'s pending tasks and they receive a push notification.'
+                : 'The active checklist templates are copied as this employee\'s pending tasks and they receive a push notification.';
+            document.getElementById('startModalSubmit').innerHTML = 'Start ' + info.noun;
             const data = await apiCall('/employees?limit=1000&status=active');
             if (!(data && data.success)) {
                 showToast('Failed to load employees', 'error');
@@ -413,13 +468,14 @@
         async function submitStartOnboarding() {
             const empId = document.getElementById('startEmployeeSelect').value;
             if (!empId) { showToast('No employee selected', 'error'); return; }
-            const r = await apiCall('/onboarding/start/' + empId, 'POST', {});
+            const info = typeInfo(currentType);
+            const r = await apiCall('/onboarding/start/' + empId, 'POST', { type: currentType });
             if (r && r.success) {
-                showToast(r.message || 'Onboarding started', 'success');
+                showToast(r.message || info.noun + ' started', 'success');
                 closeModal('startModal');
                 loadProcesses();
             } else {
-                showToast(r?.message || 'Failed to start onboarding', 'error');
+                showToast(r?.message || 'Failed to start ' + info.nounLower, 'error');
             }
         }
 
@@ -452,7 +508,8 @@
                 description: document.getElementById('tplDescription').value,
                 assignee_role: document.getElementById('tplAssignee').value,
                 sequence: Number(document.getElementById('tplSequence').value) || 0,
-                is_active: 1
+                is_active: 1,
+                type: currentType
             };
             const r = id
                 ? await apiCall('/onboarding/templates/' + id, 'PUT', payload)
@@ -467,7 +524,8 @@
         }
 
         function disableTemplate(id) {
-            showConfirmDialog('Disable Template', 'This template will no longer be added to new onboarding journeys. Existing checklists are not affected.', 'Disable', 'btn-danger', async function() {
+            const info = typeInfo(currentType);
+            showConfirmDialog('Disable Template', 'This template will no longer be added to new ' + info.nounLower + ' journeys. Existing checklists are not affected.', 'Disable', 'btn-danger', async function() {
                 const r = await apiCall('/onboarding/templates/' + id, 'DELETE');
                 if (r && r.success) {
                     showToast('Template disabled', 'success');

@@ -428,6 +428,17 @@ async function runMigrations() {
         await query(`CREATE INDEX IF NOT EXISTS idx_status_history_employee ON employee_status_history(employee_id, created_at DESC)`);
         console.log('[Migration] employees hold/abscond statuses ensured.');
     } catch (e) { console.warn('[Migration] employees hold/abscond skipped:', e.message); }
+
+    // Offboarding (shipped 2026-09-30): hr_task_templates gains a type column so
+    // onboarding and offboarding checklists stay separate. employee_processes
+    // and process_tasks already allowed type='offboarding' in their CHECKs — the
+    // journeys were created by the same tables, only the templates were shared.
+    // Additive + idempotent; existing onboarding templates keep type='onboarding'.
+    try {
+        await query(`ALTER TABLE hr_task_templates ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT 'onboarding' CHECK (type IN ('onboarding', 'offboarding'))`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_hr_task_templates_type ON hr_task_templates(type, is_active)`);
+        console.log('[Migration] hr_task_templates.type ensured (offboarding ready).');
+    } catch (e) { console.warn('[Migration] hr_task_templates.type skipped:', e.message); }
 }
 runMigrations();
 

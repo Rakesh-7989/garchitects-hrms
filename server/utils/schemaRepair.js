@@ -132,9 +132,11 @@ const ENSURE_TABLE_DDL = {
             assignee_role VARCHAR(20) NOT NULL DEFAULT 'employee' CHECK (assignee_role IN ('admin', 'employee')),
             sequence INT DEFAULT 0,
             is_active INTEGER DEFAULT 1,
+            type VARCHAR(20) NOT NULL DEFAULT 'onboarding' CHECK (type IN ('onboarding', 'offboarding')),
             created_at TIMESTAMP DEFAULT NOW()
         )`,
-        `CREATE INDEX IF NOT EXISTS idx_hr_task_templates_active ON hr_task_templates(is_active)`
+        `CREATE INDEX IF NOT EXISTS idx_hr_task_templates_active ON hr_task_templates(is_active)`,
+        `CREATE INDEX IF NOT EXISTS idx_hr_task_templates_type ON hr_task_templates(type, is_active)`
     ],
     employee_processes: [
         `CREATE TABLE IF NOT EXISTS employee_processes (

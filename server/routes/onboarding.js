@@ -5,8 +5,14 @@ const { verifyToken, isAdminOrHr } = require('../middleware/auth');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
 const { sendToUser, sendToUsers } = require('../services/push');
-const { startOnboarding, ensureTemplatesSeeded } = require('../services/onboarding');
+const { startOnboarding, startOffboarding, ensureTemplatesSeeded } = require('../services/onboarding');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
+
+// Normalize a journey type query/body value. Anything that isn't 'offboarding'
+// falls back to 'onboarding' so existing callers never break.
+function validType(t) {
+    return t === 'offboarding' ? 'offboarding' : 'onboarding';
+}
 
 // Every onboarding query runs through the self-healing wrapper so a live
 // database that predates the onboarding tables creates them transparently
@@ -34,13 +40,14 @@ async function notifyAdmins(payload) {
 }
 
 // @route   GET /api/onboarding/my
-// @desc    The signed-in employee's own onboarding checklist + progress
+// @desc    The signed-in employee's own journey checklist + progress
 // @access  Private (any authenticated employee)
 router.get('/my', verifyToken, async (req, res) => {
     try {
+        const type = validType(req.query.type);
         const procRes = await q(
-            "SELECT * FROM employee_processes WHERE employee_id = $1 AND type = 'onboarding'",
-            [req.user.id]
+            "SELECT * FROM employee_processes WHERE employee_id = $1 AND type = $2",
+            [req.user.id, type]
         );
         if (procRes.rows.length === 0) {
             return res.json({ success: true, process: null, tasks: [], progress: computeProgress(0, 0) });
@@ -72,7 +79,7 @@ router.get('/my', verifyToken, async (req, res) => {
 router.post('/tasks/:id/complete', verifyToken, async (req, res) => {
     try {
         const taskRes = await q(
-            `SELECT t.*, p.employee_id AS process_employee_id
+            `SELECT t.*, p.employee_id AS process_employee_id, p.type AS process_type
             FROM process_tasks t
             JOIN employee_processes p ON p.id = t.process_id
             WHERE t.id = $1`,
@@ -121,25 +128,26 @@ router.post('/tasks/:id/complete', verifyToken, async (req, res) => {
 
         logAudit({
             actorId: req.user.id,
-            action: 'onboarding.task_complete',
+            action: task.process_type === 'offboarding' ? 'offboarding.task_complete' : 'onboarding.task_complete',
             entityType: 'process_task',
             entityId: task.id,
             details: { title: task.title, process_id: task.process_id },
             ip: req.ip
         });
 
-        // Cross-notify: admin acting -> tell the joiner; joiner acting -> tell admins.
+        // Cross-notify: admin acting -> tell the employee; employee acting -> tell admins.
+        const journeyLabel = task.process_type === 'offboarding' ? 'Offboarding' : 'Onboarding';
         if (req.user.role === 'admin') {
             if (Number(task.process_employee_id) !== Number(req.user.id)) {
                 sendToUser(task.process_employee_id, {
-                    title: 'Onboarding Task Completed',
+                    title: journeyLabel + ' Task Completed',
                     body: `"${task.title}" was marked as done by HR.`,
                     url: '/employee/onboarding'
                 }).catch(() => {});
             }
         } else {
             notifyAdmins({
-                title: 'Onboarding Task Completed',
+                title: journeyLabel + ' Task Completed',
                 body: `${req.user.name || 'An employee'} completed "${task.title}".`,
                 url: '/admin/onboarding'
             }).catch(() => {});
@@ -173,9 +181,15 @@ router.post('/tasks/:id/reopen', verifyToken, isAdminOrHr, async (req, res) => {
             [result.rows[0].process_id]
         );
 
+        const typeRes = await q(
+            'SELECT type FROM employee_processes WHERE id = $1',
+            [result.rows[0].process_id]
+        );
+        const ptype = (typeRes.rows[0] && typeRes.rows[0].type) || 'onboarding';
+
         logAudit({
             actorId: req.user.id,
-            action: 'onboarding.task_reopen',
+            action: ptype === 'offboarding' ? 'offboarding.task_reopen' : 'onboarding.task_reopen',
             entityType: 'process_task',
             entityId: result.rows[0].id,
             details: { title: result.rows[0].title },
@@ -190,10 +204,11 @@ router.post('/tasks/:id/reopen', verifyToken, isAdminOrHr, async (req, res) => {
 });
 
 // @route   GET /api/onboarding/processes
-// @desc    All employee onboarding journeys with progress summary
+// @desc    All journey processes (onboarding or offboarding) with progress
 // @access  Private (Admin)
 router.get('/processes', verifyToken, isAdminOrHr, async (req, res) => {
     try {
+        const type = validType(req.query.type);
         const result = await q(
             `SELECT p.id, p.employee_id, p.type, p.status, p.started_at, p.completed_at,
                 e.first_name, e.last_name, e.employee_id AS emp_code, e.joining_date,
@@ -204,9 +219,10 @@ router.get('/processes', verifyToken, isAdminOrHr, async (req, res) => {
             JOIN employees e ON e.id = p.employee_id
             LEFT JOIN departments d ON d.id = e.department_id
             LEFT JOIN process_tasks t ON t.process_id = p.id
-            WHERE p.type = 'onboarding'
+            WHERE p.type = $1
             GROUP BY p.id, e.id, d.name
-            ORDER BY p.status ASC, p.started_at DESC`
+            ORDER BY p.status ASC, p.started_at DESC`,
+            [type]
         );
         const processes = result.rows.map(p => ({
             ...p,
@@ -228,11 +244,11 @@ router.get('/processes/:id/tasks', verifyToken, isAdminOrHr, async (req, res) =>
             `SELECT p.*, e.first_name, e.last_name, e.employee_id AS emp_code
             FROM employee_processes p
             JOIN employees e ON e.id = p.employee_id
-            WHERE p.id = $1 AND p.type = 'onboarding'`,
+            WHERE p.id = $1`,
             [req.params.id]
         );
         if (procRes.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Onboarding process not found' });
+            return res.status(404).json({ success: false, message: 'Process not found' });
         }
         const tasksRes = await q(
             `SELECT t.*, c.first_name || ' ' || c.last_name AS completed_by_name
@@ -267,11 +283,11 @@ router.post('/processes/:id/tasks', verifyToken, isAdminOrHr, async (req, res) =
         const role = assignee_role === 'admin' ? 'admin' : 'employee';
 
         const procRes = await q(
-            "SELECT id FROM employee_processes WHERE id = $1 AND type = 'onboarding'",
+            'SELECT id FROM employee_processes WHERE id = $1',
             [req.params.id]
         );
         if (procRes.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Onboarding process not found' });
+            return res.status(404).json({ success: false, message: 'Process not found' });
         }
 
         const seqRes = await q(
@@ -292,9 +308,15 @@ router.post('/processes/:id/tasks', verifyToken, isAdminOrHr, async (req, res) =
             [req.params.id]
         );
 
+        const typeRes = await q(
+            'SELECT type FROM employee_processes WHERE id = $1',
+            [req.params.id]
+        );
+        const ptype = (typeRes.rows[0] && typeRes.rows[0].type) || 'onboarding';
+
         logAudit({
             actorId: req.user.id,
-            action: 'onboarding.task_add',
+            action: ptype === 'offboarding' ? 'offboarding.task_add' : 'onboarding.task_add',
             entityType: 'process_task',
             entityId: inserted.rows[0].id,
             details: { title: String(title).trim(), assignee_role: role },
@@ -309,10 +331,12 @@ router.post('/processes/:id/tasks', verifyToken, isAdminOrHr, async (req, res) =
 });
 
 // @route   POST /api/onboarding/start/:employeeId
-// @desc    Manually start onboarding (employees created before this feature)
+// @desc    Manually start a journey (onboarding default, offboarding via
+//          body.type) for employees created before the automatic flow
 // @access  Private (Admin)
 router.post('/start/:employeeId', verifyToken, isAdminOrHr, async (req, res) => {
     try {
+        const type = validType(req.body && req.body.type);
         const empRes = await q(
             'SELECT id, first_name, last_name, employee_id FROM employees WHERE id = $1',
             [req.params.employeeId]
@@ -322,26 +346,28 @@ router.post('/start/:employeeId', verifyToken, isAdminOrHr, async (req, res) => 
         }
         const emp = empRes.rows[0];
 
-        const r = await startOnboarding(emp.id, req.user.id);
+        const r = type === 'offboarding'
+            ? await startOffboarding(emp.id, req.user.id)
+            : await startOnboarding(emp.id, req.user.id);
         if (!r.ok) {
-            return res.status(500).json({ success: false, message: 'Could not start onboarding: ' + r.error });
+            return res.status(500).json({ success: false, message: 'Could not start ' + type + ': ' + r.error });
         }
         if (r.already) {
-            return res.json({ success: true, message: 'Onboarding already started for this employee' });
+            return res.json({ success: true, message: 'This checklist is already started for this employee' });
         }
 
         logAudit({
             actorId: req.user.id,
-            action: 'onboarding.start',
+            action: type === 'offboarding' ? 'offboarding.start' : 'onboarding.start',
             entityType: 'employee_process',
             entityId: r.processId,
             details: { employee_code: emp.employee_id },
             ip: req.ip
         });
 
-        res.json({ success: true, message: `Onboarding started for ${emp.first_name} ${emp.last_name}` });
+        res.json({ success: true, message: `${type === 'offboarding' ? 'Offboarding' : 'Onboarding'} started for ${emp.first_name} ${emp.last_name}` });
     } catch (error) {
-        console.error('Start onboarding error:', error);
+        console.error('Start process error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
@@ -349,19 +375,21 @@ router.post('/start/:employeeId', verifyToken, isAdminOrHr, async (req, res) => 
 // ---------- Checklist template management ----------
 
 // @route   GET /api/onboarding/templates
-// @desc    List checklist templates
+// @desc    List checklist templates (onboarding or offboarding)
 // @access  Private (Admin)
 router.get('/templates', verifyToken, isAdminOrHr, async (req, res) => {
     try {
+        const type = validType(req.query.type);
         // Seed the defaults on first view so a fresh deployment shows the
         // standard checklist instead of an empty table.
-        await ensureTemplatesSeeded();
+        await ensureTemplatesSeeded(type);
         const result = await q(
-            `SELECT * FROM hr_task_templates ORDER BY sequence ASC, id ASC`
+            `SELECT * FROM hr_task_templates WHERE type = $1 ORDER BY sequence ASC, id ASC`,
+            [type]
         );
         res.json({ success: true, templates: result.rows });
     } catch (error) {
-        console.error('List onboarding templates error:', error);
+        console.error('List checklist templates error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
@@ -371,19 +399,20 @@ router.get('/templates', verifyToken, isAdminOrHr, async (req, res) => {
 // @access  Private (Admin)
 router.post('/templates', verifyToken, isAdminOrHr, async (req, res) => {
     try {
-        const { title, description, assignee_role, sequence } = req.body;
+        const { title, description, assignee_role, sequence, type } = req.body;
         if (!title || !String(title).trim()) {
             return res.status(400).json({ success: false, message: 'Title is required' });
         }
         const role = assignee_role === 'admin' ? 'admin' : 'employee';
+        const t = validType(type);
         const result = await q(
-            `INSERT INTO hr_task_templates (title, description, assignee_role, sequence)
-            VALUES ($1, $2, $3, $4) RETURNING *`,
-            [String(title).trim(), description || null, role, Number(sequence) || 0]
+            `INSERT INTO hr_task_templates (title, description, assignee_role, sequence, type)
+            VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+            [String(title).trim(), description || null, role, Number(sequence) || 0, t]
         );
         logAudit({
             actorId: req.user.id,
-            action: 'onboarding.template_create',
+            action: t === 'offboarding' ? 'offboarding.template_create' : 'onboarding.template_create',
             entityType: 'hr_task_template',
             entityId: result.rows[0].id,
             details: { title: result.rows[0].title },
@@ -394,7 +423,7 @@ router.post('/templates', verifyToken, isAdminOrHr, async (req, res) => {
         if (error && error.code === '23505') {
             return res.status(400).json({ success: false, message: 'A template with this title already exists' });
         }
-        console.error('Create onboarding template error:', error);
+        console.error('Create checklist template error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
@@ -419,9 +448,10 @@ router.put('/templates/:id', verifyToken, isAdminOrHr, async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Template not found' });
         }
+        const ttype = result.rows[0].type === 'offboarding' ? 'offboarding' : 'onboarding';
         logAudit({
             actorId: req.user.id,
-            action: 'onboarding.template_update',
+            action: ttype === 'offboarding' ? 'offboarding.template_update' : 'onboarding.template_update',
             entityType: 'hr_task_template',
             entityId: result.rows[0].id,
             details: { title: result.rows[0].title, is_active: active },
@@ -443,15 +473,16 @@ router.put('/templates/:id', verifyToken, isAdminOrHr, async (req, res) => {
 router.delete('/templates/:id', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await q(
-            'UPDATE hr_task_templates SET is_active = 0 WHERE id = $1 RETURNING id, title',
+            'UPDATE hr_task_templates SET is_active = 0 WHERE id = $1 RETURNING id, title, type',
             [req.params.id]
         );
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Template not found' });
         }
+        const ttype = result.rows[0].type === 'offboarding' ? 'offboarding' : 'onboarding';
         logAudit({
             actorId: req.user.id,
-            action: 'onboarding.template_disable',
+            action: ttype === 'offboarding' ? 'offboarding.template_disable' : 'onboarding.template_disable',
             entityType: 'hr_task_template',
             entityId: result.rows[0].id,
             details: { title: result.rows[0].title },
@@ -465,12 +496,13 @@ router.delete('/templates/:id', verifyToken, isAdminOrHr, async (req, res) => {
 });
 
 // @route   GET /api/onboarding/export
-// @desc    Branded Excel onboarding progress tracker for all employees
+// @desc    Branded Excel journey progress tracker (onboarding or offboarding)
 // @access  Private (Admin)
 router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
     try {
+        const type = validType(req.query.type);
         const result = await query(
-            `SELECT p.id, p.status AS process_status, p.started_at, p.completed_at,
+            `SELECT p.id, p.status AS process_status, p.type, p.started_at, p.completed_at,
                 e.first_name, e.last_name, e.employee_id AS emp_code, e.joining_date,
                 d.name AS department_name,
                 COUNT(t.id)::int AS total_tasks,
@@ -481,9 +513,10 @@ router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
             JOIN employees e ON e.id = p.employee_id
             LEFT JOIN departments d ON d.id = e.department_id
             LEFT JOIN process_tasks t ON t.process_id = p.id
-            WHERE p.type = 'onboarding'
+            WHERE p.type = $1
             GROUP BY p.id, e.id, d.name
-            ORDER BY p.status ASC, p.started_at DESC`
+            ORDER BY p.status ASC, p.started_at DESC`,
+            [type]
         );
 
         const rows = result.rows.map(r => ({
@@ -514,9 +547,10 @@ router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
             { header: 'Completed On', key: 'completed_at', type: 'datetime', width: 17 }
         ];
 
+        const label = type === 'offboarding' ? 'Offboarding' : 'Onboarding';
         const wb = await buildReportWorkbook({
-            reportName: 'Onboarding Tracker',
-            subtitleExtra: 'All employees',
+            reportName: label + ' Tracker',
+            subtitleExtra: 'All employees — ' + label.toLowerCase(),
             columns,
             rows,
             footerNote: req.user.name || 'Admin'
@@ -527,13 +561,14 @@ router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
             action: 'data.export',
             entityType: 'report',
             entityId: null,
-            details: { report: 'onboarding_tracker', records: rows.length },
+            details: { report: label.toLowerCase() + '_tracker', records: rows.length },
             ip: req.ip
         });
 
-        await sendWorkbook(res, wb, 'Onboarding_Tracker_' + new Date().toISOString().split('T')[0] + '.xlsx');
+        await sendWorkbook(res, wb, label + '_Tracker_' + new Date().toISOString().split('T')[0] + '.xlsx');
     } catch (error) {
-        console.error('Onboarding export error:', error);
+        const ctype = validType(req.query && req.query.type);
+        console.error((ctype === 'offboarding' ? 'Offboarding' : 'Onboarding') + ' export error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });

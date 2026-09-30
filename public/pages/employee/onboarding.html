@@ -20,6 +20,9 @@
         .onb-ring .pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1.5rem; font-weight:700; }
         .task-card { display:flex; align-items:flex-start; gap:14px; padding:16px 18px; border:1px solid var(--border-color,#eef2f7); border-radius:var(--radius-md); margin-bottom:12px; background:var(--card-bg,#fff); }
         .task-icon { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:.95rem; }
+        .journey-tabs { display:inline-flex; background:var(--bg-secondary,#f1f5f9); border-radius:12px; padding:4px; gap:4px; margin-bottom:18px; }
+        .journey-tabs button { border:none; background:transparent; padding:8px 18px; border-radius:9px; font-size:.85rem; font-weight:600; color:var(--text-secondary); cursor:pointer; transition:all .15s ease; }
+        .journey-tabs button.active { background:var(--card-bg,#fff); color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,.12); }
     </style>
 </head>
 <body class="employee-app">
@@ -111,6 +114,42 @@
         if (!checkAuth()) throw new Error('Not authenticated');
         let currentTaskId = null;
         let myTasks = [];
+        let currentType = 'onboarding';
+
+        // Per-type copy so the page reads correctly for onboarding & offboarding.
+        function typeInfo(t) {
+            const off = t === 'offboarding';
+            return off
+                ? {
+                    noun: 'Offboarding', nounLower: 'offboarding', icon: 'fa-user-minus',
+                    heroDone: 'Offboarding complete. Thank you for your time with us.',
+                    heroActive: 'Your exit checklist',
+                    body: (done, total) => 'You have completed <strong>' + done + '</strong> of <strong>' + total + '</strong> offboarding steps. Complete the remaining handover tasks before your last working day.',
+                    emptyTitle: 'No Offboarding Checklist',
+                    emptyBody: 'Your exit checklist has not been started yet.<br>Please contact HR.',
+                    toastDone: 'All done - offboarding completed!',
+                    toastTask: 'Task marked as done',
+                    showTip: false
+                }
+                : {
+                    noun: 'Onboarding', nounLower: 'onboarding', icon: 'fa-user-plus',
+                    heroDone: 'Onboarding complete! Welcome aboard.',
+                    heroActive: 'Welcome to G Architects!',
+                    body: (done, total) => 'You have completed <strong>' + done + '</strong> of <strong>' + total + '</strong> onboarding steps.' + (done === total ? '' : ' Finish the remaining steps to get fully set up.'),
+                    emptyTitle: 'No Onboarding Checklist',
+                    emptyBody: 'Your onboarding checklist has not been started yet.<br>Please contact HR.',
+                    toastDone: 'All done - onboarding completed!',
+                    toastTask: 'Task marked as done',
+                    showTip: true
+                };
+        }
+
+        function switchType(t) {
+            currentType = t === 'offboarding' ? 'offboarding' : 'onboarding';
+            document.getElementById('tabOnboarding').classList.toggle('active', currentType === 'onboarding');
+            document.getElementById('tabOffboarding').classList.toggle('active', currentType === 'offboarding');
+            loadData();
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
             loadData();
@@ -130,32 +169,36 @@
         }
 
         async function loadData() {
-            const d = await apiCall('/onboarding/my');
+            const info = typeInfo(currentType);
+            const d = await apiCall('/onboarding/my?type=' + currentType);
             const container = document.getElementById('contentContainer');
+            let html = '<div class="journey-tabs" role="tablist">' +
+                '<button type="button" id="tabOnboarding" class="' + (currentType === 'onboarding' ? 'active' : '') + '" onclick="switchType(\'onboarding\')"><i class="fas fa-user-plus" style="margin-right:6px;"></i>Onboarding</button>' +
+                '<button type="button" id="tabOffboarding" class="' + (currentType === 'offboarding' ? 'active' : '') + '" onclick="switchType(\'offboarding\')"><i class="fas fa-user-minus" style="margin-right:6px;"></i>Offboarding</button>' +
+                '</div>';
             if (!d || !d.success) {
-                showEmptyState(container, 'fa-exclamation-triangle', 'Error', 'Failed to load onboarding data');
+                container.innerHTML = html + '<div class="card mb-3 slide-up stagger-1"><div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load ' + info.nounLower + ' data</p></div></div>';
                 return;
             }
 
             if (!d.process) {
-                container.innerHTML =
+                container.innerHTML = html +
                     '<div class="card mb-3 slide-up stagger-1"><div class="empty-state">' +
-                    '<i class="fas fa-user-plus"></i><h3>No Onboarding Checklist</h3>' +
-                    '<p>Your onboarding checklist has not been started yet.<br>Please contact HR.</p></div></div>';
+                    '<i class="fas ' + info.icon + '"></i><h3>' + info.emptyTitle + '</h3>' +
+                    '<p>' + info.emptyBody + '</p></div></div>';
                 return;
             }
 
             myTasks = d.tasks || [];
 
             const p = d.progress || { total: 0, done: 0, percent: 0 };
-            let html = '<div class="mb-3 slide-up stagger-1"><div class="onb-hero">' +
+            html += '<div class="mb-3 slide-up stagger-1"><div class="onb-hero">' +
                 ringHtml(p.percent) +
                 '<div style="flex:1;min-width:200px;">' +
                     '<h3 style="font-size:1.2rem;font-weight:700;margin-bottom:6px;">' +
-                        (p.percent === 100 ? 'Onboarding complete! Welcome aboard.' : 'Welcome to G Architects!') +
+                        (p.percent === 100 ? info.heroDone : info.heroActive) +
                     '</h3>' +
-                    '<p style="opacity:.92;font-size:.92rem;">You have completed <strong>' + p.done + '</strong> of <strong>' + p.total + '</strong> onboarding steps.' +
-                    (p.percent === 100 ? '' : ' Finish the remaining steps to get fully set up.') + '</p>' +
+                    '<p style="opacity:.92;font-size:.92rem;">' + info.body(p.done, p.total) + '</p>' +
                 '</div></div></div>';
 
             if (d.tasks.length === 0) {
@@ -197,7 +240,7 @@
                     '</div>';
                 });
                 html += '</div>';
-                if (d.tasks.some(t => t.status !== 'done')) {
+                if (info.showTip && d.tasks.some(t => t.status !== 'done')) {
                     html += '<div class="card slide-up stagger-3" style="padding:14px 18px;background:var(--bg-light,#f9fafb);margin-top:6px;">' +
                         '<p style="font-size:.82rem;color:var(--text-secondary);line-height:1.6;">' +
                         '<i class="fas fa-lightbulb" style="color:#b45309;margin-right:6px;"></i>' +
@@ -225,10 +268,11 @@
 
         async function submitComplete() {
             if (!currentTaskId) return;
+            const info = typeInfo(currentType);
             const remarks = document.getElementById('completeRemarks').value.trim();
             const r = await apiCall('/onboarding/tasks/' + currentTaskId + '/complete', 'POST', { remarks });
             if (r && r.success) {
-                showToast(r.process_completed ? 'All done - onboarding completed!' : 'Task marked as done', 'success');
+                showToast(r.process_completed ? info.toastDone : info.toastTask, 'success');
                 closeCompleteModal();
                 loadData();
             } else {
