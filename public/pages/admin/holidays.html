@@ -197,11 +197,34 @@
         async function save(e) {
             e.preventDefault();
             const id = document.getElementById('editId').value;
-            const data = {
-                name: document.getElementById('name').value,
-                date: document.getElementById('date').value,
-                description: document.getElementById('description').value
-            };
+            const name = document.getElementById('name').value.trim();
+            const date = document.getElementById('date').value;
+            const description = document.getElementById('description').value;
+
+            if (!name) { showToast('Holiday name is required', 'error'); return; }
+            if (!date) { showToast('Date is required', 'error'); return; }
+
+            // Guard against double-booking a date that already has a holiday.
+            // Server is the source of truth (friendly 400s) - this is just UX.
+            const existing = allHolidays.find(h => String(h.date).substring(0, 10) === date && String(h.id) !== String(id));
+            if (existing) {
+                if (existing.name.trim().toLowerCase() === name.toLowerCase()) {
+                    showToast(`A holiday named "${existing.name}" already exists on ${formatDate(date)}`, 'error');
+                    return;
+                }
+                // Same date, different name: legitimate (e.g. state + national) but warn first.
+                const proceed = await new Promise(resolve => {
+                    showConfirmDialog(
+                        'Holiday already on this date',
+                        `"${existing.name}" already exists on ${formatDate(date)}.\n\nDo you want to add "${name}" as an additional holiday on the same date?`,
+                        'Add Anyway', 'btn-primary',
+                        () => resolve(true), () => resolve(false)
+                    );
+                });
+                if (!proceed) return;
+            }
+
+            const data = { name, date, description };
             const r = id ? await apiCall(`/holidays/${id}`, 'PUT', data) : await apiCall('/holidays', 'POST', data);
             if (r && r.success) {
                 showToast('Holiday saved successfully!', 'success');

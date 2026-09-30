@@ -463,15 +463,23 @@ function loadSidebarLogo() {
     });
 }
 
-// Show confirm dialog (replaces browser confirm)
-function showConfirmDialog(title, message, confirmText, confirmBtnClass, onConfirm) {
+// Show confirm dialog (replaces browser confirm).
+// Optional 6th arg onCancel fires when the dialog is dismissed without confirming
+// (Cancel button, close X, or overlay click). Backwards-compatible: existing 5-arg
+// callers never receive onCancel and behave exactly as before.
+function showConfirmDialog(title, message, confirmText, confirmBtnClass, onConfirm, onCancel) {
     const existing = document.getElementById('confirmDialogOverlay');
     if (existing) existing.remove();
+
+    const dismiss = function() {
+        overlay.remove();
+        if (typeof onCancel === 'function') onCancel();
+    };
 
     const overlay = document.createElement('div');
     overlay.id = 'confirmDialogOverlay';
     overlay.className = 'modal active';
-    overlay.onclick = function(e) { if (e.target === this) { this.remove(); } };
+    overlay.onclick = function(e) { if (e.target === this) { dismiss(); } };
 
     const content = document.createElement('div');
     content.className = 'modal-content';
@@ -480,7 +488,9 @@ function showConfirmDialog(title, message, confirmText, confirmBtnClass, onConfi
 
     const header = document.createElement('div');
     header.className = 'modal-header';
-    header.innerHTML = '<h2><i class="fas fa-exclamation-triangle" style="color:var(--warning);margin-right:8px;"></i>' + escapeHtml(title) + '</h2><button class="modal-close" onclick="this.closest(\'.modal\').remove()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>';
+    header.innerHTML = '<h2><i class="fas fa-exclamation-triangle" style="color:var(--warning);margin-right:8px;"></i>' + escapeHtml(title) + '</h2><button class="modal-close" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>';
+    const closeBtn = header.querySelector('.modal-close');
+    if (closeBtn) closeBtn.onclick = dismiss;
 
     const body = document.createElement('div');
     body.className = 'modal-body';
@@ -488,7 +498,11 @@ function showConfirmDialog(title, message, confirmText, confirmBtnClass, onConfi
 
     const footer = document.createElement('div');
     footer.className = 'modal-footer';
-    footer.innerHTML = '<button class="btn btn-secondary" onclick="this.closest(\'.modal\').remove()">Cancel</button>';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = dismiss;
+    footer.appendChild(cancelBtn);
 
     const confirmBtn = document.createElement('button');
     confirmBtn.className = 'btn ' + (confirmBtnClass || 'btn-danger');
