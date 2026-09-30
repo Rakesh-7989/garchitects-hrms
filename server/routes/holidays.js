@@ -4,22 +4,39 @@ const { query } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
 
+// Normalise a date into YYYY-MM-DD. Accepts:
+//   - 'YYYY-MM-DD' strings (trimmed, first 10 chars)
+//   - JS Date objects (node-postgres returns DATE columns as Date) — built from
+//     local components so it never shifts a day across timezones
+// Returns null when the input is not a recognisable date.
+function fmtDate(v) {
+    if (v === undefined || v === null) return null;
+    const s = String(v).trim();
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (m) return m[1] + '-' + m[2] + '-' + m[3];
+    if (!s) return null;
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 // Validate a holiday payload before the DB sees it.
 // - name required (trimmed, non-empty)
 // - date required, YYYY-MM-DD, and a real calendar date (round-trip check rejects e.g. Feb 30)
 // - same name+date must not already exist (matches UNIQUE(name, date)); excludeId skips the
 //   row being edited so PUT does not false-positive on itself.
-// Returns { ok: true, name } or { ok: false, message }.
+// Returns { ok: true, name, date } or { ok: false, message }.
 async function validateHoliday({ name, date }, excludeId = null) {
     const cleanName = (name === undefined ? '' : String(name)).trim();
     if (!cleanName) return { ok: false, message: 'Holiday name is required' };
-    if (date === undefined || date === null || String(date).trim() === '') {
-        return { ok: false, message: 'Date is required' };
-    }
-    const dateStr = String(date).trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-        return { ok: false, message: 'Date must be in YYYY-MM-DD format' };
-    }
+
+    const rawDate = date === undefined || date === null ? '' : String(date).trim();
+    if (!rawDate) return { ok: false, message: 'Date is required' };
+
+    const dateStr = fmtDate(rawDate);
+    if (!dateStr) return { ok: false, message: 'Date must be in YYYY-MM-DD format' };
+
+    // Calendar-date round-trip (rejects e.g. 2026-02-30).
     const parsed = new Date(dateStr + 'T00:00:00Z');
     if (Number.isNaN(parsed.getTime()) || parsed.toISOString().substring(0, 10) !== dateStr) {
         return { ok: false, message: 'Date is not a valid calendar date' };
@@ -35,7 +52,7 @@ async function validateHoliday({ name, date }, excludeId = null) {
     if (dup.rows.length > 0) {
         return { ok: false, message: `A holiday named "${cleanName}" already exists on ${dateStr}` };
     }
-    return { ok: true, name: cleanName };
+    return { ok: true, name: cleanName, date: dateStr };
 }
 
 // @route   GET /api/holidays
@@ -71,21 +88,21 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
 
         const result = await query(
             'INSERT INTO holidays (name, date, description) VALUES ($1, $2, $3) RETURNING *',
-            [check.name, req.body.date, req.body.description]
+            [check.name, check.date, req.body.description === undefined ? null : req.body.description]
         );
         // The auto-absent cron may have already marked this date before the
         // holiday was declared - drop those stale rows so nobody shows absent
         // on a holiday. Only system-generated rows are removed.
         await query(
             `DELETE FROM attendance WHERE date = $1 AND status = 'absent' AND remarks LIKE 'Auto-marked%'`,
-            [String(req.body.date).substring(0, 10)]
+            [check.date]
         );
         logAudit({
             actorId: req.user.id,
             action: 'holiday.create',
             entityType: 'holiday',
             entityId: result.rows[0].id,
-            details: { name: check.name, date: String(req.body.date).substring(0, 10) },
+            details: { name: check.name, date: check.date },
             ip: req.ip
         });
         res.status(201).json({ success: true, holiday: result.rows[0] });
@@ -120,14 +137,19 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
 
         const result = await query(
             'UPDATE holidays SET name = COALESCE($1, name), date = COALESCE($2, date), description = COALESCE($3, description) WHERE id = $4 RETURNING *',
-            [req.body.name, req.body.date, req.body.description, req.params.id]
+            [req.body.name === undefined ? null : check.name,
+             req.body.date === undefined ? null : check.date,
+             req.body.description === undefined ? null : req.body.description,
+             req.params.id]
         );
         // Same stale-absent cleanup as POST, keyed on the (possibly new) date.
-        const holidayDate = String(result.rows[0].date).substring(0, 10);
-        await query(
-            `DELETE FROM attendance WHERE date = $1 AND status = 'absent' AND remarks LIKE 'Auto-marked%'`,
-            [holidayDate]
-        );
+        const holidayDate = fmtDate(result.rows[0].date);
+        if (holidayDate) {
+            await query(
+                `DELETE FROM attendance WHERE date = $1 AND status = 'absent' AND remarks LIKE 'Auto-marked%'`,
+                [holidayDate]
+            );
+        }
         logAudit({
             actorId: req.user.id,
             action: 'holiday.update',
@@ -165,7 +187,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
             action: 'holiday.delete',
             entityType: 'holiday',
             entityId: req.params.id,
-            details: { name: before.rows[0].name, date: String(before.rows[0].date).substring(0, 10) },
+            details: { name: before.rows[0].name, date: fmtDate(before.rows[0].date) },
             ip: req.ip
         });
         res.json({ success: true, message: 'Deleted successfully' });
