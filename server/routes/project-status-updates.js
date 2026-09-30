@@ -4,7 +4,7 @@ const { query } = require('../config/database');
 const { verifyToken } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
-const { coversProjectArea } = require('./project-leads');
+const { coversProjectArea, projectContentReadClause } = require('./project-leads');
 
 // Self-healing query wrapper: heals missing projects-module tables per request.
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
@@ -35,7 +35,16 @@ router.get('/', verifyToken, async (req, res) => {
         const params = [];
         let p = 0;
 
-        if (!canViewAll) {
+        if (req.user.role === 'manager') {
+            // Feature-C hardening (H2, 2026-09-30): a manager's project CONTENT
+            // reads are scoped to led ∪ assigned ∪ active-grant ∪
+            // actively-covering projects instead of "all projects" (the catalog
+            // and governance surfaces stay open). Admin/HR/TL unchanged.
+            const scope = projectContentReadClause('pu', req.user.id, p + 1);
+            conditions.push(scope.clause);
+            params.push(...scope.values);
+            p += scope.values.length;
+        } else if (!canViewAll) {
             // Employees: updates on assigned projects OR projects granted to
             // them via project_access_grants (active, not revoked/expired).
             p++;

@@ -110,12 +110,21 @@ studio lead/manager actually performs every week:
 - **Reject / cancel**: approver can reject; requester or admin can cancel.
 - **Grant**: soft-revokable (`revoked_at`, no hard delete) by grantor /
   whole-lead / manager / admin. Optional future `expires_at`.
-- **Enforcement bite (honest scope)**: a grant adds the project to the
-  employee's `GET /projects/my` (as `viaGrant: true`) and to their
-  `GET /project-status-updates` read scope. **Manager-class reads are already
-  open today** — the approval + grant trail still applies to everyone, but for
-  manager-class users the *read restriction* is future hardening, not a change
-  shipped here. This is stated in the code header and in §7.
+- **Enforcement bite — employees (shipped 2026-09-28)**: a grant adds the
+  project to the employee's `GET /projects/my` (as `viaGrant: true`) and to
+  their `GET /project-status-updates` read scope (assigned OR granted).
+- **Enforcement bite — manager content-wall (H2, shipped 2026-09-30)**: a
+  **manager's** project-*content* reads (`GET /project-status-updates`,
+  `GET /project-updates`, `GET /project-reports/overview` + `/activity`) are
+  now scoped to **led ∪ assigned ∪ active-grant ∪ actively-covering** projects
+  (shared helpers `projectContentScopeIds` / `projectContentReadClause` in
+  `project-leads.js`). **Catalog + governance surfaces stay open** — the
+  `GET /projects/options` picker, `GET /projects/:id/employees` roster, work
+  assignments (already own-scoped), bell and transfer/handover/access monitors
+  — so a manager's D5 structural powers and approvals are unaffected.
+  **admin / hr / team_lead unchanged** (admin = root; hr = read-only monitor;
+  team_lead already scoped to led projects). Employees still never see
+  project-management-update feeds (13.4).
 - **Bell**: `pendingAccessRequests` (TL → only whole-led projects; manager-class
   → all pending).
 
@@ -182,7 +191,7 @@ auditable mutations call `logAudit(...)`; realtime signal is web-push
 |---|---|
 | `manager/my-team.html` | **Transfers** tab (create form w/ candidate picker + reason; incoming approve/reject; my requests; monitor for mgr/admin/hr; cancel) and **Handover** tab (create form w/ absent+cover pickers, dates, reason; accept/decline; active covers; monitor; cancel). HR sees monitor-only (no action buttons). Deep-link `?tab=transfers|handover`. |
 | `manager/led-projects.html` | Covered (non-lead) projects render a **"Covering for …" banner** — read + status updates only; **Assign buttons hidden** (structural block mirrors the API). |
-| `manager/team-projects.html` | **Project Access** panel per selected project: incoming requests (approve/reject) + active grants (revoke); approver/revoker scoping follows the API (whole-lead/manager/admin act; HR read-only). |
+| `manager/team-projects.html` | **Project Access** panel per selected project: incoming requests (approve/reject) + active grants (revoke); approver/revoker scoping follows the API (whole-lead/manager/admin act; HR read-only). With the H2 content-wall, a manager's status/daily/timeline feeds show only their scoped projects' rows (empty states already handled — the page is shared with scoped team leads). Catalog (project dropdown, roster) unchanged. |
 | `employee/my-projects.html` | **Project Access** card: catalog picker (hides already-seen / granted projects), role-level vs extended scope selector, reason; my requests (status + cancel); my grants (level, grantor, expiry). |
 | `dashboard.js` | Bell badge totals + nav badges include the 3 new counters. |
 
@@ -266,12 +275,18 @@ flows). Gates: inline-JS checker 3/3 clean; `formatDate`/`escapeHtml` from
 
 ---
 
-## 9. Known, honest limits (not shipped yet)
+## 9. Known, honest limits (each marked shipped or remaining)
 
-1. **C enforcement for manager-class users** is a trail, not a read-wall yet (see
-   §4). A manager/admin who is granted access is not *blocked* anywhere extra —
-   their existing manager reads are unchanged. Only employee visibility gained
-   real bite. Approved + noted.
+1. **C enforcement for manager-class users** — **H2 content-wall shipped
+   2026-09-30** (see §4): manager content reads (`/project-status-updates`,
+   `/project-updates`, `/project-reports/overview` + `/activity`) are now
+   scoped to led ∪ assigned ∪ active-grant ∪ actively-covering. Residual,
+   deliberate limits: the **catalog** (`/projects/options`, roster) and
+   **governance** surfaces stay open (a manager can still pick any project in
+   the dropdown and place employees / approve access even when that project's
+   content feed is empty for them); **admin / hr / team_lead** reads are
+   unchanged by design (admin = root, hr = documented read-only monitor,
+   team_lead = led-scoped already).
 2. **B lazy expiry** flips past-window active rows to `ended` on read. **Cron shipped
    2026-09-30**: `/api/cron/expire-handovers` (daily 04:30 UTC, `CRON_SECRET`-guarded,
    same `end_date < CURRENT_DATE` semantics) now auto-ends stale rows even when nobody

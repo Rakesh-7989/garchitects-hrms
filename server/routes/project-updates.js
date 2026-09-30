@@ -4,6 +4,7 @@ const { query } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
+const { projectContentReadClause } = require('./project-leads');
 
 // Self-healing query wrapper: heals missing projects-module tables per request.
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
@@ -31,7 +32,16 @@ router.get('/', verifyToken, async (req, res) => {
         const params = [];
         let p = 0;
 
-        if (!canViewAll) {
+        // Feature-C hardening (H2, 2026-09-30): a manager's daily-update
+        // reads are scoped to led ∪ assigned ∪ active-grant ∪ actively-covering
+        // projects (they still filter by employeeId/units within that scope).
+        // Admin/HR/TL unchanged; employees keep the own-updates rule.
+        if (req.user.role === 'manager') {
+            const scope = projectContentReadClause('pu', req.user.id, p + 1);
+            conditions.push(scope.clause);
+            params.push(...scope.values);
+            p += scope.values.length;
+        } else if (!canViewAll) {
             p++;
             conditions.push(`pu.employee_id = $${p}`);
             params.push(req.user.id);

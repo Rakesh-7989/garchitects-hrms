@@ -525,3 +525,35 @@ module.exports.myTreeIds = myTreeIds;
 // lets a cover lead read/post status updates on the absent lead's projects.
 module.exports.activeCoverRows = activeCoverRows;
 module.exports.coversProjectArea = coversProjectArea;
+// Feature-C hardening (2026-09-30, H2 content-wall for managers): project
+// CONTENT reads are scoped like employees plus lead + covering instead of
+// "all projects". Scope = led ∪ assigned ∪ active-grant ∪ actively-covering.
+async function projectContentScopeIds(meId) {
+    const r = await q(`
+        SELECT DISTINCT project_id FROM (
+            SELECT project_id FROM project_leads WHERE lead_id = $1
+            UNION SELECT project_id FROM project_employees WHERE employee_id = $1
+            UNION SELECT project_id FROM project_access_grants WHERE employee_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())
+            UNION SELECT pl2.project_id FROM project_leads pl2
+                  JOIN team_handovers th ON th.cover_tl_id = $1 AND th.status = 'active'
+                     AND th.start_date <= CURRENT_DATE AND th.end_date >= CURRENT_DATE
+                  WHERE th.absent_tl_id = pl2.lead_id
+        ) s`,
+        [meId]);
+    return r.rows.map(x => x.project_id);
+}
+// SQL condition (against the caller's content-table alias) + values for the
+// same read scope. Used by the role-scoped GET listings (status updates /
+// daily updates) when the caller is a manager.
+function projectContentReadClause(alias, meId, startIndex) {
+    const me = `$${startIndex}`;
+    return {
+        clause: `(${alias}.project_id IN (SELECT pl.project_id FROM project_leads pl WHERE pl.lead_id = ${me})
+            OR ${alias}.project_id IN (SELECT pe.project_id FROM project_employees pe WHERE pe.employee_id = ${me})
+            OR ${alias}.project_id IN (SELECT g.project_id FROM project_access_grants g WHERE g.employee_id = ${me} AND g.revoked_at IS NULL AND (g.expires_at IS NULL OR g.expires_at > NOW()))
+            OR ${alias}.project_id IN (SELECT pl2.project_id FROM project_leads pl2 JOIN team_handovers th ON th.cover_tl_id = ${me} AND th.status = 'active' AND th.start_date <= CURRENT_DATE AND th.end_date >= CURRENT_DATE WHERE th.absent_tl_id = pl2.lead_id))`,
+        values: [meId]
+    };
+}
+module.exports.projectContentScopeIds = projectContentScopeIds;
+module.exports.projectContentReadClause = projectContentReadClause;

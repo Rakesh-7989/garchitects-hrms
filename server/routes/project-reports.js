@@ -3,6 +3,7 @@ const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isManager } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
+const { projectContentScopeIds } = require('./project-leads');
 
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
 
@@ -22,13 +23,18 @@ const PROJECT_ENTITY_TYPES = [
 router.get('/overview', verifyToken, isManager, async (req, res) => {
     try {
         // D11 (same rule as projects + work assignments): a team lead only sees
-        // projects they lead (whole-project or any unit row). Managers/HR/admins
-        // see everything.
-        const isFullView = ['admin', 'manager', 'hr'].includes(req.user.role);
-        let ledIds = null;
+        // projects they lead (whole-project or any unit row). Feature-C
+        // hardening (H2, 2026-09-30): a manager sees led ∪ assigned ∪
+        // active-grant ∪ actively-covering projects. Admins/HR see everything.
+        const isFullView = ['admin', 'hr'].includes(req.user.role);
+        let scopedIds = null;
         if (!isFullView) {
-            const led = await q('SELECT DISTINCT project_id FROM project_leads WHERE lead_id = $1', [req.user.id]);
-            ledIds = led.rows.map(r => r.project_id);
+            if (req.user.role === 'manager') {
+                scopedIds = await projectContentScopeIds(req.user.id);
+            } else {
+                const led = await q('SELECT DISTINCT project_id FROM project_leads WHERE lead_id = $1', [req.user.id]);
+                scopedIds = led.rows.map(r => r.project_id);
+            }
         }
         const projectsResult = await q(`
             SELECT p.id, p.name, COALESCE(p.client, p.customer) as client, p.description,
@@ -42,7 +48,7 @@ router.get('/overview', verifyToken, isManager, async (req, res) => {
                    (SELECT MAX(update_date) FROM project_daily_updates um WHERE um.project_id = p.id) as latest_update_date
             FROM projects p
             ${isFullView ? '' : 'WHERE p.id = ANY($1::int[])'}
-            ORDER BY p.name`, isFullView ? [] : [ledIds]);
+            ORDER BY p.name`, isFullView ? [] : [scopedIds]);
         const projects = projectsResult.rows.map(p => ({
             ...p,
             updates_7d: parseInt(p.updates_7d, 10) || 0,
@@ -64,7 +70,7 @@ router.get('/overview', verifyToken, isManager, async (req, res) => {
             LEFT JOIN project_units u ON u.id = pu.unit_id
             ${isFullView ? '' : 'WHERE pu.project_id = ANY($1::int[])'}
             ORDER BY pu.update_date DESC, pu.id DESC
-            LIMIT 6`, isFullView ? [] : [ledIds]);
+            LIMIT 6`, isFullView ? [] : [scopedIds]);
 
         const recentDocuments = await q(`
             SELECT pd.id, pd.title, pd.doc_type, pd.file_name, pd.created_at,
@@ -75,7 +81,7 @@ router.get('/overview', verifyToken, isManager, async (req, res) => {
             LEFT JOIN employees e ON e.id = pd.uploader_id
             ${isFullView ? '' : 'WHERE pd.project_id = ANY($1::int[])'}
             ORDER BY pd.created_at DESC, pd.id DESC
-            LIMIT 6`, isFullView ? [] : [ledIds]);
+            LIMIT 6`, isFullView ? [] : [scopedIds]);
 
         const summary = {
             total_projects: projects.length,
@@ -106,11 +112,16 @@ router.get('/activity', verifyToken, isManager, async (req, res) => {
         const limit = Math.min(parseInt(req.query.limit) || 25, 100);
         // D11: a team lead only sees activity belonging to projects they lead
         // (project-level entity, or a document/daily-update row of a led project).
-        const isFullView = ['admin', 'manager', 'hr'].includes(req.user.role);
-        let ledIds = [];
+        // H2 (2026-09-30): manager uses the combined content-read scope.
+        const isFullView = ['admin', 'hr'].includes(req.user.role);
+        let scopedIds = [];
         if (!isFullView) {
-            const led = await q('SELECT DISTINCT project_id FROM project_leads WHERE lead_id = $1', [req.user.id]);
-            ledIds = led.rows.map(r => r.project_id);
+            if (req.user.role === 'manager') {
+                scopedIds = await projectContentScopeIds(req.user.id);
+            } else {
+                const led = await q('SELECT DISTINCT project_id FROM project_leads WHERE lead_id = $1', [req.user.id]);
+                scopedIds = led.rows.map(r => r.project_id);
+            }
         }
         const result = await q(`
             SELECT al.id, al.action, al.entity_type, al.entity_id, al.details, al.created_at,
@@ -125,7 +136,7 @@ router.get('/activity', verifyToken, isManager, async (req, res) => {
             )`}
             ORDER BY al.created_at DESC, al.id DESC
             LIMIT $${isFullView ? 2 : 3}`,
-            isFullView ? [PROJECT_ENTITY_TYPES, limit] : [PROJECT_ENTITY_TYPES, ledIds, limit]);
+            isFullView ? [PROJECT_ENTITY_TYPES, limit] : [PROJECT_ENTITY_TYPES, scopedIds, limit]);
         res.json({ success: true, items: result.rows });
     } catch (error) {
         console.error('Error loading project activity:', error);
