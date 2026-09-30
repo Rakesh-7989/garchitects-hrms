@@ -272,9 +272,10 @@ flows). Gates: inline-JS checker 3/3 clean; `formatDate`/`escapeHtml` from
    §4). A manager/admin who is granted access is not *blocked* anywhere extra —
    their existing manager reads are unchanged. Only employee visibility gained
    real bite. Approved + noted.
-2. **B lazy expiry** flips past-window active rows to `ended` on read; there is
-   no cron job — a row stays `active` until someone reads it. Acceptable for a
-   studio tool (banner mis-stale only if nobody visits the page).
+2. **B lazy expiry** flips past-window active rows to `ended` on read. **Cron shipped
+   2026-09-30**: `/api/cron/expire-handovers` (daily 04:30 UTC, `CRON_SECRET`-guarded,
+   same `end_date < CURRENT_DATE` semantics) now auto-ends stale rows even when nobody
+   visits the handover pages; the read-time path remains as belt-and-suspenders.
 3. **Web push** is best-effort and only reaches connected clients; the bell is
    the durable signal.
 4. Transfers move the reporting tree but do **not** auto-reassign existing

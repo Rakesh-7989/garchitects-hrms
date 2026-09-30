@@ -48,4 +48,22 @@ router.get('/expire-announcements', async (req, res) => {
     }
 });
 
+// Flips active TL handovers whose window has passed to 'ended'. Mirrors the
+// lazy expirePastHandovers() semantics (team-handovers.js) exactly, so the
+// cron and the read-time path can never disagree; covers the studio case
+// where nobody visits the handover pages during the window gap.
+router.get('/expire-handovers', async (req, res) => {
+    if (!isCronAuthorized(req)) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    try {
+        const result = await runWithSchemaRepair(() =>
+            query(`UPDATE team_handovers SET status = 'ended', ended_at = NOW()
+                   WHERE status = 'active' AND end_date < CURRENT_DATE`)
+        );
+        res.json({ success: true, ended: result.changes || 0 });
+    } catch (error) {
+        console.error('Expire handovers cron error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 module.exports = router;
