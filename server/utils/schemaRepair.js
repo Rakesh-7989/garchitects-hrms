@@ -85,6 +85,15 @@ const ANNOUNCEMENTS_ALTER_COLUMNS = {
     target_audience: "VARCHAR(50) DEFAULT 'all'"
 };
 
+// hr_task_templates.type (onboarding vs offboarding journeys, shipped
+// 2026-09-30). A live DB that lazily created the table BEFORE this release has
+// no type column, so every type-aware onboarding/offboarding query 500s with
+// 42703 until the column is added. Additive + idempotent - existing rows are
+// untouched (they inherit DEFAULT 'onboarding').
+const HR_TEMPLATES_ALTER_COLUMNS = {
+    type: "VARCHAR(20) NOT NULL DEFAULT 'onboarding' CHECK (type IN ('onboarding', 'offboarding'))"
+};
+
 // Tables added in later releases. A live database that predates them fails with
 // 42P01 ("relation does not exist"); the DDL below is fully idempotent and only
 // ever creates what is missing - existing rows are never touched.
@@ -439,6 +448,15 @@ async function ensureAnnouncementsColumn(column) {
     return true;
 }
 
+async function ensureHrTemplateColumn(column) {
+    const ddl = HR_TEMPLATES_ALTER_COLUMNS[column];
+    if (!ddl) return false;
+    await query(`ALTER TABLE hr_task_templates ADD COLUMN IF NOT EXISTS "${column}" ${ddl}`);
+    // Keep the per-type template lookup fast for both journey types.
+    await query(`CREATE INDEX IF NOT EXISTS idx_hr_task_templates_type ON hr_task_templates(type, is_active)`);
+    return true;
+}
+
 // Columns the project module views depend on beyond the three main tables
 // (projects, project_employees, project_documents, project_daily_updates). If
 // a live DB predates the module these can be missing.
@@ -494,6 +512,7 @@ async function runWithSchemaRepair(fn) {
     const maxAttempts = Object.keys(EMPLOYEE_ALTER_COLUMNS).length
         + Object.keys(PROJECT_ALTER_COLUMNS).length
         + Object.keys(ANNOUNCEMENTS_ALTER_COLUMNS).length
+        + Object.keys(HR_TEMPLATES_ALTER_COLUMNS).length
         + Object.keys(ENSURE_TABLE_DDL).length + 2;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
@@ -518,6 +537,8 @@ async function runWithSchemaRepair(fn) {
                         healed = miss.column && await ensureEmployeeColumn(miss.column);
                     } else if (table === 'announcements' || table === 'a') {
                         healed = miss.column && await ensureAnnouncementsColumn(miss.column);
+                    } else if (table === 'hr_task_templates' || table === 'hrt') {
+                        healed = miss.column && await ensureHrTemplateColumn(miss.column);
                     }
                     // If specific table didn't heal, try all known tables
                     if (!healed && miss.column) {
@@ -526,7 +547,8 @@ async function runWithSchemaRepair(fn) {
                             || await ensureProjectModuleColumn('project_documents', miss.column)
                             || await ensureProjectModuleColumn('project_daily_updates', miss.column)
                             || await ensureEmployeeColumn(miss.column)
-                            || await ensureAnnouncementsColumn(miss.column);
+                            || await ensureAnnouncementsColumn(miss.column)
+                            || await ensureHrTemplateColumn(miss.column);
                     }
                     if (healed) {
                         continue;
@@ -573,4 +595,4 @@ function pgErrorResponse(error) {
     return { status: 500, message: 'Server error' };
 }
 
-module.exports = { runWithSchemaRepair, ensureEmployeeColumn, ensureProjectColumn, ensureProjectModuleColumn, ensureAnnouncementsColumn, ensureTable, hasColumn, pgErrorResponse, missingColumnInfo };
+module.exports = { runWithSchemaRepair, ensureEmployeeColumn, ensureProjectColumn, ensureProjectModuleColumn, ensureAnnouncementsColumn, ensureHrTemplateColumn, ensureTable, hasColumn, pgErrorResponse, missingColumnInfo };
