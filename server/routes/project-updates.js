@@ -4,6 +4,8 @@ const { query } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
+const { notifyMany, managerIdsOf } = require('../services/notify');
+const { dateOnly } = require('../utils/date');
 const { projectContentReadClause } = require('./project-leads');
 
 // Self-healing query wrapper: heals missing projects-module tables per request.
@@ -172,6 +174,30 @@ router.post('/', verifyToken, async (req, res) => {
             actorId: myId, action: 'project.update.create', entityType: 'project_daily_update',
             entityId: result.rows[0].id, details: { projectId, updateDate, unitId: unit, taskCat, hours: hrs }, ip: req.ip
         });
+
+        // Tell the reporting managers. Without this the daily update is written
+        // and then invisible: no manager page listed their reports' daily
+        // updates and nothing was pushed, so a report was only ever discovered
+        // by the manager happening to open the employee's page.
+        const who = await query(
+            `SELECT e.employee_id AS code, e.first_name, e.last_name, p.name AS project_name
+             FROM employees e JOIN projects p ON p.id = $2 WHERE e.id = $1`,
+            [empId, projectId]
+        ).catch(() => ({ rows: [] }));
+        const w = who.rows[0] || {};
+        const name = [w.first_name, w.last_name].filter(Boolean).join(' ') || w.code || 'An employee';
+        const when = dateOnly(updateDate) || String(updateDate);
+        const managers = await managerIdsOf(empId);
+        notifyMany(managers, {
+            type: 'work_update',
+            title: `${name} posted a daily work update`,
+            body: `${w.project_name ? w.project_name + ' — ' : ''}${when} · ${taskCat.replace(/_/g, ' ')}${hrs > 0 ? ` · ${hrs}h` : ''}: ${desc}`,
+            url: '/manager/my-team?tab=updates',
+            entityType: 'project_daily_update',
+            entityId: result.rows[0].id,
+            actorId: empId
+        }).catch(() => {});
+
         res.json({ success: true, created: true, update: result.rows[0], message: 'Daily update submitted' });
     } catch (error) {
         console.error('Error submitting project update:', error);

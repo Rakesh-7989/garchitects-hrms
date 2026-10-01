@@ -53,7 +53,7 @@ router.get('/counts', verifyToken, isManager, async (req, res) => {
             handoversParams = [];
         }
 
-        const [pendingLeaves, pendingWfh, pendingTickets, announcementsUnread, pendingProfileUpdates, pendingRegularizations, openWorkAssignments, openLeadProjects, pendingTransfers, pendingAccessRequests, activeHandovers] = await Promise.all([
+        const [pendingLeaves, pendingWfh, pendingTickets, announcementsUnread, pendingProfileUpdates, pendingRegularizations, openWorkAssignments, openLeadProjects, pendingTransfers, pendingAccessRequests, activeHandovers, unreadNotifications] = await Promise.all([
             safe(query("SELECT COUNT(*) as count FROM leave_applications WHERE status = 'pending'" + scopeClause, scopeParams)),
             safe(query("SELECT COUNT(*) as count FROM wfh_requests WHERE status = 'pending'" + scopeClause, scopeParams)),
             safe(query("SELECT COUNT(*) as count FROM support_tickets WHERE status IN ('open', 'in_progress')" + scopeClause, scopeParams)),
@@ -85,7 +85,11 @@ router.get('/counts', verifyToken, isManager, async (req, res) => {
             q("SELECT COUNT(DISTINCT project_id) as count FROM project_leads WHERE lead_id = $1", [req.user.id]),
             q(transfersSql, transfersParams),
             q(accessSql, accessParams),
-            q(handoversSql, handoversParams)
+            q(handoversSql, handoversParams),
+            // Directed messages written by services/notify.js (work assigned, a
+            // report posted, a project risk). Distinct from the pending-action
+            // counts above: this is "something happened TO you".
+            q("SELECT COUNT(*) as count FROM user_notifications WHERE employee_id = $1 AND read_at IS NULL", [req.user.id])
         ]);
 
         const counts = {
@@ -99,9 +103,10 @@ router.get('/counts', verifyToken, isManager, async (req, res) => {
             openLeadProjects: parseInt(openLeadProjects.rows[0].count),
             pendingTransfers: parseInt(pendingTransfers.rows[0].count),
             pendingAccessRequests: parseInt(pendingAccessRequests.rows[0].count),
-            activeHandovers: parseInt(activeHandovers.rows[0].count)
+            activeHandovers: parseInt(activeHandovers.rows[0].count),
+            unreadNotifications: parseInt(unreadNotifications.rows[0].count)
         };
-        counts.total = counts.pendingLeaves + counts.pendingWfh + counts.pendingProfileUpdates + counts.announcementsUnread + counts.pendingTickets + counts.pendingRegularizations + counts.openWorkAssignments + counts.openLeadProjects + counts.pendingTransfers + counts.pendingAccessRequests + counts.activeHandovers;
+        counts.total = counts.pendingLeaves + counts.pendingWfh + counts.pendingProfileUpdates + counts.announcementsUnread + counts.pendingTickets + counts.pendingRegularizations + counts.openWorkAssignments + counts.openLeadProjects + counts.pendingTransfers + counts.pendingAccessRequests + counts.activeHandovers + counts.unreadNotifications;
 
         res.json({ success: true, counts });
     } catch (error) {
@@ -347,6 +352,129 @@ router.get('/requests', verifyToken, isManager, async (req, res) => {
 
         res.json({ success: true, feed });
     } catch (error) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// ===================================================================
+// IN-APP NOTIFICATION CENTRE  (every role, incl. plain employees)
+// ===================================================================
+// Why this exists: /counts and /requests above are isManager-only, and the
+// employee bell fell through to /announcements/unread-count. So an employee
+// literally had nowhere to see "work was assigned to you" or "your lead posted
+// a risk on your project" - the events fired no notification at all, and the
+// employee had no feed even if they had. These routes are the durable feed that
+// services/notify.js writes to, and they are deliberately NOT isManager-gated:
+// a notification addressed to an employee must be readable by that employee.
+
+/** Feed cap. Deep history is not useful in a bell; 100 is plenty to scroll. */
+const FEED_LIMIT = 100;
+
+/**
+ * @route   GET /api/notifications/feed
+ * @desc    The caller's own in-app notifications, newest first
+ * @access  Private (ALL roles)
+ */
+router.get('/feed', verifyToken, async (req, res) => {
+    try {
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), FEED_LIMIT);
+        const unreadOnly = String(req.query.unreadOnly || '') === '1';
+
+        const r = await safe(runWithSchemaRepair(() => query(
+            `SELECT n.id, n.type, n.title, n.body, n.url, n.entity_type, n.entity_id,
+                    n.read_at, n.created_at, n.pushed_at,
+                    a.employee_id AS actor_code,
+                    a.first_name || ' ' || a.last_name AS actor_name
+             FROM user_notifications n
+             LEFT JOIN employees a ON a.id = n.actor_id
+             WHERE n.employee_id = $1${unreadOnly ? ' AND n.read_at IS NULL' : ''}
+             ORDER BY n.created_at DESC, n.id DESC
+             LIMIT $2`,
+            [req.user.id, limit]
+        )));
+
+        const unread = await safe(runWithSchemaRepair(() => query(
+            `SELECT COUNT(*) as count FROM user_notifications WHERE employee_id = $1 AND read_at IS NULL`,
+            [req.user.id]
+        ))).catch(() => ({ rows: [{ count: '0' }] }));
+
+        res.json({
+            success: true,
+            feed: r.rows || [],
+            unreadCount: parseInt((unread.rows[0] || {}).count || 0, 10) || 0
+        });
+    } catch (error) {
+        console.error('Notification feed error:', error.message);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+/**
+ * @route   GET /api/notifications/unread-count
+ * @desc    Badge count for the bell (ALL roles - this is the employees' entry point)
+ * @access  Private (ALL roles)
+ */
+router.get('/unread-count', verifyToken, async (req, res) => {
+    try {
+        const r = await safe(runWithSchemaRepair(() => query(
+            `SELECT COUNT(*) as count FROM user_notifications WHERE employee_id = $1 AND read_at IS NULL`,
+            [req.user.id]
+        )));
+        res.json({ success: true, count: parseInt((r.rows[0] || {}).count || 0, 10) || 0 });
+    } catch (error) {
+        console.error('Notification unread-count error:', error.message);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+/**
+ * @route   POST /api/notifications/:id/read
+ * @desc    Mark one of the caller's own notifications as read
+ * @access  Private (ALL roles)
+ */
+router.post('/:id/read', verifyToken, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id || Number.isNaN(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid notification id' });
+        }
+        // employee_id = $1 in the WHERE is the guard: you can only ever read your
+        // own notification, whatever id you send.
+        const r = await safe(runWithSchemaRepair(() => query(
+            `UPDATE user_notifications SET read_at = COALESCE(read_at, NOW())
+             WHERE id = $1 AND employee_id = $2 RETURNING id`,
+            [id, req.user.id]
+        )));
+        res.json({ success: true, updated: (r.rows || []).length });
+    } catch (error) {
+        console.error('Notification mark-read error:', error.message);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+/**
+ * @route   POST /api/notifications/read-all
+ * @desc    Mark every notification of the caller as read
+ * @access  Private (ALL roles)
+ */
+router.post('/read-all', verifyToken, async (req, res) => {
+    try {
+        const r = await safe(runWithSchemaRepair(() => query(
+            `UPDATE user_notifications SET read_at = NOW()
+             WHERE employee_id = $1 AND read_at IS NULL RETURNING id`,
+            [req.user.id]
+        )));
+        // Housekeeping: read notifications are history, not signal. Drop the ones
+        // nobody will ever look at again so the table cannot grow without bound.
+        // Unread rows are NEVER pruned - that would silently lose real work.
+        safe(runWithSchemaRepair(() => query(
+            `DELETE FROM user_notifications
+             WHERE employee_id = $1 AND read_at IS NOT NULL AND read_at < NOW() - INTERVAL '90 days'`,
+            [req.user.id]
+        ))).catch(() => {});
+        res.json({ success: true, updated: (r.rows || []).length });
+    } catch (error) {
+        console.error('Notification read-all error:', error.message);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });

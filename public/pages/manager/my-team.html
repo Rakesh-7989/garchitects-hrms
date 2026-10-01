@@ -137,6 +137,7 @@
                     <button class="tab-btn" onclick="switchTab('tickets')">Queries <span class="tab-badge" id="ticketTabBadge" style="display:none;">0</span></button>
                     <button class="tab-btn" onclick="switchTab('regularization')">Regularizations <span class="tab-badge" id="regTabBadge" style="display:none;">0</span></button>
                     <button class="tab-btn" onclick="switchTab('attendance')">Team Attendance</button>
+                    <button class="tab-btn" onclick="switchTab('updates')">Daily Updates <span class="tab-badge" id="updatesTabBadge" style="display:none;">0</span></button>
                     <button class="tab-btn" onclick="switchTab('transfers')">Transfers <span class="tab-badge" id="transferTabBadge" style="display:none;">0</span></button>
                     <button class="tab-btn" onclick="switchTab('handover')">Handover <span class="tab-badge" id="handoverTabBadge" style="display:none;">0</span></button>
                 </div>
@@ -156,6 +157,7 @@
                 </div>
                 <div id="tabTransfers" style="display:none;"></div>
                 <div id="tabHandover" style="display:none;"></div>
+                <div id="tabUpdates" style="display:none;"></div>
             </div>
         </div>
     </main>
@@ -215,6 +217,7 @@
             loadRegularizations();
             loadTransfers();
             loadHandovers();
+            loadUpdatesBadge();
             // Init Team Attendance month/year picker
             const attMonth = document.getElementById('attMonth');
             if (attMonth) {
@@ -225,7 +228,7 @@
             }
             // Deep link support: notification bell URLs carry ?tab=...
             const wanted = new URLSearchParams(window.location.search).get('tab');
-            if (wanted && ['leaves', 'wfh', 'tickets', 'regularization', 'attendance', 'transfers', 'handover'].includes(wanted)) {
+            if (wanted && ['leaves', 'wfh', 'tickets', 'regularization', 'attendance', 'transfers', 'handover', 'updates'].includes(wanted)) {
                 switchTab(wanted);
             }
         });
@@ -670,9 +673,11 @@
             document.getElementById('tabAttendance').style.display = tab === 'attendance' ? 'block' : 'none';
             document.getElementById('tabTransfers').style.display = tab === 'transfers' ? 'block' : 'none';
             document.getElementById('tabHandover').style.display = tab === 'handover' ? 'block' : 'none';
+            document.getElementById('tabUpdates').style.display = tab === 'updates' ? 'block' : 'none';
             if (tab === 'attendance') loadTeamAttendance();
             if (tab === 'transfers') loadTransfers();
             if (tab === 'handover') loadHandovers();
+            if (tab === 'updates') loadTeamUpdates();
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -1081,6 +1086,175 @@
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = submitBtn.dataset.original;
                 }
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // DAILY UPDATES — "who on my team actually reported, and what"
+        // ─────────────────────────────────────────────────────────────
+        // This tab answers the one question the daily-report feature exists for.
+        // It is reporting-tree scoped, so it works even when nobody has been made
+        // a project lead (the team-leads based project pages stay empty until then).
+        const UPD_CAT_LABEL = {
+            design: 'Design', drafting: 'Drafting', site_visit: 'Site visit',
+            coordination: 'Coordination', approvals: 'Approvals',
+            documentation: 'Documentation', meeting: 'Meeting', other: 'Other'
+        };
+        function todayIso() {
+            // Local calendar day, NOT toISOString() — that is UTC and would show
+            // yesterday for anyone east of Greenwich in the evening.
+            const d = new Date();
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        async function loadUpdatesBadge() {
+            const badge = document.getElementById('updatesTabBadge');
+            if (!badge) return;
+            const data = await apiCall('/team-updates/summary');
+            if (!data || !data.success) return;
+            // Unseen REPORTS drive the badge (that is new information). The
+            // not-reported gap is shown inside the tab; putting it on the tab too
+            // would make one badge mean two different things at once.
+            const n = data.unseen_total || 0;
+            badge.style.display = n > 0 ? 'inline-block' : 'none';
+            badge.textContent = n > 99 ? '99+' : n;
+        }
+
+        async function loadTeamUpdates() {
+            const box = document.getElementById('tabUpdates');
+            if (!box) return;
+            const picker = document.getElementById('updDate');
+            const date = picker ? picker.value : todayIso();
+            box.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary);"><div class="spinner" style="margin:0 auto;"></div></div>';
+            const data = await apiCall('/team-updates?date=' + encodeURIComponent(date));
+            if (!data || !data.success) {
+                box.innerHTML = '<div style="padding:20px;color:var(--danger);">Could not load team daily updates. ' +
+                    escapeHtml((data && data.message) || 'Please try again.') + '</div>';
+                return;
+            }
+            const s = data.summary || {};
+            const team = data.team || [];
+            let html = '';
+
+            // ── Controls
+            html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">';
+            html += '<input type="date" id="updDate" class="form-control" style="width:auto;" value="' + escapeHtml(data.date) + '" onchange="loadTeamUpdates()">';
+            if (data.cutoff_time) {
+                html += '<span style="font-size:0.8rem;color:var(--text-secondary);"><i class="fas fa-clock"></i> Reports expected by ' + escapeHtml(data.cutoff_time) + '</span>';
+            }
+            html += '<button class="btn btn-secondary btn-sm" style="margin-left:auto;" onclick="loadTeamUpdates()"><i class="fas fa-rotate"></i> Refresh</button>';
+            html += '</div>';
+
+            if (!team.length) {
+                html += '<div style="padding:28px;text-align:center;color:var(--text-secondary);">' +
+                    '<i class="fas fa-users-slash" style="font-size:1.8rem;display:block;margin-bottom:8px;opacity:0.5;"></i>' +
+                    'No one reports to you yet.<br><span style="font-size:0.85rem;">Ask an admin to set you as their reporting manager.</span></div>';
+                box.innerHTML = html;
+                return;
+            }
+
+            // ── Non-working day: say so, do not shame anyone
+            if (data.non_working_day) {
+                html += '<div style="background:rgba(59,130,246,0.06);border-left:3px solid var(--primary);padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:0.88rem;">' +
+                    '<i class="fas fa-umbrella-beach" style="margin-right:6px;"></i>' +
+                    escapeHtml(data.date) + ' is a <strong>' + escapeHtml(data.non_working_reason) + '</strong> &mdash; no reports are expected.' +
+                    '</div>';
+            }
+
+            // ── Summary strip
+            html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">';
+            html += '<div style="flex:1;min-width:130px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:8px;padding:12px 14px;">' +
+                '<div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-secondary);">Reported</div>' +
+                '<div style="font-size:1.5rem;font-weight:700;color:var(--success,#16a34a);">' + (s.reported || 0) + ' <span style="font-size:0.9rem;color:var(--text-secondary);font-weight:500;">of ' + (s.expected || 0) + '</span></div></div>';
+            const miss = s.not_reported || 0;
+            html += '<div style="flex:1;min-width:130px;background:' + (miss ? 'rgba(239,68,68,0.06)' : 'var(--bg-secondary)') + ';border:1px solid ' + (miss ? 'rgba(239,68,68,0.35)' : 'var(--border-light)') + ';border-radius:8px;padding:12px 14px;">' +
+                '<div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-secondary);">Not reported</div>' +
+                '<div style="font-size:1.5rem;font-weight:700;color:' + (miss ? 'var(--danger,#dc2626)' : 'var(--text-secondary)') + ';">' + miss + '</div></div>';
+            html += '<div style="flex:1;min-width:130px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:8px;padding:12px 14px;">' +
+                '<div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-secondary);">Hours logged</div>' +
+                '<div style="font-size:1.5rem;font-weight:700;">' + (s.total_hours || 0) + '</div></div>';
+            html += '</div>';
+
+            // ── The gap list. This is the part that actually saves a phone call.
+            if (miss && data.not_reported && data.not_reported.length) {
+                html += '<div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:12px 14px;margin-bottom:16px;">';
+                html += '<div style="font-weight:600;font-size:0.88rem;color:var(--danger,#dc2626);margin-bottom:8px;"><i class="fas fa-triangle-exclamation" style="margin-right:6px;"></i>Waiting on a report from</div>';
+                html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+                data.not_reported.forEach(p => {
+                    html += '<span style="background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:4px 12px;font-size:0.85rem;">' +
+                        '<i class="fas fa-user-clock" style="margin-right:5px;opacity:0.6;"></i>' + escapeHtml(p.name) +
+                        ' <span style="color:var(--text-secondary);font-size:0.78rem;">' + escapeHtml(p.employee_id) + '</span></span>';
+                });
+                html += '</div></div>';
+            }
+
+            // ── Per person
+            html += '<div style="display:flex;flex-direction:column;gap:12px;">';
+            team.forEach(p => {
+                const flagged = p.expected && !p.updates.length;
+                html += '<div style="border:1px solid ' + (flagged ? 'rgba(239,68,68,0.4)' : 'var(--border-light)') + ';border-radius:8px;overflow:hidden;">';
+                html += '<div style="display:flex;align-items:center;gap:10px;padding:11px 14px;background:' +
+                    (flagged ? 'rgba(239,68,68,0.05)' : 'var(--bg-secondary)') + ';flex-wrap:wrap;">';
+                html += '<div style="flex:1;min-width:160px;">';
+                html += '<div style="font-weight:600;font-size:0.92rem;">' +
+                    (flagged ? '<i class="fas fa-circle-exclamation" style="color:var(--danger,#dc2626);margin-right:6px;" title="Has not reported"></i>' : '') +
+                    escapeHtml(p.name) + '</div>';
+                html += '<div style="font-size:0.76rem;color:var(--text-secondary);">' + escapeHtml(p.employee_id) +
+                    (p.designation ? ' &middot; ' + escapeHtml(p.designation) : '') +
+                    (p.total_hours ? ' &middot; ' + p.total_hours + 'h' : '') + '</div>';
+                html += '</div>';
+                if (p.exempt && p.exempt_reason) {
+                    html += '<span style="font-size:0.74rem;background:var(--bg-card);border:1px solid var(--border-light);color:var(--text-secondary);border-radius:12px;padding:3px 10px;">' +
+                        '<i class="fas fa-minus-circle" style="margin-right:4px;"></i>' + escapeHtml(p.exempt_reason) + '</span>';
+                } else if (!p.updates.length) {
+                    html += '<span style="font-size:0.74rem;background:rgba(239,68,68,0.1);color:var(--danger,#dc2626);border-radius:12px;padding:3px 10px;"><i class="fas fa-clock" style="margin-right:4px;"></i>No report yet</span>';
+                } else {
+                    html += '<span style="font-size:0.74rem;background:rgba(22,163,74,0.1);color:var(--success,#16a34a);border-radius:12px;padding:3px 10px;"><i class="fas fa-check" style="margin-right:4px;"></i>Reported &middot; ' + p.updates.length + ' item' + (p.updates.length > 1 ? 's' : '') + '</span>';
+                }
+                html += '</div>';
+                if (p.updates.length) {
+                    html += '<div style="padding:6px 0;">';
+                    p.updates.forEach(u => {
+                        html += '<div style="padding:9px 14px;border-top:1px solid var(--border-light);' + (u.seen ? '' : 'background:rgba(59,130,246,0.04);') + '">';
+                        html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:3px;">';
+                        html += '<span style="font-size:0.72rem;background:var(--primary);color:#fff;border-radius:4px;padding:2px 7px;">' +
+                            escapeHtml(UPD_CAT_LABEL[u.task_cat] || u.task_cat) + '</span>';
+                        html += '<span style="font-size:0.82rem;font-weight:600;">' + escapeHtml(u.project || 'Project') + '</span>';
+                        if (u.unit) html += '<span style="font-size:0.76rem;color:var(--text-secondary);">' + escapeHtml(u.unit) + '</span>';
+                        if (u.hours) html += '<span style="font-size:0.76rem;color:var(--text-secondary);margin-left:auto;"><i class="fas fa-clock"></i> ' + u.hours + 'h</span>';
+                        if (!u.seen) html += '<span style="font-size:0.68rem;background:var(--primary);color:#fff;border-radius:10px;padding:1px 7px;">NEW</span>';
+                        html += '</div>';
+                        html += '<div style="font-size:0.86rem;white-space:pre-wrap;">' + escapeHtml(u.description) + '</div>';
+                        if (u.notes) html += '<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:4px;white-space:pre-wrap;"><i class="fas fa-note-sticky" style="margin-right:4px;"></i>' + escapeHtml(u.notes) + '</div>';
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                }
+                html += '</div>';
+            });
+            html += '</div>';
+
+            if (s.unseen) {
+                html += '<div style="margin-top:16px;text-align:right;">' +
+                    '<button class="btn btn-secondary btn-sm" onclick="markTeamUpdatesSeen()"><i class="fas fa-check-double"></i> Mark all as reviewed</button></div>';
+            }
+
+            box.innerHTML = html;
+        }
+
+        async function markTeamUpdatesSeen() {
+            const data = await apiCall('/team-updates?date=' + encodeURIComponent(todayIso()));
+            if (!data || !data.success) { showToast('Could not load updates to mark', 'error'); return; }
+            const ids = [];
+            (data.team || []).forEach(p => (p.updates || []).forEach(u => { if (!u.seen) ids.push(u.id); }));
+            if (!ids.length) { showToast('Nothing new to mark', 'info'); return; }
+            const res = await apiCall('/team-updates/seen', 'POST', { ids });
+            if (res && res.success) {
+                showToast('Marked ' + (res.marked || ids.length) + ' update(s) reviewed', 'success');
+                loadTeamUpdates();
+                loadUpdatesBadge();
+            } else {
+                showToast((res && res.message) || 'Could not mark as reviewed', 'error');
             }
         }
     </script>

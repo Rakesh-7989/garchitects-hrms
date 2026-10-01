@@ -4,6 +4,8 @@ const { query } = require('../config/database');
 const { verifyToken, isManager } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
+const { notify, managerIdsOf } = require('../services/notify');
+const { dateOnly } = require('../utils/date');
 const { leadCovers, myTreeIds } = require('./project-leads');
 
 // Self-healing query wrapper (mirrors sibling project routes).
@@ -229,6 +231,29 @@ router.post('/', verifyToken, isManager, async (req, res) => {
         });
 
         const full = await q(`${SELECT} WHERE wa.id = $1`, [ins.rows[0].id]);
+
+        // Tell the assignee. Previously the row was written, audited and returned
+        // with no signal to the person who now owns the work - the only way to
+        // learn about it was to open My Work and look.
+        const row = full.rows[0] || {};
+        const by = [row.assigned_by_first, row.assigned_by_last].filter(Boolean).join(' ') || 'Your lead';
+        const whereBits = [row.project_name, row.unit_name].filter(Boolean).join(' · ');
+        const dueBits = [];
+        if (prio === 'urgent' || prio === 'high') dueBits.push(`${prio.toUpperCase()} priority`);
+        if (due) dueBits.push(`due ${due}`);
+        notify({
+            employeeId: to,
+            type: 'work_assigned',
+            title: `New work assigned: ${String(title).trim()}`,
+            body: `By ${by}` + (whereBits ? ' · ' + whereBits : '')
+                + (dueBits.length ? ' · ' + dueBits.join(' · ') : '')
+                + (description ? `\n${description}` : ''),
+            url: '/employee/my-work',
+            entityType: 'work_assignment',
+            entityId: ins.rows[0].id,
+            actorId: req.user.id
+        }).catch(() => {});
+
         res.status(201).json({ success: true, message: 'Work assigned', assignment: full.rows[0] });
     } catch (error) {
         console.error('Error creating work assignment:', error);
@@ -348,7 +373,60 @@ router.put('/:id', verifyToken, async (req, res) => {
         });
 
         const full = await q(`${SELECT} WHERE wa.id = $1`, [id]);
-        res.json({ success: true, message: 'Assignment updated', assignment: full.rows[0] });
+        const after = full.rows[0] || {};
+
+        // Report progress back up. When the person doing the work closes it out,
+        // whoever assigned it is the one who needs to know - previously the only
+        // signal was the status flipping in a list someone had to remember to
+        // re-open.
+        const newStatus = changes.status;
+        if (newStatus && newStatus !== row.status && (newStatus === 'completed' || newStatus === 'cancelled' || newStatus === 'in_progress')) {
+            // Name who actually did it. An assigner/admin may also move the
+            // status, so crediting the assignee for it would be a lie in the
+            // manager's feed.
+            const actorIsAssignee = Number(req.user.id) === Number(after.assigned_to);
+            // req.user carries the JWT payload (id, employee_id, email, role, name) —
+            // NOT first_name/last_name, so do not reach for those here.
+            const actorName = actorIsAssignee
+                ? ([after.assigned_to_first, after.assigned_to_last].filter(Boolean).join(' ') || 'The assignee')
+                : (req.user.name || [after.assigned_by_first, after.assigned_by_last].filter(Boolean).join(' ')
+                    || req.user.employee_id || 'Someone');
+            const done = newStatus === 'completed';
+            const cancelled = newStatus === 'cancelled';
+            const verb = done ? 'completed' : cancelled ? 'cancelled' : 'started';
+            // The assigner hears about it; when the assigner updated it
+            // themselves there is nothing to tell them (notify() drops self-sends).
+            notify({
+                employeeId: after.assigned_by,
+                type: done ? 'work_completed' : cancelled ? 'work_cancelled' : 'work_started',
+                title: `${actorName} ${verb}: ${after.title}`,
+                body: (after.project_name ? after.project_name + (after.unit_name ? ' · ' + after.unit_name : '') : '')
+                    + (changes.due_date ? `\nDue ${dateOnly(changes.due_date)}` : ''),
+                url: '/manager/team-work',
+                entityType: 'work_assignment',
+                entityId: id,
+                actorId: req.user.id
+            }).catch(() => {});
+        }
+
+        // Reassignment moves ownership - the new owner must be told, or the task
+        // silently disappears from everyone's radar.
+        if (changes.assigned_to && Number(changes.assigned_to) !== Number(row.assigned_to)) {
+            const byName = [after.assigned_by_first, after.assigned_by_last].filter(Boolean).join(' ') || 'Your lead';
+            notify({
+                employeeId: changes.assigned_to,
+                type: 'work_assigned',
+                title: `Work reassigned to you: ${after.title}`,
+                body: `By ${byName}` + (after.project_name ? ' · ' + after.project_name : '')
+                    + (after.due_date ? `\nDue ${dateOnly(after.due_date)}` : ''),
+                url: '/employee/my-work',
+                entityType: 'work_assignment',
+                entityId: id,
+                actorId: req.user.id
+            }).catch(() => {});
+        }
+
+        res.json({ success: true, message: 'Assignment updated', assignment: after });
     } catch (error) {
         console.error('Error updating work assignment:', error);
         const r = pgErrorResponse(error);

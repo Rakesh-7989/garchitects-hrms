@@ -807,6 +807,56 @@ CREATE INDEX IF NOT EXISTS idx_project_leads_lead ON project_leads(lead_id);
 CREATE INDEX IF NOT EXISTS idx_project_leads_project ON project_leads(project_id);
 
 -- ============================================================
+-- 26. USER NOTIFICATIONS (in-app notification centre)
+-- ============================================================
+-- The HRMS had NO stored notification feed: the bell only DERIVED counts from
+// source tables (pending leave, tickets, ...) and only for manager/admin roles,
+-- so an employee had no feed at all, and "your team posted a daily update" was
+// not expressible. Web push cannot carry this on its own either - it silently
+// no-ops unless VAPID is configured, and a push that needs the tab open is not
+// a record. This table is the durable, push-independent feed: one row per
+-- thing the user must know about, with read_at as the seen marker.
+CREATE TABLE IF NOT EXISTS user_notifications (
+    id SERIAL PRIMARY KEY,
+    employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    type VARCHAR(40) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    body TEXT,
+    url VARCHAR(255),
+    entity_type VARCHAR(40),
+    entity_id INT,
+    actor_id INT REFERENCES employees(id) ON DELETE SET NULL,
+    -- Web-push only; stays NULL when VAPID is unconfigured. Kept so a retry can
+    -- be reasoned about server-side instead of guessing.
+    pushed_at TIMESTAMP,
+    read_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_un_employee ON user_notifications(employee_id, read_at, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_un_type ON user_notifications(type, created_at DESC);
+-- One notification per (recipient, thing, event) - stops a double-submit or a
+-- retry loop from filling the feed with identical rows.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_un_emp_entity
+    ON user_notifications(employee_id, type, entity_type, entity_id)
+    WHERE entity_id IS NOT NULL;
+
+-- ============================================================
+-- 27. DAILY UPDATE READS (manager seen-tracking)
+-- ============================================================
+-- Mirrors announcement_reads. A manager's "who has reported today" screen needs
+-- to know which of their reports' daily updates they have actually looked at,
+-- so the tab badge can count only NEW ones. Keyed on the daily update row, not
+-- the person, so several updates in a day each need acknowledging.
+CREATE TABLE IF NOT EXISTS daily_update_reads (
+    id SERIAL PRIMARY KEY,
+    manager_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    daily_update_id INT NOT NULL REFERENCES project_daily_updates(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE (manager_id, daily_update_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dur_manager ON daily_update_reads(manager_id);
+
+-- ============================================================
 -- PROJECT SETTINGS (for holiday config, etc.)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS project_settings (
@@ -881,7 +931,9 @@ WHERE role != 'admin' AND secondary_reporting_manager_id IS NULL;
 INSERT INTO company_settings (setting_key, setting_value, description) VALUES
 ('weekoff_day', '0', 'Weekly off day (0=Sunday .. 6=Saturday), the ONLY weekly off day'),
 ('weekly_working_days', '6', 'Expected working days per week'),
-('monthly_leave_quota', '1', 'Paid leave days an employee earns per month')
+('monthly_leave_quota', '1', 'Paid leave days an employee earns per month'),
+('daily_update_cutoff_time', '19:00', 'Time by which employees should post their daily work update (HH:MM, office time)'),
+('daily_update_reminder', '1', '1 = remind managers about team members who have not reported by the cutoff time')
 ON CONFLICT (setting_key) DO NOTHING;
 
 -- ============================================================

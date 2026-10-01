@@ -401,6 +401,44 @@ const ENSURE_TABLE_DDL = {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_pag_emp ON project_access_grants(employee_id)`,
         `CREATE INDEX IF NOT EXISTS idx_pag_project ON project_access_grants(project_id)`
+    ],
+    // In-app notification centre. The bell previously derived counts from source
+    // tables and existed only for manager/admin, so employees had no feed and
+    // "your team posted a daily update" could not be expressed at all. This is
+    // the durable feed; web push (sendToUser) is best-effort on top of it and
+    // stays a no-op until VAPID is configured, so the product still works.
+    user_notifications: [
+        `CREATE TABLE IF NOT EXISTS user_notifications (
+            id SERIAL PRIMARY KEY,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            type VARCHAR(40) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            body TEXT,
+            url VARCHAR(255),
+            entity_type VARCHAR(40),
+            entity_id INT,
+            actor_id INT REFERENCES employees(id) ON DELETE SET NULL,
+            pushed_at TIMESTAMP,
+            read_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_un_employee ON user_notifications(employee_id, read_at, created_at DESC)`,
+        `CREATE INDEX IF NOT EXISTS idx_un_type ON user_notifications(type, created_at DESC)`,
+        // One notification per (recipient, event, thing) so a double-submit or a
+        // retry cannot fill the feed with duplicates.
+        `CREATE UNIQUE INDEX IF NOT EXISTS uq_un_emp_entity ON user_notifications(employee_id, type, entity_type, entity_id) WHERE entity_id IS NOT NULL`
+    ],
+    // Manager seen-tracking for their reports' daily updates (mirrors
+    // announcement_reads) so the My Team tab badge counts only NEW updates.
+    daily_update_reads: [
+        `CREATE TABLE IF NOT EXISTS daily_update_reads (
+            id SERIAL PRIMARY KEY,
+            manager_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            daily_update_id INT NOT NULL REFERENCES project_daily_updates(id) ON DELETE CASCADE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE (manager_id, daily_update_id)
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_dur_manager ON daily_update_reads(manager_id)`
     ]
 };
 

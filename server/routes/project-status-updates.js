@@ -4,6 +4,8 @@ const { query } = require('../config/database');
 const { verifyToken } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
+const { notifyMany, projectParticipantIds } = require('../services/notify');
+const { dateOnly } = require('../utils/date');
 const { coversProjectArea, projectContentReadClause } = require('./project-leads');
 
 // Self-healing query wrapper: heals missing projects-module tables per request.
@@ -177,6 +179,30 @@ router.post('/', verifyToken, async (req, res) => {
             actorId: req.user.id, action: 'project.status_update.create', entityType: 'project_status_update',
             entityId: result.rows[0].id, details: { projectId: proj, unitId: unit, updateDate: date, category }, ip: req.ip
         });
+
+        // Direction changes only matter if the people doing the work hear them.
+        // Until now this write was completely silent - a lead could post a "risk"
+        // or "coordination" update and the site team would not find out until they
+        // happened to open the page. Risk / coordination / approval are the ones
+        // that genuinely need to interrupt someone, so those carry an explicit
+        // marker in the feed; routine progress is still recorded, just calmer.
+        const attention = ['risk', 'coordination', 'approval'].includes(category);
+        const recipients = await projectParticipantIds(proj);
+        const projRow = await q(`SELECT name FROM projects WHERE id = $1`, [proj]).catch(() => ({ rows: [] }));
+        const pname = (projRow.rows[0] || {}).name || 'a project';
+        const unitRow = unit ? await q(`SELECT name FROM project_units WHERE id = $1`, [unit]).catch(() => ({ rows: [] })) : { rows: [] };
+        const uname = (unitRow.rows[0] || {}).name || null;
+        const when = result.rows[0].update_date ? dateOnly(result.rows[0].update_date) : null;
+        notifyMany(recipients, {
+            type: 'project_status',
+            title: `${attention ? 'Action needed: ' : ''}${pname}${uname ? ' · ' + uname : ''} — ${category.replace(/_/g, ' ')}`,
+            body: `${when ? when + ' · ' : ''}${desc}${notes ? '\n' + String(notes).trim() : ''}`,
+            url: '/manager/team-projects',
+            entityType: 'project_status_update',
+            entityId: result.rows[0].id,
+            actorId: req.user.id
+        }).catch(() => {});
+
         res.json({ success: true, created: true, update: result.rows[0], message: 'Project update posted' });
     } catch (error) {
         console.error('Error posting project status update:', error);

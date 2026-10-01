@@ -99,53 +99,125 @@ function toggleNotificationPanel() {
     markAllBtn.onclick = async function(e) {
         e.preventDefault();
         e.stopPropagation();
-        await apiCall('/announcements/read-all', 'POST');
+        // Two independent stores: directed messages (user_notifications) and
+        // announcements. Both must clear or the badge just reappears.
+        await Promise.all([
+            apiCall('/notifications/read-all', 'POST'),
+            apiCall('/announcements/read-all', 'POST')
+        ]);
         loadNotifBadge();
         loadNotificationList();
     };
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Employee notification panel.
+//
+// Previously this listed ONLY announcements. Work assigned to an employee, a
+// lead's project risk, or "your teammate's manager was told" had no employee-
+// visible surface at all: /notifications/counts and /notifications/requests are
+// isManager-only, so the employee branch of the bell fell through to
+// /announcements/unread-count and there was nowhere else to look. Both stores are
+// now shown, directed messages first (they are the actionable ones).
+// ─────────────────────────────────────────────────────────────────
+const NOTIF_ICON = {
+    work_assigned: 'fa-clipboard-list',
+    work_completed: 'fa-circle-check',
+    work_cancelled: 'fa-ban',
+    work_started: 'fa-play',
+    work_update: 'fa-file-lines',
+    project_status: 'fa-flag'
+};
+const NOTIF_COLOR = {
+    work_assigned: '#2563eb',
+    work_completed: '#16a34a',
+    work_cancelled: '#dc2626',
+    work_started: '#0891b2',
+    work_update: '#7c3aed',
+    project_status: '#ea580c'
+};
+
 async function loadNotificationList() {
     const list = document.getElementById('notificationList');
     if (!list) return;
     try {
-        const data = await apiCall('/announcements');
-        if (!data || !data.success) {
-            list.innerHTML = '<div class="notification-panel-empty"><i class="fas fa-exclamation-circle"></i>Failed to load</div>';
+        const [feed, ann] = await Promise.all([
+            apiCall('/notifications/feed?limit=25'),
+            apiCall('/announcements')
+        ]);
+
+        const directed = (feed && feed.success ? (feed.feed || []) : []).map(n => ({
+            kind: 'directed',
+            id: n.id,
+            title: n.title || '',
+            body: n.body || '',
+            url: n.url || '',
+            read: !!n.read_at,
+            created_at: n.created_at,
+            type: n.type
+        }));
+        const announcements = (ann && ann.success ? (ann.announcements || []) : []).map(a => ({
+            kind: 'announcement',
+            id: a.id,
+            title: a.title || '',
+            priority: a.priority || 'normal',
+            read: !!a.is_read,
+            created_at: a.created_at
+        }));
+
+        const all = [...directed, ...announcements]
+            .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+            .slice(0, 12);
+
+        if (all.length === 0) {
+            list.innerHTML = '<div class="notification-panel-empty"><i class="fas fa-bell-slash"></i>Nothing new</div>';
             return;
         }
-        const announcements = (data.announcements || []).slice(0, 8);
-        if (announcements.length === 0) {
-            list.innerHTML = '<div class="notification-panel-empty"><i class="fas fa-bell-slash"></i>No announcements yet</div>';
-            return;
-        }
-        list.innerHTML = announcements.map(a => {
-            const unreadClass = a.is_read ? 'is-read' : '';
-            const prio = a.priority || 'normal';
+
+        list.innerHTML = all.map(n => {
+            const time = formatTimeAgo(n.created_at);
+            if (n.kind === 'directed') {
+                const color = NOTIF_COLOR[n.type] || 'var(--primary)';
+                const icon = NOTIF_ICON[n.type] || 'fa-bell';
+                return `
+                    <a href="javascript:void(0)" class="notification-item ${n.read ? 'is-read' : ''}" data-kind="directed" data-id="${n.id}" data-url="${escapeHtml(n.url || '')}">
+                        <span class="notif-dot"></span>
+                        <div class="notif-body">
+                            <div class="notif-title"><i class="fas ${icon}" style="color:${color};margin-right:5px;"></i>${escapeHtml(n.title)}</div>
+                            ${n.body ? `<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px;line-height:1.35;">${escapeHtml(n.body)}</div>` : ''}
+                            <div class="notif-meta"><span>${time}</span></div>
+                        </div>
+                    </a>`;
+            }
+            const prio = n.priority || 'normal';
             const prioColor = getPriorityColor(prio);
-            const time = formatTimeAgo(a.created_at);
             return `
-                <a href="javascript:void(0)" class="notification-item ${unreadClass}" data-id="${a.id}">
+                <a href="javascript:void(0)" class="notification-item ${n.read ? 'is-read' : ''}" data-kind="announcement" data-id="${n.id}">
                     <span class="notif-dot"></span>
                     <div class="notif-body">
-                        <div class="notif-title">${escapeHtml(a.title)}</div>
+                        <div class="notif-title">${escapeHtml(n.title)}</div>
                         <div class="notif-meta">
                             <span class="priority-tag" style="background:${prioColor}22;color:${prioColor};">${prio.toUpperCase()}</span>
                             <span>${time}</span>
                         </div>
                     </div>
-                </a>
-            `;
+                </a>`;
         }).join('');
 
         list.querySelectorAll('.notification-item').forEach(item => {
             item.addEventListener('click', async () => {
                 const id = item.getAttribute('data-id');
+                const kind = item.getAttribute('data-kind');
+                const url = item.getAttribute('data-url');
                 if (!item.classList.contains('is-read')) {
-                    await apiCall('/announcements/' + id + '/read', 'POST');
+                    if (kind === 'directed') await apiCall('/notifications/' + id + '/read', 'POST');
+                    else await apiCall('/announcements/' + id + '/read', 'POST');
                     loadNotifBadge();
                 }
-                window.location.href = '/employee/announcements';
+                // An unread directed message with nowhere to go is a dead end, so
+                // fall back to My Work rather than leaving the employee on the
+                // same page.
+                window.location.href = (kind === 'directed' && url) ? url : '/employee/announcements';
             });
         });
     } catch (e) {
@@ -265,6 +337,16 @@ async function toggleAdminRequestsPanel(bell, mode) {
         '<div class="notification-panel-list" id="notifAnnounceList" style="min-height:40px;"><div class="notification-panel-empty"><i class="fas fa-spinner fa-spin"></i>Loading...</div></div>' +
         '<div class="notification-panel-footer"><a href="' + announcementsUrl + '">View all announcements</a></div>' : '';
 
+    // Directed messages (work assigned / completed, a report posted, a project
+    // risk) are the same store the employee bell reads. Shown to every role so a
+    // manager sees "GA0004 finished the task I gave them" without opening the
+    // assignment list, and so the badge count and the panel never disagree.
+    const directedSection =
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px 2px;border-top:1px solid var(--border-light);">' +
+        '<span style="font-size:0.72rem;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;">Updates for you</span>' +
+        '<button class="mark-all-btn" id="notifDirectedMarkAllBtn">Mark all as read</button></div>' +
+        '<div class="notification-panel-list" id="notifDirectedList" style="min-height:40px;"><div class="notification-panel-empty"><i class="fas fa-spinner fa-spin"></i>Loading...</div></div>';
+
     const panel = document.createElement('div');
     panel.className = 'notification-panel';
     panel.id = 'adminNotifPanel';
@@ -273,10 +355,12 @@ async function toggleAdminRequestsPanel(bell, mode) {
         '<div style="font-size:0.72rem;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.4px;padding:8px 16px 2px;">' + (isManagerMode ? 'Team Requests' : 'Pending Requests') + '</div>' +
         '<div class="notification-panel-list" id="adminNotifList" style="min-height:50px;"><div class="notification-panel-empty"><i class="fas fa-spinner fa-spin"></i>Loading...</div></div>' +
         '<div class="notification-panel-footer"><a href="' + requestsUrl + '">View all requests</a></div>' +
+        directedSection +
         announcementsSection;
     bell.appendChild(panel);
 
     await loadRequestsSection(document.getElementById('adminNotifList'), mode, 3);
+    loadDirectedNotificationsSection(document.getElementById('notifDirectedList'));
 
     if (isManagerMode) {
         await loadAnnouncementsSection(document.getElementById('notifAnnounceList'), announcementsUrl);
@@ -291,7 +375,62 @@ async function toggleAdminRequestsPanel(bell, mode) {
             };
         }
     }
+    const directedMarkAll = document.getElementById('notifDirectedMarkAllBtn');
+    if (directedMarkAll) {
+        directedMarkAll.onclick = async function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            await apiCall('/notifications/read-all', 'POST');
+            loadNotifBadge();
+            loadDirectedNotificationsSection(document.getElementById('notifDirectedList'));
+        };
+    }
     loadNotifBadge();
+}
+
+/**
+ * Render the directed-message section of the manager/admin bell.
+ * Same data the employee bell shows, so a manager sees the work they handed out
+ * coming back to them ("GA0006 completed: Pour concrete").
+ */
+async function loadDirectedNotificationsSection(listEl) {
+    if (!listEl) return;
+    try {
+        const data = await apiCall('/notifications/feed?limit=15');
+        const all = (data && data.success && data.feed) ? data.feed : [];
+        if (!all.length) {
+            listEl.innerHTML = '<div class="notification-panel-empty"><i class="fas fa-bell-slash"></i>Nothing yet</div>';
+            return;
+        }
+        listEl.innerHTML = all.slice(0, 8).map(n => {
+            const color = NOTIF_COLOR[n.type] || 'var(--primary)';
+            const icon = NOTIF_ICON[n.type] || 'fa-bell';
+            const title = escapeHtml(n.title || '');
+            const body = n.body ? escapeHtml(String(n.body).slice(0, 140)) : '';
+            const time = formatTimeAgo(n.created_at);
+            return '<a href="javascript:void(0)" class="notification-item ' + (n.read_at ? 'is-read' : '') + '" data-id="' + n.id + '" data-url="' + escapeHtml(n.url || '') + '">' +
+                '<span style="width:34px;height:34px;border-radius:50%;background:var(--primary-50);color:' + color + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;"><i class="fas ' + icon + '"></i></span>' +
+                '<span class="notif-body"><span class="notif-title">' + title + '</span>' +
+                (body ? '<span style="font-size:0.78rem;color:var(--text-secondary);display:block;line-height:1.35;margin-top:2px;">' + body + '</span>' : '') +
+                '<span class="notif-meta">' + time + '</span></span></a>';
+        }).join('');
+
+        listEl.querySelectorAll('.notification-item').forEach(item => {
+            item.addEventListener('click', async e => {
+                e.preventDefault();
+                e.stopPropagation();
+                const id = item.getAttribute('data-id');
+                const url = item.getAttribute('data-url');
+                if (!item.classList.contains('is-read')) {
+                    await apiCall('/notifications/' + id + '/read', 'POST');
+                    loadNotifBadge();
+                }
+                if (url) window.location.href = url;
+            });
+        });
+    } catch (err) {
+        listEl.innerHTML = '<div class="notification-panel-empty"><i class="fas fa-exclamation-circle"></i>Failed to load</div>';
+    }
 }
 
 async function loadRequestsSection(listEl, mode, limit) {
@@ -388,20 +527,26 @@ async function loadNotifBadge() {
         if (user.role === 'admin') {
             const data = await apiCall('/notifications/counts');
             if (data && data.success) {
-                count = data.counts.pendingLeaves + data.counts.pendingWfh + data.counts.pendingProfileUpdates + data.counts.announcementsUnread + data.counts.pendingTickets + (parseInt(data.counts.openWorkAssignments) || 0) + (parseInt(data.counts.openLeadProjects) || 0) + (parseInt(data.counts.pendingTransfers) || 0) + (parseInt(data.counts.pendingAccessRequests) || 0) + (parseInt(data.counts.activeHandovers) || 0);
+                count = data.counts.pendingLeaves + data.counts.pendingWfh + data.counts.pendingProfileUpdates + data.counts.announcementsUnread + data.counts.pendingTickets + (parseInt(data.counts.openWorkAssignments) || 0) + (parseInt(data.counts.openLeadProjects) || 0) + (parseInt(data.counts.pendingTransfers) || 0) + (parseInt(data.counts.pendingAccessRequests) || 0) + (parseInt(data.counts.activeHandovers) || 0) + (parseInt(data.counts.unreadNotifications) || 0);
                 loadSidebarCounts(data.counts);
             }
         } else if (user.role === 'manager' || user.role === 'team_lead') {
             const data = await apiCall('/notifications/counts');
             if (data && data.success) {
-                count = data.counts.pendingLeaves + data.counts.pendingWfh + data.counts.pendingTickets + data.counts.announcementsUnread + (parseInt(data.counts.openWorkAssignments) || 0) + (parseInt(data.counts.openLeadProjects) || 0) + (parseInt(data.counts.pendingTransfers) || 0) + (parseInt(data.counts.pendingAccessRequests) || 0) + (parseInt(data.counts.activeHandovers) || 0);
+                count = data.counts.pendingLeaves + data.counts.pendingWfh + data.counts.pendingTickets + data.counts.announcementsUnread + (parseInt(data.counts.openWorkAssignments) || 0) + (parseInt(data.counts.openLeadProjects) || 0) + (parseInt(data.counts.pendingTransfers) || 0) + (parseInt(data.counts.pendingAccessRequests) || 0) + (parseInt(data.counts.activeHandovers) || 0) + (parseInt(data.counts.unreadNotifications) || 0);
                 loadSidebarCounts(data.counts, 'manager');
             }
         } else {
-            const data = await apiCall('/announcements/unread-count');
-            if (data && data.success) {
-                count = parseInt(data.count) || 0;
-            }
+            // Employees: announcements PLUS directed messages (work assigned, a
+            // project risk, a teammate's report routed to them). Previously only
+            // announcements were counted, so an employee could never see that
+            // something had been assigned to them.
+            const [ann, direct] = await Promise.all([
+                apiCall('/announcements/unread-count'),
+                apiCall('/notifications/unread-count')
+            ]);
+            count = (ann && ann.success ? parseInt(ann.count) || 0 : 0)
+                + (direct && direct.success ? parseInt(direct.count) || 0 : 0);
         }
         if (count > 0) {
             badge.textContent = count > 99 ? '99+' : count;

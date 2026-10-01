@@ -98,6 +98,7 @@
                     <span id="dailyUpdateEditBadge" style="display:none;font-size:0.8rem;color:#d97706;font-weight:600;">Editing an update</span>
                 </div>
                 <div class="card-body">
+                    <div id="dailyReportStatus" style="display:none;margin-bottom:16px;padding:11px 14px;border-radius:8px;font-size:0.88rem;align-items:center;gap:9px;"></div>
                     <form id="dailyUpdateForm">
                         <input type="hidden" id="updateEditId">
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
@@ -467,6 +468,9 @@
                 showToast(data.message || 'Update saved!', 'success');
                 resetUpdateForm();
                 loadMyUpdates();
+                // Flip the "you have not reported yet" banner to reported, so the
+                // employee sees the same confirmation their manager will.
+                loadDailyReportStatus();
             } else {
                 showToast(data?.message || 'Failed to save update', 'error');
             }
@@ -480,9 +484,56 @@
 
             await loadMyProjectsData();
             await loadAccessPanel();
+            await loadDailyReportStatus();
 
             document.getElementById('dailyUpdateForm').addEventListener('submit', submitDailyUpdate);
         });
+
+        // ─────────────────────────────────────────────────────────────
+        // MY DAILY-REPORT STATUS
+        // ─────────────────────────────────────────────────────────────
+        // Your manager's "Daily Updates" tab shows who has NOT reported, so the
+        // employee needs to see the same thing about themselves. Otherwise the
+        // manager screen is an accusation with no self-service counterpart.
+        // Non-working days and approved leave are stated explicitly so nobody is
+        // nagged to file a report on a Sunday.
+        async function loadDailyReportStatus() {
+            const box = document.getElementById('dailyReportStatus');
+            if (!box) return;
+            const data = await apiCall('/team-updates/me');
+            if (!data || !data.success) return;
+            box.style.display = 'flex';
+
+            if (data.non_working_day) {
+                box.style.background = 'rgba(59,130,246,0.06)';
+                box.style.color = 'var(--text-secondary)';
+                box.innerHTML = '<i class="fas fa-umbrella-beach"></i><span>Today is a <strong>' +
+                    escapeHtml(data.exempt_reason || 'non-working day') +
+                    '</strong> — no daily report is expected.</span>';
+                return;
+            }
+            if (!data.expected) {
+                box.style.background = 'rgba(59,130,246,0.06)';
+                box.style.color = 'var(--text-secondary)';
+                box.innerHTML = '<i class="fas fa-info-circle"></i><span>No daily report is expected for today' +
+                    (data.exempt_reason ? ' - ' + escapeHtml(data.exempt_reason.toLowerCase()) : '') + '.</span>';
+                return;
+            }
+            if (data.reported) {
+                box.style.background = 'rgba(16,185,129,0.08)';
+                box.style.color = 'var(--success, #059669)';
+                box.innerHTML = '<i class="fas fa-circle-check"></i><span>Reported for today — ' +
+                    data.update_count + ' update' + (data.update_count === 1 ? '' : 's') +
+                    (data.hours ? ', ' + data.hours + 'h logged' : '') +
+                    '. Your manager has been notified.</span>';
+                return;
+            }
+            box.style.background = 'rgba(234,88,12,0.07)';
+            box.style.color = 'var(--warning, #d97706)';
+            box.innerHTML = '<i class="fas fa-clock"></i><span><strong>You have not reported for today yet.</strong>' +
+                (data.cutoff_time ? ' Reports are expected by ' + escapeHtml(data.cutoff_time) + '.' : '') +
+                ' Your manager sees this as a gap until you post.</span>';
+        }
 
         // ===================== PROJECT ACCESS (workflow release C) =====================
         let paCatalog = [];
