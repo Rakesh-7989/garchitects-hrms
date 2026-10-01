@@ -1242,10 +1242,25 @@ router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
 // @route   GET /api/payroll/:id
 // @desc    Full payslip payload (components + employee profile + company) for preview/PDF/print/email
 // @access  Private (owner or admin)
+// /:id is a catch-all, so anything under /api/payroll/* that is not a real route
+// lands here (e.g. a client asking for /api/payroll/employees). payroll.id is a
+// SERIAL, so a non-numeric id can only be a mistake - answer 400 instead of
+// letting it reach Postgres and come back as an opaque 500.
+function payrollId(req, res) {
+    const raw = String(req.params.id || '');
+    if (!/^\d+$/.test(raw)) {
+        res.status(400).json({ success: false, message: 'Invalid payslip id' });
+        return null;
+    }
+    return raw;
+}
+
 router.get('/:id', verifyToken, async (req, res) => {
     try {
+        const id = payrollId(req, res);
+        if (!id) return;
         const isPrivileged = req.user.role === 'admin' || req.user.role === 'hr';
-        const row = await fetchPayslipWithProfile(req.params.id, req.user.id, isPrivileged);
+        const row = await fetchPayslipWithProfile(id, req.user.id, isPrivileged);
         if (!row) return res.status(404).json({ success: false, message: 'Not found' });
         res.json({ success: true, payslip: row });
     } catch (error) {
@@ -1259,8 +1274,10 @@ router.get('/:id', verifyToken, async (req, res) => {
 // @access  Private (owner or admin)
 router.get('/:id/pdf', verifyToken, pdfRateLimit, async (req, res) => {
     try {
+        const id = payrollId(req, res);
+        if (!id) return;
         const isPrivileged = req.user.role === 'admin' || req.user.role === 'hr';
-        const row = await fetchPayslipWithProfile(req.params.id, req.user.id, isPrivileged);
+        const row = await fetchPayslipWithProfile(id, req.user.id, isPrivileged);
         if (!row) return res.status(404).json({ success: false, message: 'Payslip not found' });
         const buf = await renderPayslipPdf(row, row.company);
         res.setHeader('Content-Type', 'application/pdf');
@@ -1522,7 +1539,9 @@ router.post('/generate-bulk', verifyToken, isAdmin, async (req, res) => {
 // @access  Admin
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
-        const result = await query('DELETE FROM payroll WHERE id = $1 RETURNING id', [req.params.id]);
+        const id = payrollId(req, res);
+        if (!id) return;
+        const result = await query('DELETE FROM payroll WHERE id = $1 RETURNING id', [id]);
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Payslip not found' });
         }
