@@ -23,6 +23,7 @@ const { verifyToken } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
 const { sendToUser } = require('../services/push');
+const { dateOnly, istDateString } = require('../utils/date');
 
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
 
@@ -201,7 +202,10 @@ router.post('/requests', verifyToken, async (req, res) => {
         if (scope === 'extended' && !validRoleLevel(requestedRole)) {
             return res.status(400).json({ success: false, message: 'requested_role must be employee, team_lead or manager for extended access' });
         }
-        if (expiresAt && String(expiresAt).substring(0, 10) <= new Date().toISOString().substring(0, 10)) {
+        // expiresAt arrives as a client string OR a JS Date, and 'today' must be
+        // the office-timezone day - toISOString() is UTC and reads as yesterday
+        // between 00:00 and 05:29 IST, which rejected same-day-expiry requests.
+        if (expiresAt && dateOnly(expiresAt) <= istDateString()) {
             return res.status(400).json({ success: false, message: 'expires_at must be in the future' });
         }
 
@@ -295,7 +299,7 @@ async function decideRequest(req, res, action) {
             details: { requestId: id, requester: R.requester_id, scope: R.scope, roleLevel, grantId: ins.rows[0].id } });
         sendToUser(R.requester_id, {
             title: 'Project access granted',
-            body: `You now have ${roleLevel}-level read access to project #${R.project_id}${R.expires_at ? ' until ' + String(R.expires_at).substring(0, 10) : ''}`,
+            body: `You now have ${roleLevel}-level read access to project #${R.project_id}${R.expires_at ? ' until ' + (dateOnly(R.expires_at) || '') : ''}`,
             url: '/employee/my-projects'
         }).catch(() => {});
         res.json({ success: true, message: 'Access granted', grantId: ins.rows[0].id });

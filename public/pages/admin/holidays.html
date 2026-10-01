@@ -163,8 +163,8 @@
                             <td><span class="badge badge-${isPast ? 'secondary' : 'success'}">${isPast ? 'Past' : 'Upcoming'}</span></td>
                             <td>
                                 <div style="display:flex;gap:4px;">
-                                    <button class="btn btn-sm btn-secondary" onclick="edit(${h.id})" title="Edit"><i class="fas fa-edit"></i></button>
-                                    <button class="btn btn-sm btn-danger" onclick="del(${h.id})" title="Delete"><i class="fas fa-trash"></i></button>
+                                    <button class="btn btn-sm btn-secondary" onclick="edit(${h.id})" title="Edit ${escapeHtml(h.name)}"><i class="fas fa-edit"></i></button>
+                                    <button class="btn btn-sm btn-danger" onclick="del(${h.id})" title="Delete ${escapeHtml(h.name)}"><i class="fas fa-trash"></i></button>
                                 </div>
                             </td>
                         </tr>
@@ -227,7 +227,17 @@
             const data = { name, date, description };
             const r = id ? await apiCall(`/holidays/${id}`, 'PUT', data) : await apiCall('/holidays', 'POST', data);
             if (r && r.success) {
-                showToast('Holiday saved successfully!', 'success');
+                // Moving a holiday into another year makes it disappear from the
+                // currently filtered list - say so, otherwise it looks like the
+                // save silently failed.
+                const viewYear = document.getElementById('filterYear').value;
+                const movedOut = date.substring(0, 4) !== viewYear;
+                showToast(
+                    movedOut
+                        ? `Holiday saved. It is now in ${date.substring(0, 4)} — switch the year filter to see it.`
+                        : 'Holiday saved successfully!',
+                    'success'
+                );
                 closeModal();
                 load();
             } else {
@@ -236,14 +246,28 @@
         }
 
         function del(id) {
-            showConfirmDialog('Delete Holiday', 'Are you sure you want to delete this holiday?', 'Delete', 'btn-danger', function() {
-                apiCall(`/holidays/${id}`, 'DELETE').then(r => {
+            const h = allHolidays.find(x => x.id === id);
+            if (!h) { showToast('Holiday not found in this list — refresh and try again', 'error'); return; }
+            // Name the holiday in the prompt: the button is an icon in a list of
+            // rows, so "this holiday" left it far too easy to delete the wrong one.
+            showConfirmDialog(
+                'Delete Holiday',
+                `Delete "${h.name}" on ${formatDate(h.date)}?\n\nThis removes the holiday from attendance auto-marking and leave calculations. This cannot be undone.`,
+                'Delete', 'btn-danger',
+                async function() {
+                    // Report failures. apiCall swallows the error body and returns a
+                    // falsy shape on 4xx/5xx, which previously left this delete
+                    // failing completely silently.
+                    const r = await apiCall(`/holidays/${id}`, 'DELETE');
                     if (r && r.success) {
                         showToast('Holiday deleted!', 'success');
                         load();
+                    } else {
+                        showToast(r?.message || 'Failed to delete holiday', 'error');
+                        load();
                     }
-                });
-            });
+                }
+            );
         }
     </script>
 </body>

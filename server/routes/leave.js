@@ -3,7 +3,7 @@ const router = express.Router();
 const { query, getClient } = require('../config/database');
 const { verifyToken, isAdminOrHr } = require('../middleware/auth');
 const { validateLeave } = require('../middleware/validation');
-const { istDateString, istYear } = require('../utils/date');
+const { istDateString, istYear, dateOnly } = require('../utils/date');
 const { sendToUser } = require('../services/push');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
 const { logAudit } = require('../utils/audit');
@@ -320,7 +320,7 @@ router.put('/approve/:id', verifyToken, isAdminOrHr, async (req, res) => {
             // Fetch holidays once for the range so week off/holiday days are not
             // back-filled as absent (they are not counted in total_days either).
             const holidayRows = await query(
-                `SELECT to_char(date, 'YYYY-MM-DD') as d FROM holidays WHERE date BETWEEN $1 AND $2`,
+                `SELECT to_char(date, 'YYYY-MM-DD') as d FROM holidays WHERE is_active = 1 AND date BETWEEN $1 AND $2`,
                 [app.start_date, app.end_date]
             );
             const holidays = new Set((holidayRows.rows || []).map(r => r.d));
@@ -390,7 +390,11 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
         const app = sel.rows[0];
         const today = istDateString();
         const isApproved = app.status === 'approved';
-        if (app.status !== 'pending' && !(isApproved && String(app.start_date).substring(0,10) > today)) {
+        // app.start_date is a DATE column (JS Date), so compare via dateOnly().
+        // String(app.start_date).substring(0,10) yields 'Thu Sep 03' which string-
+        // compares greater than any 'YYYY-MM-DD', so every already-approved future
+        // leave was wrongly reported as no longer cancellable.
+        if (app.status !== 'pending' && !(isApproved && dateOnly(app.start_date) > today)) {
             await client.query('ROLLBACK');
             return res.status(400).json({ success: false, message: 'This request can no longer be cancelled' });
         }

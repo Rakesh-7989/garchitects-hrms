@@ -3,6 +3,7 @@ const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isManager } = require('../middleware/auth');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { dateOnly } = require('../utils/date');
 
 // A failing feed source must never break the whole bell feed.
 const safe = (p) => p.catch((err) => {
@@ -309,7 +310,9 @@ router.get('/requests', verifyToken, isManager, async (req, res) => {
                 id: r.id,
                 status: r.status,
                 title: `${r.employee_name} requested attendance regularization`,
-                subtitle: `${r.emp_id} · ${String(r.date).substring(0, 10)}${r.check_in ? ' · ' + r.check_in : ''}${r.check_out ? '-' + r.check_out : ''}`,
+                // r.date is a DATE column (JS Date); dateOnly() keeps this from
+                // rendering as 'Thu Sep 03' in the notification subtitle.
+                subtitle: `${r.emp_id} · ${dateOnly(r.date) || ''}${r.check_in ? ' · ' + r.check_in : ''}${r.check_out ? '-' + r.check_out : ''}`,
                 created_at: r.created_at,
                 url: regUrl
             })),

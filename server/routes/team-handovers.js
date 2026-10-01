@@ -22,6 +22,7 @@ const { verifyToken } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
 const { sendToUser, sendToUsers } = require('../services/push');
+const { istDateString } = require('../utils/date');
 
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
 
@@ -147,7 +148,9 @@ router.post('/', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Valid start_date and end_date are required (YYYY-MM-DD)' });
         }
         if (startDate > endDate) return res.status(400).json({ success: false, message: 'start_date must be on or before end_date' });
-        if (endDate < new Date().toISOString().substring(0, 10)) return res.status(400).json({ success: false, message: 'end_date is in the past' });
+        // "Today" must be the office day. toISOString() is UTC, so between 00:00 and
+        // 05:29 IST it reports yesterday and rejects a handover starting today.
+        if (endDate < istDateString()) return res.status(400).json({ success: false, message: 'end_date is in the past' });
 
         // A team_lead declares cover for THEMSELVES only; manager/admin may pick any absent lead.
         if (req.user.role === 'team_lead') absentTlId = req.user.id;

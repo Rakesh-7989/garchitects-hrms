@@ -8,7 +8,7 @@ const http = require('http');
 const PDFDocument = require('pdfkit');
 const { query } = require('../config/database');
 const { verifyToken, isAdmin, isAdminOrHr } = require('../middleware/auth');
-const { istDateString } = require('../utils/date');
+const { istDateString, dateOnly } = require('../utils/date');
 const { sendPayslipEmail } = require('../services/email');
 const { logAudit } = require('../utils/audit');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
@@ -32,10 +32,12 @@ try {
 const FONT_REG = fontsReady ? 'Roboto' : 'Helvetica';
 const FONT_BOLD = fontsReady ? 'Roboto-Bold' : 'Helvetica-Bold';
 
+// Every DATE/TIMESTAMP column here arrives from node-postgres as a JS Date, so
+// this is just the shared timezone-safe coercion. (It used to call
+// toISOString().split('T')[0], which turns local midnight into the PREVIOUS day
+// on any host running east of UTC - a payslip showing the wrong joining date.)
 function formatDateOnly(value) {
-    if (!value) return '';
-    if (value instanceof Date) return value.toISOString().split('T')[0];
-    return String(value).substring(0, 10);
+    return dateOnly(value) || '';
 }
 
 function num(value) {
@@ -200,15 +202,18 @@ async function getProfileSalaryValues(employeeId, values) {
     // blocked, but the UI shows an amber banner so payroll is done knowingly.
     const empStatus = profile.employee_status || 'active';
     let status_warning = null;
-    if (empStatus === 'on_hold') status_warning = 'Employee is ON HOLD' + (profile.status_reason ? ' — ' + profile.status_reason : '') + (profile.last_working_day ? ' | LWD: ' + String(profile.last_working_day).substring(0, 10) : '') + '. Generate with caution.';
-    else if (empStatus === 'absconded') status_warning = 'Employee is marked ABSCONDED' + (profile.status_reason ? ' — ' + profile.status_reason : '') + (profile.last_working_day ? ' | LWD: ' + String(profile.last_working_day).substring(0, 10) : '') + '. Generate with caution.';
-    else if (empStatus === 'terminated') status_warning = 'Employee is TERMINATED' + (profile.status_reason ? ' — ' + profile.status_reason : '') + (profile.last_working_day ? ' | LWD: ' + String(profile.last_working_day).substring(0, 10) : '') + '. Generate with caution.';
+    // last_working_day is a DATE column, so formatDateOnly (not String().substring)
+    // keeps the banner from reading "LWD: Thu Sep 03" instead of "2026-09-03".
+    const lwdText = profile.last_working_day ? ' | LWD: ' + formatDateOnly(profile.last_working_day) : '';
+    if (empStatus === 'on_hold') status_warning = 'Employee is ON HOLD' + (profile.status_reason ? ' — ' + profile.status_reason : '') + lwdText + '. Generate with caution.';
+    else if (empStatus === 'absconded') status_warning = 'Employee is marked ABSCONDED' + (profile.status_reason ? ' — ' + profile.status_reason : '') + lwdText + '. Generate with caution.';
+    else if (empStatus === 'terminated') status_warning = 'Employee is TERMINATED' + (profile.status_reason ? ' — ' + profile.status_reason : '') + lwdText + '. Generate with caution.';
     else if (empStatus === 'paused' || empStatus === 'inactive') status_warning = 'Employee is ' + empStatus.toUpperCase() + '. Generate with caution.';
     return { ...values, ...merged, personal_email: profile.personal_email || null,
         first_name: profile.first_name || '', last_name: profile.last_name || '',
         emp_code: profile.emp_code || '', employee_status: empStatus,
         status_reason: profile.status_reason || null,
-        last_working_day: profile.last_working_day || null,
+        last_working_day: dateOnly(profile.last_working_day),
         status_warning };
 }
 

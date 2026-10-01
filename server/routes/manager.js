@@ -240,7 +240,7 @@ router.put('/leaves/:id', verifyToken, isManager, async (req, res) => {
             const wcfg = await getWorkWeekConfig();
 
             const holidayRows = await query(
-                `SELECT to_char(date, 'YYYY-MM-DD') as d FROM holidays WHERE date BETWEEN $1 AND $2`,
+                `SELECT to_char(date, 'YYYY-MM-DD') as d FROM holidays WHERE is_active = 1 AND date BETWEEN $1 AND $2`,
                 [leaveApp.start_date, leaveApp.end_date]
             );
             const holidays = new Set((holidayRows.rows || []).map(r => r.d));
@@ -539,7 +539,7 @@ router.get('/attendance', verifyToken, isManager, async (req, res) => {
             [teamIds, month, year]
         );
         const holRes = await query(
-            `SELECT name, date::text as date FROM holidays WHERE EXTRACT(MONTH FROM date) = $1 AND EXTRACT(YEAR FROM date) = $2`,
+            `SELECT name, date::text as date FROM holidays WHERE is_active = 1 AND EXTRACT(MONTH FROM date) = $1 AND EXTRACT(YEAR FROM date) = $2`,
             [month, year]
         );
         const lvRes = await query(

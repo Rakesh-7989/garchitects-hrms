@@ -8,6 +8,7 @@ const { validateEmployee, collectFieldErrors } = require('../middleware/validati
 const { deleteFile, deleteFileByUrl } = require('../services/storage');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
+const { dateOnly } = require('../utils/date');
 const { startOnboarding } = require('../services/onboarding');
 const { sendWelcomeEmail } = require('../services/email');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
@@ -1027,20 +1028,13 @@ async function changeEmployeeStatus(targetId, newStatus, reason, lwd, actorId, i
     const emp = cur.rows[0];
     if (emp.status === newStatus) return { ok: false, status: 400, message: 'Employee is already ' + newStatus };
     if (lwd && emp.joining_date) {
-        // FIX: joining_date JS Date object ga vasthe String() => "Thu Sep 03..."
-        // kabatti toISOString() tho YYYY-MM-DD ki normalize cheyyali.
-        let join;
-        if (emp.joining_date instanceof Date) {
-            join = emp.joining_date.toISOString().substring(0, 10);
-        } else {
-            const s = String(emp.joining_date).trim();
-            if (/^\d{4}-\d{2}-\d{2}/.test(s)) join = s.substring(0, 10);
-            else {
-                const jd = new Date(emp.joining_date);
-                join = !isNaN(jd.getTime()) ? jd.toISOString().substring(0, 10) : s.substring(0, 10);
-            }
-        }
-        if (String(lwd).substring(0, 10) < join) {
+        // joining_date is a DATE column, i.e. a JS Date at local midnight, so
+        // String() gives 'Thu Sep 03' and toISOString() gives the PREVIOUS day on
+        // any host east of UTC. dateOnly() coerces both shapes correctly.
+        const join = dateOnly(emp.joining_date);
+        if (!join) return { ok: false, status: 400, message: 'Employee joining date is unreadable — cannot validate last working day' };
+        const lwdDay = dateOnly(lwd) || lwd;
+        if (lwdDay < join) {
             return { ok: false, status: 400, message: 'Last working day cannot be before joining date (' + join + ')' };
         }
     }

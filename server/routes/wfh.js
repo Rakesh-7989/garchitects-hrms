@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query, getClient } = require('../config/database');
 const { verifyToken, isAdminOrHr } = require('../middleware/auth');
-const { istDateString } = require('../utils/date');
+const { istDateString, dateOnly } = require('../utils/date');
 const { sendToUser } = require('../services/push');
 const { getWorkWeekConfig } = require('../utils/workWeek');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
@@ -157,7 +157,10 @@ router.post('/:id/cancel', verifyToken, async (req, res) => {
         const app = sel.rows[0];
         const today = istDateString();
         const isApproved = app.status === 'approved';
-        if (app.status !== 'pending' && !(isApproved && String(app.start_date).substring(0,10) > today)) {
+        // Same Date-column trap as leave.js: String(app.start_date).substring(0,10)
+        // is 'Thu Sep 03', which sorts above every 'YYYY-MM-DD' and made approved
+        // future WFH look non-cancellable.
+        if (app.status !== 'pending' && !(isApproved && dateOnly(app.start_date) > today)) {
             await client.query('ROLLBACK');
             return res.status(400).json({ success: false, message: 'This request can no longer be cancelled' });
         }

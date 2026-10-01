@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { query } = require('../config/database');
 const { verifyToken, isAdmin, isManager, isAdminOrHr } = require('../middleware/auth');
 const { myTreeIds } = require('./project-leads');
-const { istDateString, istTimeString, istMonth, istYear } = require('../utils/date');
+const { istDateString, istTimeString, istMonth, istYear, dateOnly } = require('../utils/date');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
 const { logAudit } = require('../utils/audit');
 const { getWorkWeekConfig } = require('../utils/workWeek');
@@ -536,7 +536,11 @@ router.get('/monthly', verifyToken, isManager, async (req, res) => {
         const holidaySet = new Set((holRows.rows || []).map(r => r.d));
 
         // Approved leave days per employee (YYYY-MM-DD => set).
-        const fmtD = (v) => String(v).substring(0, 10);
+        // DATE columns arrive as JS Dates, so they must be coerced with dateOnly()
+        // before any string work - String(date).substring(0,10) produced garbage
+        // and left leaveByEmp permanently empty, which silently hid every
+        // approved leave day from this matrix.
+        const fmtD = (v) => dateOnly(v);
         const key = (empId, day) => `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const leaveByEmp = {};
         leaveRows.rows.forEach(l => {
@@ -678,7 +682,11 @@ router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
         });
         const inRange = (l, d) => {
             const ds = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-            return String(l.start_date).substring(0, 10) <= ds && String(l.end_date).substring(0, 10) >= ds;
+            // l.start_date / l.end_date are DATE columns, i.e. JS Dates. Must go
+            // through dateOnly() - String(date).substring(0,10) gives 'Mon Jan 26'
+            // and every comparison below is then false, hiding the leave entirely.
+            const s = dateOnly(l.start_date), e = dateOnly(l.end_date);
+            return Boolean(s && e) && s <= ds && e >= ds;
         };
         const leavesByEmp = {};
         leaveRes.rows.forEach(l => { (leavesByEmp[l.employee_id] = leavesByEmp[l.employee_id] || []).push(l); });
