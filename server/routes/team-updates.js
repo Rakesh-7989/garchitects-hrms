@@ -256,7 +256,12 @@ router.post('/seen', verifyToken, async (req, res) => {
             [req.user.id, clean]
         ))).catch(() => {});
 
-        res.json({ success: true, marked: r.rowCount || 0 });
+        // config/database.query() returns { rows, changes, lastInsertRowid } - there is no
+        // rowCount, so reading it silently yielded undefined and "marked" was
+        // always 0 even when the rows really were inserted. changes is the repo-wide
+        // convention; rowCount is kept as a fallback so this cannot regress if the
+        // pool shape ever changes.
+        res.json({ success: true, marked: (r.changes != null ? r.changes : r.rowCount) || 0 });
     } catch (error) {
         console.error('team-updates seen error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
