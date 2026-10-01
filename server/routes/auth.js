@@ -411,6 +411,179 @@ router.get('/me', verifyToken, async (req, res) => {
     }
 });
 
+// @route   PUT /api/auth/profile
+// @desc    Update your own basic contact details (name, phone, official email)
+// @access  Private
+//
+// A DIRECT write on purpose. profile_update_requests exists so an employee's
+// personal/KYC/bank changes get a second pair of eyes - but nobody should have
+// to raise a request against themselves and approve it, and admins previously
+// had no way to edit their profile at all (EDITABLE_FIELDS in profileUpdates.js
+// covers only the deep fields; name/phone/email are not in it).
+//
+// The allowlist is deliberately tiny. employee_id, role, department_id,
+// designation_id, joining_date, status and anything compensation related are
+// intentionally NOT here - those are structural/HR-managed and must keep going
+// through the employees module, so a self-service form cannot become a way to
+// escalate privileges or rewrite your own employment record.
+const SELF_PROFILE_FIELDS = ['first_name', 'last_name', 'phone', 'email'];
+
+// Emails are login aliases, so normalise the same way the rest of the codebase
+// compares them (login matches LOWER(email)).
+const normaliseEmail = (value) => String(value || '').trim().toLowerCase();
+const normalisePhone = (value) => String(value || '').trim().replace(/[\s\-()]/g, '');
+
+router.put('/profile', verifyToken, async (req, res) => {
+    try {
+        const body = req.body || {};
+
+        const rejected = Object.keys(body).filter((k) => !SELF_PROFILE_FIELDS.includes(k));
+        if (rejected.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'These fields cannot be changed from My Profile: ' + rejected.join(', ')
+            });
+        }
+
+        const provided = Object.keys(body).filter((k) => SELF_PROFILE_FIELDS.includes(k));
+        if (provided.length === 0) {
+            return res.status(400).json({ success: false, message: 'No changes provided' });
+        }
+
+        const currentResult = await query(
+            `SELECT id, first_name, last_name, phone, email FROM employees WHERE id = $1`,
+            [req.user.id]
+        );
+        if (currentResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        const current = currentResult.rows[0];
+
+        const errors = [];
+        const updates = {};
+
+        if ('first_name' in body) {
+            const v = String(body.first_name || '').trim();
+            if (v.length < 2 || v.length > 100) {
+                errors.push('First name must be between 2 and 100 characters');
+            } else {
+                updates.first_name = v;
+            }
+        }
+
+        if ('last_name' in body) {
+            const v = String(body.last_name || '').trim();
+            if (v.length > 100) {
+                errors.push('Last name cannot exceed 100 characters');
+            } else {
+                // employees.last_name is NOT NULL; store '' rather than NULL.
+                updates.last_name = v;
+            }
+        }
+
+        if ('phone' in body) {
+            const v = normalisePhone(body.phone);
+            if (v === '') {
+                updates.phone = null; // nullable - clearing is allowed
+            } else if (!/^\+?[0-9]{10,15}$/.test(v)) {
+                errors.push('Phone must be 10-15 digits (an optional leading + is allowed)');
+            } else if (v.length > 20) {
+                errors.push('Phone cannot exceed 20 characters');
+            } else {
+                updates.phone = v;
+            }
+        }
+
+        if ('email' in body) {
+            const v = normaliseEmail(body.email);
+            if (v === '') {
+                errors.push('Official email cannot be cleared - it is your login ID');
+            } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || v.length > 255) {
+                errors.push('A valid official email is required');
+            } else {
+                updates.email = v;
+            }
+        }
+
+        if (errors.length > 0) {
+            return res.status(400).json({ success: false, errors, message: errors[0] });
+        }
+
+        const changed = Object.keys(updates).filter((k) => {
+            const before = current[k];
+            const after = updates[k];
+            if (before == null && after == null) return false;
+            return String(before == null ? '' : before) !== String(after == null ? '' : after);
+        });
+
+        if (changed.length === 0) {
+            return res.json({ success: true, message: 'No changes to save', user: current });
+        }
+
+        // Friendly duplicate-email error instead of a raw 23505 from the
+        // UNIQUE index, and ahead of the UPDATE so it reports the real clash.
+        if (changed.includes('email') && updates.email) {
+            const clash = await query(
+                `SELECT employee_id FROM employees WHERE LOWER(email) = $1 AND id <> $2 LIMIT 1`,
+                [updates.email, req.user.id]
+            );
+            if (clash.rows.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'That email is already used by ' + clash.rows[0].employee_id
+                });
+            }
+        }
+
+        const assignments = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`);
+        const values = Object.values(updates);
+
+        try {
+            await query(
+                `UPDATE employees SET ${assignments.join(', ')}, updated_at = NOW() WHERE id = $${values.length + 1}`,
+                [...values, req.user.id]
+            );
+        } catch (error) {
+            // Backstop for the race where another row grabs the email between
+            // the check above and this write.
+            if (error.code === '23505') {
+                return res.status(400).json({ success: false, message: 'That email is already in use' });
+            }
+            throw error;
+        }
+
+        logAudit({
+            actorId: req.user.id,
+            action: 'auth.profile_update',
+            entityType: 'employee',
+            entityId: req.user.id,
+            details: { fields: changed },
+            ip: req.ip
+        });
+
+        const fresh = await query(
+            `SELECT e.*, d.name as department_name, des.name as designation_name, des.level as designation_level
+             FROM employees e
+             LEFT JOIN departments d ON e.department_id = d.id
+             LEFT JOIN designations des ON e.designation_id = des.id
+             WHERE e.id = $1`,
+            [req.user.id]
+        );
+        const user = fresh.rows[0] || current;
+        delete user.password_hash;
+
+        res.json({
+            success: true,
+            message: 'Profile updated',
+            updated: changed,
+            user
+        });
+    } catch (error) {
+        console.error('Profile update error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 // @route   PUT /api/auth/change-password
 // @desc    Change user password
 // @access  Private

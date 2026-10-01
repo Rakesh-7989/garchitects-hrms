@@ -438,6 +438,29 @@ function applyManagerPortalAdminLink() {
 }
 document.addEventListener('DOMContentLoaded', applyManagerPortalAdminLink);
 
+// The admin portal has no profile page of its own - an admin's only view of
+// their own details was the read-only card buried inside /admin/settings, so
+// it was effectively undiscoverable. Inject a "My Profile" entry into the
+// header dropdown on every /admin/* page (markup is identical across them, so
+// doing it here beats 18 near-duplicate HTML edits). It anchors to the profile
+// card, which is now editable.
+function applyAdminProfileMenuLink() {
+    try {
+        const user = getCurrentUser();
+        if (!user || !['admin', 'hr'].includes(user.role)) return;
+        if (!/^\/admin(\/|$)/.test(location.pathname)) return;
+        const menu = document.getElementById('profileMenu');
+        if (!menu || menu.querySelector('[data-portal-profile="admin"]')) return;
+        const link = document.createElement('a');
+        link.href = '/admin/settings#profile';
+        link.className = 'profile-menu-item';
+        link.setAttribute('data-portal-profile', 'admin');
+        link.innerHTML = '<i class="fas fa-user"></i> My Profile';
+        menu.insertBefore(link, menu.firstChild);
+    } catch (e) { /* navigation aid is cosmetic only */ }
+}
+document.addEventListener('DOMContentLoaded', applyAdminProfileMenuLink);
+
 // ==================== PWA SUPPORT ====================
 
 const PWA_CAN_REGISTER = 'serviceWorker' in navigator &&
