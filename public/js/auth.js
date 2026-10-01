@@ -412,6 +412,32 @@ function applyRoleNav() {
 }
 document.addEventListener('DOMContentLoaded', applyRoleNav);
 
+// The three /manager/* pages (Team Work, Team Projects, My Led Projects) are
+// linked from the ADMIN sidebar, but they render the EMPLOYEE sidebar - whose
+// every link points back into /employee/* and none point into /admin/*. Since
+// employee pages only call checkAuth() (a valid admin token passes), an admin
+// who clicked one of those links silently got stranded in the employee portal
+// with no way back except retyping the URL or logging in again. Surface an
+// explicit "Admin Portal" entry at the top of that sidebar for admin/hr so the
+// return path always exists. Managers/TLs never see it - the manager portal is
+// their home.
+function applyManagerPortalAdminLink() {
+    try {
+        const user = getCurrentUser();
+        if (!user || !['admin', 'hr'].includes(user.role)) return;
+        if (!/^\/manager(\/|$)/.test(location.pathname)) return;
+        const nav = document.querySelector('#sidebar .sidebar-nav');
+        if (!nav || nav.querySelector('[data-portal-back="admin"]')) return;
+        const link = document.createElement('a');
+        link.href = '/admin/dashboard';
+        link.setAttribute('data-portal-back', 'admin');
+        link.className = 'nav-item';
+        link.innerHTML = '<i class="fas fa-shield-halved"></i><span class="nav-text">Admin Portal</span>';
+        nav.insertBefore(link, nav.firstChild);
+    } catch (e) { /* navigation aid is cosmetic only */ }
+}
+document.addEventListener('DOMContentLoaded', applyManagerPortalAdminLink);
+
 // ==================== PWA SUPPORT ====================
 
 const PWA_CAN_REGISTER = 'serviceWorker' in navigator &&

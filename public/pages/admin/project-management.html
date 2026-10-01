@@ -423,9 +423,13 @@
             try {
                 const response = await fetch(`${API_URL}${endpoint}`, options);
                 if (response.status === 401) {
+                    // Resolve the login URL BEFORE dropping the session - the
+                    // role decides which portal owns it. Hardcoding '/' sent
+                    // admins to the employee login screen on this one page.
+                    const loginUrl = getLoginUrl(getCurrentUser());
                     localStorage.removeItem('token');
                     localStorage.removeItem('user');
-                    window.location.href = '/';
+                    window.location.href = loginUrl;
                     return null;
                 }
                 const text = await response.text();
@@ -494,16 +498,10 @@
             }
         }
 
-        function logout() {
-            const token = localStorage.getItem('token');
-            const user = getCurrentUser();
-            let loginUrl = '/';
-            if (user && ['admin', 'hr', 'manager'].includes(user.role)) loginUrl = '/admin/';
-            try { if (token) fetch(`${API_URL}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); } catch (e) {}
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            window.location.href = loginUrl;
-        }
+        // No local logout() override on purpose: the shared logout() in
+        // auth.js sends managers to the employee login surface, because
+        // logging a manager out at /admin/ drops them on the admin login page
+        // they have no access to. This stale copy sent managers to /admin/.
 
         function formatDate(dateString) {
             if (!dateString) return '-';
@@ -1501,9 +1499,10 @@
                 btn.disabled = false;
                 btn.textContent = 'Upload';
                 if (response.status === 401) {
+                    const loginUrl = getLoginUrl(getCurrentUser());
                     localStorage.removeItem('token');
                     localStorage.removeItem('user');
-                    window.location.href = '/';
+                    window.location.href = loginUrl;
                     return;
                 }
                 if (data && data.success) {
@@ -1912,6 +1911,10 @@
 
         // ===================== INIT =====================
         document.addEventListener('DOMContentLoaded', () => {
+            // This page overrides apiCall() below, so it also has to do its own
+            // guard - it was the only admin page that rendered its full shell
+            // for signed-out visitors.
+            if (!requireAdmin()) return;
             const user = getCurrentUser();
             if (user) {
                 const nameEl = document.getElementById('profileName');

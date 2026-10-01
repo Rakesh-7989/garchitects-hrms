@@ -473,10 +473,10 @@
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
-            if (!checkAuth()) {
-                window.location.href = '/';
-                return;
-            }
+            // checkAuth() already navigates to the role's own login surface when
+            // there is no token - the extra hardcoded '/' below raced it and
+            // could drop a signed-out staff member on the wrong portal.
+            if (!checkAuth()) return;
 
             await loadMyProjectsData();
             await loadAccessPanel();
