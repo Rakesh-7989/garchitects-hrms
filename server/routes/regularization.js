@@ -129,11 +129,11 @@ router.get('/pending', verifyToken, async (req, res) => {
 
 // @route   POST /api/regularization/:id/review
 // @desc    Approve or reject; on approve writes times into the attendance table
-// @access  Private (Admin/HR/Manager of requester)
+// @access  Private (Admin only)
 router.post('/:id/review', verifyToken, async (req, res) => {
     try {
-        if (!['admin', 'hr', 'manager', 'team_lead'].includes(req.user.role)) {
-            return res.status(403).json({ success: false, message: 'Access denied' });
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Only Admins can approve or reject attendance regularizations.' });
         }
         const { status, review_note } = req.body || {};
         if (!['approved', 'rejected'].includes(status)) {
@@ -148,23 +148,6 @@ router.post('/:id/review', verifyToken, async (req, res) => {
         );
         const requestRow = rows.rows[0];
         if (!requestRow) return res.status(404).json({ success: false, message: 'Request not found' });
-
-        const isAdminUser = req.user.role === 'admin' || req.user.role === 'hr';
-        if (!isAdminUser) {
-            // Manager may only review requests from their own subtree.
-            const chain = await q(
-                `WITH RECURSIVE subtree AS (
-                    SELECT id FROM employees WHERE id = $1
-                    UNION
-                    SELECT e.id FROM employees e JOIN subtree s ON e.reporting_manager_id = s.id
-                )
-                SELECT 1 AS found FROM subtree WHERE id = $2 LIMIT 1`,
-                [req.user.id, requestRow.employee_id]
-            );
-            if (chain.rows.length === 0) {
-                return res.status(403).json({ success: false, message: 'This request is not from your team' });
-            }
-        }
 
         if (requestRow.status !== 'pending') {
             return res.status(400).json({ success: false, message: 'This request was already reviewed' });

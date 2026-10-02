@@ -166,10 +166,27 @@ router.post('/', verifyToken, isManager, async (req, res) => {
 
         const prio = priority || 'normal';
         if (!PRIORITIES.includes(prio)) return res.status(400).json({ success: false, message: 'Invalid priority (low/normal/high/urgent)' });
+
+        // Start Date and Expected End Date (Due Date) are MANDATORY for accountability
+        let start = null;
+        if (!startDate || String(startDate).trim() === '') {
+            return res.status(400).json({ success: false, message: 'Start date is required' });
+        }
+        start = String(startDate).slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+            return res.status(400).json({ success: false, message: 'Invalid start date (YYYY-MM-DD)' });
+        }
+
         let due = null;
-        if (dueDate && String(dueDate).trim() !== '') {
-            due = String(dueDate).slice(0, 10);
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ success: false, message: 'Invalid due date (YYYY-MM-DD)' });
+        if (!dueDate || String(dueDate).trim() === '') {
+            return res.status(400).json({ success: false, message: 'Expected end date (Due date) is required' });
+        }
+        due = String(dueDate).slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) {
+            return res.status(400).json({ success: false, message: 'Invalid due date (YYYY-MM-DD)' });
+        }
+        if (due < start) {
+            return res.status(400).json({ success: false, message: 'Expected end date cannot be before start date' });
         }
         const st = status || 'assigned';
         if (!STATUSES.includes(st)) return res.status(400).json({ success: false, message: 'Invalid status' });
@@ -216,10 +233,10 @@ router.post('/', verifyToken, isManager, async (req, res) => {
 
         const ins = await q(
             `INSERT INTO work_assignments
-                (project_id, unit_id, assigned_by, assigned_to, title, description, priority, due_date, status, completed_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                (project_id, unit_id, assigned_by, assigned_to, title, description, priority, start_date, due_date, status, completed_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              RETURNING id`,
-            [proj, unit, req.user.id, to, String(title).trim(), description || null, prio, due, st,
+            [proj, unit, req.user.id, to, String(title).trim(), description || null, prio, start, due, st,
              st === 'completed' ? new Date() : null]
         );
 
@@ -310,12 +327,27 @@ router.put('/:id', verifyToken, async (req, res) => {
                 if (!PRIORITIES.includes(priority)) return res.status(400).json({ success: false, message: 'Invalid priority (low/normal/high/urgent)' });
                 changes.priority = priority;
             }
-            if (dueDate !== undefined && dueDate !== null) {
+            if (startDate !== undefined && startDate !== null && String(startDate).trim() !== '') {
+                const s = String(startDate).slice(0, 10);
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return res.status(400).json({ success: false, message: 'Invalid start date (YYYY-MM-DD)' });
+                changes.start_date = s;
+            } else if (startDate !== undefined) {
+                return res.status(400).json({ success: false, message: 'Start date is required and cannot be cleared' });
+            }
+
+            if (dueDate !== undefined && dueDate !== null && String(dueDate).trim() !== '') {
                 const due = String(dueDate).slice(0, 10);
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ success: false, message: 'Invalid due date (YYYY-MM-DD)' });
                 changes.due_date = due;
             } else if (dueDate !== undefined) {
-                changes.due_date = null;
+                return res.status(400).json({ success: false, message: 'Expected end date (Due date) is required and cannot be cleared' });
+            }
+
+            // Validate timeline if both exist (after setting changes)
+            const finalStart = changes.start_date || row.start_date;
+            const finalDue = changes.due_date || row.due_date;
+            if (finalStart && finalDue && finalDue < finalStart) {
+                return res.status(400).json({ success: false, message: 'Expected end date cannot be before start date' });
             }
             if (projectId !== undefined || unitId !== undefined) {
                 const pu = parseProjectUnit(projectId, unitId);
@@ -355,7 +387,7 @@ router.put('/:id', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'No changes to apply' });
         }
 
-        const colMap = { status: 'status', title: 'title', description: 'description', priority: 'priority', due_date: 'due_date', project_id: 'project_id', unit_id: 'unit_id', assigned_to: 'assigned_to', completed_at: 'completed_at' };
+        const colMap = { status: 'status', title: 'title', description: 'description', priority: 'priority', start_date: 'start_date', due_date: 'due_date', project_id: 'project_id', unit_id: 'unit_id', assigned_to: 'assigned_to', completed_at: 'completed_at' };
         const sets = ['updated_at = NOW()'];
         const vals = [];
         let p = 1;
