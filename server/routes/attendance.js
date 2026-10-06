@@ -8,6 +8,7 @@ const { istDateString, istTimeString, istMonth, istYear, dateOnly } = require('.
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
 const { logAudit } = require('../utils/audit');
 const { getWorkWeekConfig } = require('../utils/workWeek');
+const { runAutoCheckout } = require('../services/attendanceAutoCheckout');
 
 router.post('/check-in', verifyToken, async (req, res) => {
     try {
@@ -378,10 +379,14 @@ router.post('/mark-absent', verifyToken, isManager, async (req, res) => {
 
 router.get('/my', verifyToken, async (req, res) => {
     try {
+        // Self-heal: auto-close any missed check-out past office_end + grace for
+        // today before reading, so the employee immediately sees the half-day.
+        if (req.user.role !== 'admin') { await runAutoCheckout().catch(() => {}); }
         const { month, year } = req.query;
         let sqlQuery = `SELECT a.id, a.employee_id, a.date, a.check_in, a.check_out, a.status,
                 a.remarks, a.created_at, a.break_start, a.break_end, a.break_log,
                 a.check_in_location, a.check_out_location,
+                a.auto_checkout, a.auto_checkout_at, a.checkout_miss_reason, a.checkout_miss_reason_at,
                 CASE WHEN apci.id IS NOT NULL THEN 1 ELSE 0 END as has_photo_checkin,
                 CASE WHEN apco.id IS NOT NULL THEN 1 ELSE 0 END as has_photo_checkout
             FROM attendance a
@@ -405,6 +410,8 @@ router.get('/my', verifyToken, async (req, res) => {
 
 router.get('/all', verifyToken, isAdminOrHr, async (req, res) => {
     try {
+        // Self-heal missed check-outs before reading the register.
+        await runAutoCheckout().catch(() => {});
         const { date, month, year, department, limit } = req.query;
         let sqlQuery = `
             SELECT a.*, e.first_name, e.last_name, e.employee_id as emp_id, d.name as department_name
@@ -442,6 +449,56 @@ router.get('/all', verifyToken, isAdminOrHr, async (req, res) => {
         const result = await query(sqlQuery, params);
         res.json({ success: true, attendance: result.rows });
     } catch (error) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// @route   POST /api/attendance/miss-reason
+// @desc    Employee records WHY they missed check-out on an auto-checked-out day.
+//          Admin/HR can record it on anyone's behalf.
+// @access  Private
+router.post('/miss-reason', verifyToken, async (req, res) => {
+    try {
+        const attendance_id = parseInt(req.body.attendance_id, 10);
+        const reason = (req.body.reason || '').trim();
+        if (!attendance_id) {
+            return res.status(400).json({ success: false, message: 'attendance_id is required' });
+        }
+        if (!reason) {
+            return res.status(400).json({ success: false, message: 'Please describe why you could not check out.' });
+        }
+        if (reason.length > 500) {
+            return res.status(400).json({ success: false, message: 'Reason is too long (max 500 characters).' });
+        }
+
+        const canManage = req.user.role === 'admin' || req.user.role === 'hr';
+        const row = await query(
+            `SELECT id, employee_id, auto_checkout FROM attendance WHERE id = $1`,
+            [attendance_id]
+        );
+        if (row.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Attendance record not found' });
+        }
+        const record = row.rows[0];
+        if (!canManage && record.employee_id !== req.user.id) {
+            return res.status(403).json({ success: false, message: 'You can only add a reason for your own attendance' });
+        }
+        if (!record.auto_checkout) {
+            return res.status(400).json({ success: false, message: 'This day was not auto-checked-out, so no reason is needed.' });
+        }
+
+        await query(
+            `UPDATE attendance SET checkout_miss_reason = $1, checkout_miss_reason_at = NOW() WHERE id = $2`,
+            [reason, attendance_id]
+        );
+        logAudit({
+            actorId: req.user.id, action: 'attendance.miss_reason',
+            entityType: 'attendance', entityId: attendance_id,
+            details: { reason, on_behalf_of: record.employee_id }, ip: req.ip
+        });
+        res.json({ success: true, message: 'Reason recorded' });
+    } catch (error) {
+        console.error('Miss-reason error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });

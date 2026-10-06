@@ -69,6 +69,7 @@
         </header>
 
         <div class="page-body">
+            <div id="missedCheckoutBanner" style="display:none;margin-bottom:16px;"></div>
             <div class="card slide-up stagger-2">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
                     <h3 style="font-weight:600;"><i class="fas fa-history" style="color:var(--info);margin-right:8px;"></i>Attendance History</h3>
@@ -250,6 +251,7 @@
             const records = lastRecords || [];
             const container = document.getElementById('tableContainer');
             const summaryEl = document.getElementById('summaryBar');
+            renderMissedCheckouts(records);
 
             // Month counters - SINGLE PASS over calendar days (no double count).
             // Policy (matches payroll): the first `monthly_leave_quota` approved
@@ -359,12 +361,50 @@
                         const lvCls = leaveClass[adate];
                         const isLeaveRow = a.status === 'absent' && !!lvCls;
                         const leaveLabel = lvCls === 'lop' ? 'Absent (LOP)' : 'On Leave (Paid)';
-                        html += '<td><span class="badge badge-' + (isLeaveRow ? (lvCls === 'lop' ? 'danger' : 'info') : getStatusBadge(a.status)) + '">' + escapeHtml(isLeaveRow ? leaveLabel : getStatusText(a.status)) + '</span></td>';
+                        html += '<td><span class="badge badge-' + (isLeaveRow ? (lvCls === 'lop' ? 'danger' : 'info') : getStatusBadge(a.status)) + '">' + escapeHtml(isLeaveRow ? leaveLabel : getStatusText(a.status)) + '</span>' + (a.auto_checkout ? ' <span class="badge badge-warning" style="font-size:0.6rem;" title="No check-out by the grace deadline — auto-closed">Auto</span>' : '') + '</td>';
                         html += '</tr>';
                     });
                 html += '</tbody></table></div>';
                 container.innerHTML = html;
             renderMonthlyView();
+        }
+
+        // Auto-checkout ("missed checkout") banner. Each auto-closed day that is
+        // still missing the employee's reason gets an inline input so it can be
+        // explained in place.
+        function renderMissedCheckouts(records) {
+            const el = document.getElementById('missedCheckoutBanner');
+            if (!el) return;
+            const missed = (records || []).filter(a => a.auto_checkout && !a.checkout_miss_reason);
+            if (missed.length === 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
+            const rows = missed.map(a => {
+                const d = String(a.date || '').split('T')[0];
+                const co = (a.check_out || '').toString().slice(0, 5);
+                return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--border-light);">' +
+                    '<div style="min-width:150px;"><strong>' + escapeHtml(d) + '</strong>' +
+                    '<div style="font-size:0.75rem;color:var(--text-secondary);">Auto checked out at ' + escapeHtml(co || '-') + ' · half-day</div></div>' +
+                    '<input type="text" class="form-control" id="missReason_' + a.id + '" maxlength="500" placeholder="Why could you not check out?" style="flex:1;min-width:220px;">' +
+                    '<button class="btn btn-sm btn-primary" onclick="submitMissReason(' + a.id + ')"><i class="fas fa-paper-plane"></i> Save reason</button>' +
+                '</div>';
+            }).join('');
+            el.style.display = 'block';
+            el.innerHTML = '<div class="card" style="border-left:4px solid var(--warning);padding:16px 18px;">' +
+                '<div style="font-weight:600;margin-bottom:4px;"><i class="fas fa-triangle-exclamation" style="color:var(--warning);margin-right:8px;"></i>Missed checkouts need a reason</div>' +
+                '<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:8px;">These days had no check-out, so they were auto-closed at the grace deadline and marked <strong>half-day</strong>. Please record why — it is saved with your attendance.</div>' +
+                rows + '</div>';
+        }
+
+        async function submitMissReason(attendanceId) {
+            const input = document.getElementById('missReason_' + attendanceId);
+            const reason = input ? input.value.trim() : '';
+            if (!reason) { showToast('Please enter a reason', 'error'); return; }
+            const r = await apiCall('/attendance/miss-reason', 'POST', { attendance_id: attendanceId, reason });
+            if (r && r.success) {
+                showToast('Reason recorded', 'success');
+                loadData();
+            } else {
+                showToast((r && r.message) || 'Could not save the reason', 'error');
+            }
         }
 
         function renderMonthlyView() {

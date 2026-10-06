@@ -653,6 +653,11 @@ EXCEPTION WHEN undefined_object THEN NULL;
 END $$;
 ALTER TABLE attendance ADD CONSTRAINT attendance_status_check CHECK (status IN ('present', 'absent', 'half-day', 'late', 'holiday', 'weekoff', 'wfh'));
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS auto_checkout BOOLEAN DEFAULT FALSE;
+-- Auto-checkout bookkeeping (office_end + grace): when the system closed a
+-- forgotten check-out, and the employee's later explanation for missing it.
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS auto_checkout_at TIMESTAMP;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS checkout_miss_reason TEXT;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS checkout_miss_reason_at TIMESTAMP;
 
 -- Announcements: auto-expiry column (Asia/Kolkata timezone, admin sets via datetime-local)
 ALTER TABLE announcements ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;

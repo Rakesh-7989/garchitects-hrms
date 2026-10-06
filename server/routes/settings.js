@@ -13,7 +13,9 @@ router.get('/company', verifyToken, async (req, res) => {
             `INSERT INTO company_settings (setting_key, setting_value, description) VALUES
             ('weekoff_day', '0', 'Weekly off day (0=Sunday .. 6=Saturday), the ONLY weekly off day'),
             ('weekly_working_days', '6', 'Expected working days per week'),
-            ('monthly_leave_quota', '1', 'Paid leave days an employee earns per month')
+            ('monthly_leave_quota', '1', 'Paid leave days an employee earns per month'),
+            ('checkout_grace_minutes', '120', 'Minutes after office end before a missing check-out is auto-closed'),
+            ('checkout_miss_limit', '2', 'Missed check-outs allowed per month before the admin is flagged')
             ON CONFLICT (setting_key) DO NOTHING`
         ).catch(() => {});
         const settings = await query('SELECT * FROM company_settings');
@@ -51,7 +53,7 @@ router.put('/company', verifyToken, isAdmin, async (req, res) => {
 
 router.put('/timing', verifyToken, isAdmin, async (req, res) => {
     try {
-        const { start_time, end_time, grace_period, timezone, weekoff_day, weekly_working_days, monthly_leave_quota } = req.body;
+        const { start_time, end_time, grace_period, timezone, weekoff_day, weekly_working_days, monthly_leave_quota, checkout_grace_minutes, checkout_miss_limit } = req.body;
         const updates = [
             { key: 'office_start_time', value: start_time },
             { key: 'office_end_time', value: end_time },
@@ -59,7 +61,9 @@ router.put('/timing', verifyToken, isAdmin, async (req, res) => {
             { key: 'timezone', value: timezone },
             { key: 'weekoff_day', value: weekoff_day },
             { key: 'weekly_working_days', value: weekly_working_days },
-            { key: 'monthly_leave_quota', value: monthly_leave_quota }
+            { key: 'monthly_leave_quota', value: monthly_leave_quota },
+            { key: 'checkout_grace_minutes', value: checkout_grace_minutes },
+            { key: 'checkout_miss_limit', value: checkout_miss_limit }
         ];
         for (const u of updates) {
             if (u.value !== undefined && u.value !== null && String(u.value).trim() !== '') {

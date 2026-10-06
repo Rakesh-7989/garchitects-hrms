@@ -115,6 +115,10 @@
                             <div class="form-group"><label>End Time</label><input type="time" class="form-control" id="endTime" value="18:30"></div>
                         </div>
                         <div class="form-group"><label>Late Grace Period (minutes)</label><input type="number" class="form-control" id="gracePeriod" value="15" min="0"></div>
+                        <div class="grid grid-2">
+                            <div class="form-group"><label>Checkout Grace (minutes)</label><input type="number" class="form-control" id="checkoutGrace" value="120" min="0"><small style="color:var(--text-secondary);">After office end + this grace, a missing check-out is auto-closed and the day marked half-day.</small></div>
+                            <div class="form-group"><label>Missed Checkouts Allowed / Month</label><input type="number" class="form-control" id="checkoutMissLimit" value="2" min="0"><small style="color:var(--text-secondary);">Above this, admins are alerted for the month.</small></div>
+                        </div>
                         <div class="form-group"><label>Timezone</label>
                             <select class="form-control" id="timezone">
                                 <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
@@ -439,6 +443,8 @@
                     document.getElementById('startTime').value = d.settings.office_start_time || '09:30';
                     document.getElementById('endTime').value = d.settings.office_end_time || '18:30';
                     document.getElementById('gracePeriod').value = d.settings.late_grace_period || '15';
+                    document.getElementById('checkoutGrace').value = d.settings.checkout_grace_minutes || '120';
+                    document.getElementById('checkoutMissLimit').value = d.settings.checkout_miss_limit || '2';
                     document.getElementById('timezone').value = d.settings.timezone || 'Asia/Kolkata';
                     document.getElementById('weekoffDay').value = d.settings.weekoff_day || '0';
                     document.getElementById('weeklyWorkingDays').value = d.settings.weekly_working_days || '6';
@@ -470,6 +476,8 @@
                 start_time: document.getElementById('startTime').value,
                 end_time: document.getElementById('endTime').value,
                 grace_period: document.getElementById('gracePeriod').value,
+                checkout_grace_minutes: document.getElementById('checkoutGrace').value,
+                checkout_miss_limit: document.getElementById('checkoutMissLimit').value,
                 timezone: document.getElementById('timezone').value,
                 weekoff_day: document.getElementById('weekoffDay').value,
                 weekly_working_days: document.getElementById('weeklyWorkingDays').value,

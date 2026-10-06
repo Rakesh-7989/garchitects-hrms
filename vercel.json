@@ -43,6 +43,7 @@
   ],
   "crons": [
     { "path": "/api/cron/auto-attendance", "schedule": "30 2 * * *" },
+    { "path": "/api/cron/auto-checkout", "schedule": "45 15 * * *" },
     { "path": "/api/cron/purge-photos", "schedule": "0 3 * * *" },
     { "path": "/api/cron/expire-announcements", "schedule": "0 4 * * *" },
     { "path": "/api/cron/expire-handovers", "schedule": "30 4 * * *" }

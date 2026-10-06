@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
 const { runAutoMark } = require('../services/attendanceAutoMark');
+const { runAutoCheckout } = require('../services/attendanceAutoCheckout');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
 
 // Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` if configured, and also
@@ -20,6 +21,17 @@ router.get('/auto-attendance', async (req, res) => {
         res.json({ success: true, marked });
     } catch (error) {
         console.error('Auto-attendance cron error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+router.get('/auto-checkout', async (req, res) => {
+    if (!isCronAuthorized(req)) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    try {
+        const result = await runAutoCheckout();
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Auto-checkout cron error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
