@@ -65,11 +65,6 @@ const ATTENDANCE_ALTER_COLUMNS = {
     auto_checkout: 'BOOLEAN DEFAULT FALSE'
 };
 
-// Attendance: auto_checkout flag for missed checkout with grace
-const ATTENDANCE_ALTER_COLUMNS = {
-    auto_checkout: 'BOOLEAN DEFAULT FALSE'
-};
-
 // Projects module columns that a half-initialized live database may be missing.
 // ALTER ... ADD COLUMN IF NOT EXISTS is idempotent; detecting them by the
 // column name from the Postgres error message so user input is never interpolated.
