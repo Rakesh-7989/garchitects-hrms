@@ -428,6 +428,14 @@ function applyManagerPortalAdminLink() {
         if (!/^\/manager(\/|$)/.test(location.pathname)) return;
         const nav = document.querySelector('#sidebar .sidebar-nav');
         if (!nav || nav.querySelector('[data-portal-back="admin"]')) return;
+        // This /manager/* page renders the EMPLOYEE sidebar, which already has a
+        // "Dashboard" link pointing at /employee/dashboard. For an admin/hr that
+        // is a second, wrong dashboard (this page belongs to the manager portal),
+        // so it showed up as TWO dashboard entries next to the "Admin Portal"
+        // link below. Hide it so exactly one dashboard entry remains.
+        nav.querySelectorAll('a.nav-item').forEach(a => {
+            if (a.getAttribute('href') === '/employee/dashboard') a.style.display = 'none';
+        });
         const link = document.createElement('a');
         link.href = '/admin/dashboard';
         link.setAttribute('data-portal-back', 'admin');
