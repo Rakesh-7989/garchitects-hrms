@@ -152,7 +152,7 @@ router.get('/projects', verifyToken, isManager, async (req, res) => {
  */
 router.post('/', verifyToken, isManager, async (req, res) => {
     try {
-        const { assignedTo, projectId, unitId, title, description, priority, dueDate, status } = req.body;
+        const { assignedTo, projectId, unitId, title, description, priority, startDate, dueDate, status } = req.body;
 
         if (!title || String(title).trim().length === 0) {
             return res.status(400).json({ success: false, message: 'Task title is required' });
