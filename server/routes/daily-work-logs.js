@@ -14,7 +14,7 @@ function pgErrorResponse(error) {
         return { status: 400, message: 'A daily work log with the same title already exists for this date.' };
     }
     if (error.code === '23503') {
-        return { status: 400, message: 'Invalid reference (project/unit).' };
+        return { status: 400, message: 'Invalid reference (project/unit/assignment).' };
     }
     if (error.code === '22P02' || error.code === '22007') {
         return { status: 400, message: 'Invalid date format.' };
@@ -22,36 +22,40 @@ function pgErrorResponse(error) {
     return { status: 500, message: 'Server error' };
 }
 
+// Shared SELECT so the employee ("mine") and manager ("team") views return the
+// exact same shape - the UI renders one card design for both. The optional
+// assignment link lets a log show WHO the work was assigned by.
+const LOG_SELECT = `
+    SELECT dw.*,
+           p.name as project_name, u.name as unit_name,
+           lg.first_name as employee_first, lg.last_name as employee_last, lg.employee_id as employee_code,
+           wa.title as assignment_title,
+           wa.assigned_by as assignment_assigned_by,
+           ab.first_name as assigned_by_first, ab.last_name as assigned_by_last
+    FROM daily_work_logs dw
+    LEFT JOIN projects p ON p.id = dw.project_id
+    LEFT JOIN project_units u ON u.id = dw.unit_id
+    LEFT JOIN employees lg ON lg.id = dw.employee_id
+    LEFT JOIN work_assignments wa ON wa.id = dw.assignment_id
+    LEFT JOIN employees ab ON ab.id = wa.assigned_by`;
+
+function applyDateFilters(sql, params, idx, { work_date, start_date, end_date, limit }) {
+    if (work_date) { sql += ` AND dw.work_date = $${idx++}`; params.push(work_date); }
+    if (start_date) { sql += ` AND dw.work_date >= $${idx++}`; params.push(start_date); }
+    if (end_date) { sql += ` AND dw.work_date <= $${idx++}`; params.push(end_date); }
+    sql += ' ORDER BY dw.work_date DESC, dw.logged_at DESC';
+    if (limit) { sql += ` LIMIT $${idx++}`; params.push(Math.min(parseInt(limit, 10) || 0, 500)); }
+    return sql;
+}
+
 // @route   GET /api/daily-work-logs
 // @desc    Get my daily work logs
 // @access  Private
 router.get('/', verifyToken, async (req, res) => {
     try {
-        const { work_date, start_date, end_date, limit } = req.query;
-        let sql = `SELECT dw.*, p.name as project_name, u.name as unit_name
-                   FROM daily_work_logs dw
-                   LEFT JOIN projects p ON p.id = dw.project_id
-                   LEFT JOIN project_units u ON u.id = dw.unit_id
-                   WHERE dw.employee_id = $1`;
+        let sql = `${LOG_SELECT} WHERE dw.employee_id = $1`;
         const params = [req.user.id];
-        let idx = 2;
-        if (work_date) {
-            sql += ` AND dw.work_date = $${idx++}`;
-            params.push(work_date);
-        }
-        if (start_date) {
-            sql += ` AND dw.work_date >= $${idx++}`;
-            params.push(start_date);
-        }
-        if (end_date) {
-            sql += ` AND dw.work_date <= $${idx++}`;
-            params.push(end_date);
-        }
-        sql += ' ORDER BY dw.work_date DESC, dw.logged_at DESC';
-        if (limit) {
-            sql += ` LIMIT $${idx++}`;
-            params.push(parseInt(limit));
-        }
+        sql = applyDateFilters(sql, params, 2, req.query);
         const r = await q(sql, params);
         res.json({ success: true, logs: r.rows });
     } catch (error) {
@@ -69,46 +73,21 @@ router.get('/team', verifyToken, async (req, res) => {
         const userRole = req.user.role;
         const userId = req.user.id;
         const { work_date, start_date, end_date, limit } = req.query;
-        let sql = `SELECT dw.*, 
-                          e.first_name, e.last_name, e.employee_id as emp_id,
-                          p.name as project_name, u.name as unit_name
-                   FROM daily_work_logs dw
-                   JOIN employees e ON e.id = dw.employee_id
-                   LEFT JOIN projects p ON p.id = dw.project_id
-                   LEFT JOIN project_units u ON u.id = dw.unit_id
-                   WHERE 1=1`;
+        let sql = `${LOG_SELECT} WHERE 1=1`;
         const params = [];
         let idx = 1;
         if (userRole === 'admin' || userRole === 'hr') {
             // all
-        } else if (userRole === 'manager') {
+        } else if (userRole === 'manager' || userRole === 'team_lead') {
             const tree = await myTreeIds(userId);
-            sql += ` AND dw.employee_id IN (${Array.from(tree).map((_,i)=>`$${idx++}`).join(',')})`;
-            params.push(...Array.from(tree));
-        } else if (userRole === 'team_lead') {
-            const tree = await myTreeIds(userId);
-            sql += ` AND dw.employee_id IN (${Array.from(tree).map((_,i)=>`$${idx++}`).join(',')})`;
-            params.push(...Array.from(tree));
+            const ids = Array.from(tree);
+            if (ids.length === 0) return res.json({ success: true, logs: [] });
+            sql += ` AND dw.employee_id IN (${ids.map(() => `$${idx++}`).join(',')})`;
+            params.push(...ids);
         } else {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
-        if (work_date) {
-            sql += ` AND dw.work_date = $${idx++}`;
-            params.push(work_date);
-        }
-        if (start_date) {
-            sql += ` AND dw.work_date >= $${idx++}`;
-            params.push(start_date);
-        }
-        if (end_date) {
-            sql += ` AND dw.work_date <= $${idx++}`;
-            params.push(end_date);
-        }
-        sql += ' ORDER BY dw.work_date DESC, dw.logged_at DESC';
-        if (limit) {
-            sql += ` LIMIT $${idx++}`;
-            params.push(parseInt(limit));
-        }
+        sql = applyDateFilters(sql, params, idx, { work_date, start_date, end_date, limit });
         const r = await q(sql, params);
         res.json({ success: true, logs: r.rows });
     } catch (error) {
@@ -119,21 +98,79 @@ router.get('/team', verifyToken, async (req, res) => {
 });
 
 // @route   POST /api/daily-work-logs
-// @desc    Create daily work log
+// @desc    Create a self-reported daily work log (works with NO assigned task)
 // @access  Private
 router.post('/', verifyToken, async (req, res) => {
     try {
-        const { work_date, title, description, projectId, unitId } = req.body;
+        const { work_date, title, description, projectId, unitId, assignmentId } = req.body;
         if (!title || String(title).trim().length === 0) {
             return res.status(400).json({ success: false, message: 'Title is required' });
         }
-        const wd = work_date || new Date().toISOString().slice(0,10);
-        const pid = projectId ? parseInt(projectId) : null;
-        const uid = unitId ? parseInt(unitId) : null;
-        const ins = await q(`INSERT INTO daily_work_logs (employee_id, work_date, title, description, project_id, unit_id)
-                             VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [req.user.id, wd, String(title).trim(), description || null, pid, uid]);
-        logAudit({ actorId: req.user.id, action: 'daily_work_log.create', entityType: 'daily_work_log', entityId: ins.rows[0].id, details: {title: String(title).trim(), work_date: wd}, ip: req.ip });
+        const wd = work_date || new Date().toISOString().slice(0, 10);
+        const pid = projectId ? parseInt(projectId, 10) : null;
+        const uid = unitId ? parseInt(unitId, 10) : null;
+        const aid = assignmentId ? parseInt(assignmentId, 10) : null;
+        const ins = await q(
+            `INSERT INTO daily_work_logs (employee_id, work_date, title, description, project_id, unit_id, assignment_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+            [req.user.id, wd, String(title).trim(), description || null, pid, uid, aid]
+        );
+        logAudit({ actorId: req.user.id, action: 'daily_work_log.create', entityType: 'daily_work_log', entityId: ins.rows[0].id, details: { title: String(title).trim(), work_date: wd }, ip: req.ip });
         res.status(201).json({ success: true, message: 'Daily work logged' });
+    } catch (error) {
+        const e = pgErrorResponse(error);
+        res.status(e.status).json({ success: false, message: e.message });
+    }
+});
+
+// @route   PUT /api/daily-work-logs/:id
+// @desc    Update my own daily work log
+// @access  Private (owner only)
+router.put('/:id', verifyToken, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, message: 'Invalid log id' });
+        const existing = await q('SELECT id FROM daily_work_logs WHERE id = $1 AND employee_id = $2', [id, req.user.id]);
+        if (existing.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Work log not found' });
+        }
+        const { title, description, projectId, unitId, assignmentId } = req.body;
+        if (!title || String(title).trim().length === 0) {
+            return res.status(400).json({ success: false, message: 'Title is required' });
+        }
+        await q(
+            `UPDATE daily_work_logs
+             SET title = $1, description = $2, project_id = $3, unit_id = $4, assignment_id = $5, updated_at = NOW()
+             WHERE id = $6 AND employee_id = $7`,
+            [
+                String(title).trim(), description || null,
+                projectId ? parseInt(projectId, 10) : null,
+                unitId ? parseInt(unitId, 10) : null,
+                assignmentId ? parseInt(assignmentId, 10) : null,
+                id, req.user.id
+            ]
+        );
+        logAudit({ actorId: req.user.id, action: 'daily_work_log.update', entityType: 'daily_work_log', entityId: id, details: { title: String(title).trim() }, ip: req.ip });
+        res.json({ success: true, message: 'Daily work log updated' });
+    } catch (error) {
+        const e = pgErrorResponse(error);
+        res.status(e.status).json({ success: false, message: e.message });
+    }
+});
+
+// @route   DELETE /api/daily-work-logs/:id
+// @desc    Delete my own daily work log
+// @access  Private (owner only)
+router.delete('/:id', verifyToken, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, message: 'Invalid log id' });
+        const del = await q('DELETE FROM daily_work_logs WHERE id = $1 AND employee_id = $2', [id, req.user.id]);
+        if (del.rowCount === 0) {
+            return res.status(404).json({ success: false, message: 'Work log not found' });
+        }
+        logAudit({ actorId: req.user.id, action: 'daily_work_log.delete', entityType: 'daily_work_log', entityId: id, details: {}, ip: req.ip });
+        res.json({ success: true, message: 'Daily work log deleted' });
     } catch (error) {
         const e = pgErrorResponse(error);
         res.status(e.status).json({ success: false, message: e.message });

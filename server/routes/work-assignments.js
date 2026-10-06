@@ -24,8 +24,8 @@ const LEGAL_MOVES = {
 // Shared SELECT: joins project / unit / assigner / assignee names.
 const SELECT = `
     SELECT wa.id, wa.project_id, wa.unit_id, wa.assigned_by, wa.assigned_to,
-           wa.title, wa.description, wa.priority, wa.due_date, wa.status,
-           wa.completed_at, wa.created_at, wa.updated_at,
+           wa.title, wa.description, wa.priority, wa.start_date, wa.due_date, wa.status,
+           wa.completed_at, wa.assigned_at, wa.created_at, wa.updated_at,
            p.name as project_name,
            u.name as unit_name,
            ab.first_name as assigned_by_first, ab.last_name as assigned_by_last,

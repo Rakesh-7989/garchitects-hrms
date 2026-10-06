@@ -138,8 +138,44 @@
                     <div class="spinner" style="margin:0 auto;"></div>
                 </div>
             </div>
+
+            <div class="card" style="padding:20px;margin-top:20px;margin-bottom:30px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+                    <div style="font-weight:600;font-size:0.95rem;"><i class="fas fa-pen-to-square" style="color:var(--primary);margin-right:8px;"></i>My Daily Work Log
+                        <span style="font-size:0.75rem;color:var(--text-secondary);font-weight:400;margin-left:6px;">Log what you did today — even when no task was assigned.</span>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="loadDailyLogs(true)"><i class="fas fa-rotate-right"></i> Refresh</button>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="openLogModal()"><i class="fas fa-plus"></i> Log Work</button>
+                    </div>
+                </div>
+                <div id="dailyLogList">
+                    <div class="spinner" style="margin:0 auto;"></div>
+                </div>
+            </div>
         </div>
     </main>
+
+    <div class="modal" id="logModal">
+        <div class="modal-content" style="max-width:520px;">
+            <div class="modal-header">
+                <h2 id="logModalTitle">Log Daily Work</h2>
+                <button onclick="closeLogModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div class="form-group"><label>Date *</label><input type="date" class="form-control" id="dlDate" required></div>
+                    <div class="form-group"><label>Link to Assigned Task</label><select class="form-control" id="dlAssignment"><option value="">No task (self-reported)</option></select></div>
+                </div>
+                <div class="form-group"><label>What did you work on? *</label><input type="text" class="form-control" id="dlTitle" maxlength="255" placeholder="e.g. Site visit — checked Tower B footing layout"></div>
+                <div class="form-group"><label>Details</label><textarea class="form-control" id="dlDesc" rows="3" placeholder="Short description of the work done"></textarea></div>
+                <div class="modal-footer" style="padding:0;margin-top:12px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeLogModal()">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="logSaveBtn" onclick="saveLog()"><i class="fas fa-paper-plane"></i> Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="../../js/auth.js"></script>
     <script src="../../js/dashboard.js"></script>
@@ -147,6 +183,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             if (!checkAuth()) throw new Error('Not authenticated');
             loadMyWork();
+            loadDailyLogs();
         });
 
         let allTasks = [];
@@ -230,11 +267,12 @@
                 : '';
             const projHtml = t.project_name ? '<span><i class="fas fa-project-diagram"></i> ' + escapeHtml(t.project_name) + (t.unit_name ? ' <span style="opacity:0.75;">/ ' + escapeHtml(t.unit_name) + '</span>' : '') + '</span>' : '';
             const assignerHtml = t.assigned_by_first ? '<i class="fas fa-user-tie"></i> ' + escapeHtml((t.assigned_by_first || '') + ' ' + (t.assigned_by_last || '')) : '';
+            const assignedOnHtml = t.assigned_at ? '<i class="fas fa-paper-plane"></i> Assigned ' + formatDate(t.assigned_at) : '';
             const doneHtml = (t.status === 'completed' && t.completed_at) ? '<span><i class="fas fa-check-circle"></i> Completed ' + formatDate(t.completed_at) + '</span>' : '';
             return '<div class="task-card">' +
                 '<div class="task-top">' +
                     '<div><div class="task-title">' + escapeHtml(t.title) + ' ' + prioPill(t.priority) + '</div>' +
-                        '<div class="task-meta">' + [projHtml, assignerHtml].filter(Boolean).join(' &nbsp;·&nbsp; ') + '</div></div>' +
+                        '<div class="task-meta">' + [projHtml, assignerHtml, assignedOnHtml].filter(Boolean).join(' &nbsp;·&nbsp; ') + '</div></div>' +
                     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + statusBadge(t.status) + dueHtml + '</div>' +
                 '</div>' +
                 (t.description ? '<div class="task-desc">' + escapeHtml(t.description) + '</div>' : '') +
@@ -266,6 +304,146 @@
         function cancelTask(id) {
             if (!confirm('Cancel this assignment?')) return;
             updateStatus(id, 'cancelled');
+        }
+
+        // ---------- Daily Work Log (self-reported) ----------
+        let dailyLogs = [];
+        let editingLogId = null;
+
+        function todayStr() {
+            const d = new Date();
+            const p = n => String(n).padStart(2, '0');
+            return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+        }
+
+        async function loadDailyLogs(manual) {
+            const el = document.getElementById('dailyLogList');
+            if (!el) return;
+            const data = await apiCall('/daily-work-logs?limit=60');
+            if (!data || !data.success) {
+                el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:0.85rem;">Could not load your daily work logs.</div>';
+                if (manual) showToast('Refresh failed', 'error');
+                return;
+            }
+            dailyLogs = data.logs || [];
+            renderDailyLogs();
+            if (manual) showToast('Refreshed', 'success');
+        }
+
+        function logCard(l) {
+            const by = l.assigned_by_first
+                ? '<span><i class="fas fa-user-tie"></i> Assigned by ' + escapeHtml((l.assigned_by_first || '') + ' ' + (l.assigned_by_last || '')) + '</span>'
+                : '<span><i class="fas fa-user-pen"></i> Self-reported</span>';
+            const task = l.assignment_title
+                ? '<span><i class="fas fa-tasks"></i> ' + escapeHtml(l.assignment_title) + '</span>'
+                : '';
+            const proj = l.project_name
+                ? '<span><i class="fas fa-project-diagram"></i> ' + escapeHtml(l.project_name) + (l.unit_name ? ' / ' + escapeHtml(l.unit_name) : '') + '</span>'
+                : '';
+            const dateStr = String(l.work_date || '').slice(0, 10);
+            const mine = true;
+            return '<div class="task-card">' +
+                '<div class="task-top">' +
+                    '<div><div class="task-title">' + escapeHtml(l.title) + '</div>' +
+                        '<div class="task-meta">' + [by, task, proj].filter(Boolean).join(' &nbsp;·&nbsp; ') + '</div></div>' +
+                    '<span class="pill prio-normal"><i class="fas fa-calendar-day"></i> ' + escapeHtml(dateStr) + '</span>' +
+                '</div>' +
+                (l.description ? '<div class="task-desc">' + escapeHtml(l.description) + '</div>' : '') +
+                (mine ? '<div class="task-actions">' +
+                    '<button class="btn btn-sm btn-secondary" onclick="openLogModal(' + l.id + ')"><i class="fas fa-pen"></i> Edit</button>' +
+                    '<button class="btn btn-sm btn-danger" onclick="deleteLog(' + l.id + ')"><i class="fas fa-trash"></i> Delete</button>' +
+                '</div>' : '') +
+            '</div>';
+        }
+
+        function renderDailyLogs() {
+            const el = document.getElementById('dailyLogList');
+            if (dailyLogs.length === 0) {
+                el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary);"><i class="fas fa-pen-to-square" style="font-size:1.6rem;margin-bottom:10px;display:block;"></i>No daily work logged yet. Use “Log Work” to record what you did today.</div>';
+                return;
+            }
+            el.innerHTML = dailyLogs.map(logCard).join('');
+        }
+
+        async function loadAssignmentOptionsForLog() {
+            const sel = document.getElementById('dlAssignment');
+            if (!sel || sel.dataset.loaded === '1') return;
+            const data = await apiCall('/work-assignments/my');
+            const list = (data && data.success ? data.assignments || [] : [])
+                .filter(a => a.status === 'assigned' || a.status === 'in_progress');
+            list.forEach(a => {
+                const o = document.createElement('option');
+                o.value = a.id;
+                o.textContent = a.title;
+                sel.appendChild(o);
+            });
+            sel.dataset.loaded = '1';
+        }
+
+        function openLogModal(id) {
+            editingLogId = id || null;
+            loadAssignmentOptionsForLog();
+            const dateEl = document.getElementById('dlDate');
+            const titleEl = document.getElementById('dlTitle');
+            const descEl = document.getElementById('dlDesc');
+            const asgEl = document.getElementById('dlAssignment');
+            document.getElementById('logModalTitle').textContent = editingLogId ? 'Edit Daily Work' : 'Log Daily Work';
+            if (editingLogId) {
+                const l = dailyLogs.find(x => Number(x.id) === Number(editingLogId));
+                if (l) {
+                    dateEl.value = String(l.work_date || '').slice(0, 10);
+                    titleEl.value = l.title || '';
+                    descEl.value = l.description || '';
+                    asgEl.value = l.assignment_id ? String(l.assignment_id) : '';
+                }
+                // Adjust the select if the linked task is no longer in the open list.
+                if (asgEl.value && asgEl.selectedIndex < 0) asgEl.value = '';
+            } else {
+                dateEl.value = todayStr();
+                titleEl.value = '';
+                descEl.value = '';
+                asgEl.value = '';
+            }
+            document.getElementById('logModal').classList.add('active');
+        }
+
+        function closeLogModal() {
+            document.getElementById('logModal').classList.remove('active');
+        }
+
+        async function saveLog() {
+            const title = document.getElementById('dlTitle').value.trim();
+            if (!title) { showToast('Please enter what you worked on', 'error'); return; }
+            const payload = {
+                work_date: document.getElementById('dlDate').value || todayStr(),
+                title,
+                description: document.getElementById('dlDesc').value.trim() || null,
+                assignmentId: document.getElementById('dlAssignment').value || null
+            };
+            const btn = document.getElementById('logSaveBtn');
+            if (btn) btn.disabled = true;
+            const r = editingLogId
+                ? await apiCall('/daily-work-logs/' + editingLogId, 'PUT', payload)
+                : await apiCall('/daily-work-logs', 'POST', payload);
+            if (btn) btn.disabled = false;
+            if (r && r.success) {
+                showToast(editingLogId ? 'Daily work updated' : 'Daily work logged', 'success');
+                closeLogModal();
+                loadDailyLogs();
+            } else {
+                showToast((r && r.message) || 'Could not save daily work', 'error');
+            }
+        }
+
+        async function deleteLog(id) {
+            if (!confirm('Delete this daily work log?')) return;
+            const r = await apiCall('/daily-work-logs/' + id, 'DELETE');
+            if (r && r.success) {
+                showToast('Deleted', 'success');
+                loadDailyLogs();
+            } else {
+                showToast((r && r.message) || 'Could not delete', 'error');
+            }
         }
     </script>
 </body>

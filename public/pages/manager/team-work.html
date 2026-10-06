@@ -117,6 +117,22 @@
                     <div class="spinner" style="margin:0 auto;"></div>
                 </div>
             </div>
+
+            <div class="card" style="padding:20px;margin-bottom:24px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+                    <div style="font-weight:600;font-size:0.95rem;"><i class="fas fa-pen-to-square" style="color:var(--primary);margin-right:8px;"></i>Team Daily Work Logs
+                        <span style="font-size:0.75rem;color:var(--text-secondary);font-weight:400;margin-left:6px;">Self-reported work — shown even when no task was assigned.</span>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <input type="date" class="form-control" id="dlFilterDate" style="width:auto;" onchange="loadTeamLogs()">
+                        <button type="button" class="chip-btn" id="dlSelfOnly" onclick="toggleSelfOnly()">Self-Reported only</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="loadTeamLogs(true)"><i class="fas fa-rotate-right"></i> Refresh</button>
+                    </div>
+                </div>
+                <div id="teamLogList">
+                    <div class="spinner" style="margin:0 auto;"></div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -165,6 +181,7 @@
             loadAssignments();
             loadEmployeesForPicker();
             loadProjectsForPicker();
+            loadTeamLogs();
         });
 
         let currentRole = null;
@@ -266,11 +283,13 @@
             const assigneeHtml = '<span><i class="fas fa-user"></i> ' + escapeHtml((a.assigned_to_first || '') + ' ' + (a.assigned_to_last || '')) + ' <span style="opacity:0.7;">(' + escapeHtml(a.assigned_to_code || '') + ')</span></span>';
             const projHtml = a.project_name ? '<span><i class="fas fa-project-diagram"></i> ' + escapeHtml(a.project_name) + (a.unit_name ? ' <span style="opacity:0.75;">/ ' + escapeHtml(a.unit_name) + '</span>' : '') + '</span>' : '';
             const assignerHtml = a.assigned_by_code ? '<span><i class="fas fa-user-tie"></i> by ' + escapeHtml((a.assigned_by_first || '') + ' ' + (a.assigned_by_last || '')) + '</span>' : '';
+            const assignedOnHtml = a.assigned_at ? '<span><i class="fas fa-paper-plane"></i> Assigned ' + formatDate(a.assigned_at) + '</span>' : '';
+            const startHtml = a.start_date ? '<span><i class="fas fa-play"></i> Start ' + formatDate(a.start_date) + '</span>' : '';
             const doneHtml = (a.status === 'completed' && a.completed_at) ? '<span><i class="fas fa-check-circle"></i> Completed ' + formatDate(a.completed_at) + '</span>' : '';
             return '<div class="task-card">' +
                 '<div class="task-top">' +
                     '<div><div class="task-title">' + escapeHtml(a.title) + ' ' + prioPill(a.priority) + '</div>' +
-                        '<div class="task-meta">' + [assigneeHtml, projHtml, assignerHtml].filter(Boolean).join(' &nbsp;·&nbsp; ') + '</div></div>' +
+                        '<div class="task-meta">' + [assigneeHtml, projHtml, assignerHtml, startHtml, assignedOnHtml].filter(Boolean).join(' &nbsp;·&nbsp; ') + '</div></div>' +
                     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + statusBadge(a.status) + dueHtml + '</div>' +
                 '</div>' +
                 (a.description ? '<div class="task-desc">' + escapeHtml(a.description) + '</div>' : '') +
@@ -355,6 +374,7 @@
             document.getElementById('waAssignee').value = '';
             document.getElementById('waPriority').value = 'normal';
             document.getElementById('waDue').value = '';
+            document.getElementById('waStart').value = '';
             document.getElementById('waProject').value = '';
             document.getElementById('waUnit').innerHTML = '<option value="">No unit</option>';
             document.getElementById('waTitle').value = '';
@@ -372,6 +392,7 @@
             document.getElementById('waAssignee').value = a.assigned_to;
             document.getElementById('waPriority').value = a.priority || 'normal';
             document.getElementById('waDue').value = a.due_date ? String(a.due_date).slice(0, 10) : '';
+            document.getElementById('waStart').value = a.start_date ? String(a.start_date).slice(0, 10) : '';
             document.getElementById('waProject').value = a.project_id ? a.project_id : '';
             // repopulate units for the current project
             const currentProject = a.project_id || '';
@@ -437,6 +458,69 @@
             } else if (r && r.message) {
                 showToast(r.message, 'error');
             }
+        }
+
+        // ---------- Team Daily Work Logs (self-reported) ----------
+        let teamLogs = [];
+        let selfOnly = false;
+
+        function todayLocalStr() {
+            const d = new Date();
+            const p = n => String(n).padStart(2, '0');
+            return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+        }
+
+        function toggleSelfOnly() {
+            selfOnly = !selfOnly;
+            const btn = document.getElementById('dlSelfOnly');
+            if (btn) btn.classList.toggle('active', selfOnly);
+            renderTeamLogs();
+        }
+
+        async function loadTeamLogs(manual) {
+            const el = document.getElementById('teamLogList');
+            if (!el) return;
+            const dateEl = document.getElementById('dlFilterDate');
+            if (dateEl && !dateEl.value) dateEl.value = todayLocalStr();
+            const date = dateEl ? dateEl.value : '';
+            const qs = date ? ('?work_date=' + encodeURIComponent(date)) : '?limit=100';
+            const data = await apiCall('/daily-work-logs/team' + qs);
+            if (!data || !data.success) {
+                el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);font-size:0.9rem;">Failed to load team daily work logs.</div>';
+                if (manual) showToast('Refresh failed', 'error');
+                return;
+            }
+            teamLogs = data.logs || [];
+            renderTeamLogs();
+            if (manual) showToast('Refreshed', 'success');
+        }
+
+        function teamLogCard(l) {
+            const assignee = '<span><i class="fas fa-user"></i> ' + escapeHtml((l.employee_first || '') + ' ' + (l.employee_last || '')) + ' <span style="opacity:0.7;">(' + escapeHtml(l.employee_code || '') + ')</span></span>';
+            const by = l.assigned_by_first
+                ? '<span><i class="fas fa-user-tie"></i> Assigned by ' + escapeHtml((l.assigned_by_first || '') + ' ' + (l.assigned_by_last || '')) + '</span>'
+                : '<span class="pill" style="background:#E0E7FF;color:#3730A3;"><i class="fas fa-user-pen"></i> Self-Reported</span>';
+            const task = l.assignment_title ? '<span><i class="fas fa-tasks"></i> ' + escapeHtml(l.assignment_title) + '</span>' : '';
+            const proj = l.project_name ? '<span><i class="fas fa-project-diagram"></i> ' + escapeHtml(l.project_name) + (l.unit_name ? ' / ' + escapeHtml(l.unit_name) : '') + '</span>' : '';
+            const dateStr = String(l.work_date || '').slice(0, 10);
+            return '<div class="task-card">' +
+                '<div class="task-top">' +
+                    '<div><div class="task-title">' + escapeHtml(l.title) + '</div>' +
+                        '<div class="task-meta">' + [assignee, by, task, proj].filter(Boolean).join(' &nbsp;·&nbsp; ') + '</div></div>' +
+                    '<span class="pill prio-normal"><i class="fas fa-calendar-day"></i> ' + escapeHtml(dateStr) + '</span>' +
+                '</div>' +
+                (l.description ? '<div class="task-desc">' + escapeHtml(l.description) + '</div>' : '') +
+            '</div>';
+        }
+
+        function renderTeamLogs() {
+            const el = document.getElementById('teamLogList');
+            const list = selfOnly ? teamLogs.filter(l => !l.assignment_id) : teamLogs;
+            if (list.length === 0) {
+                el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary);"><i class="fas fa-pen-to-square" style="font-size:1.6rem;margin-bottom:10px;display:block;"></i>No daily work logs for this filter.</div>';
+                return;
+            }
+            el.innerHTML = list.map(teamLogCard).join('');
         }
     </script>
 </body>

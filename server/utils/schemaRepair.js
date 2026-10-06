@@ -62,7 +62,12 @@ const EMPLOYEE_ALTER_COLUMNS = {
 
 // Attendance: auto_checkout flag
 const ATTENDANCE_ALTER_COLUMNS = {
-    auto_checkout: 'BOOLEAN DEFAULT FALSE'
+    auto_checkout: 'BOOLEAN DEFAULT FALSE',
+    // Auto-checkout bookkeeping: when the system closed a forgotten checkout,
+    // and the employee's later explanation for missing it.
+    auto_checkout_at: 'TIMESTAMP',
+    checkout_miss_reason: 'TEXT',
+    checkout_miss_reason_at: 'TIMESTAMP'
 };
 
 // Projects module columns that a half-initialized live database may be missing.
@@ -161,10 +166,12 @@ const ENSURE_TABLE_DDL = {
             description TEXT,
             project_id INT REFERENCES projects(id) ON DELETE SET NULL,
             unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
+            assignment_id INT REFERENCES work_assignments(id) ON DELETE SET NULL,
             logged_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW(),
             UNIQUE (employee_id, work_date, title)
         )`,
+        `CREATE INDEX IF NOT EXISTS idx_daily_work_logs_assignment ON daily_work_logs(assignment_id)`,
         `CREATE INDEX IF NOT EXISTS idx_daily_work_logs_employee_date ON daily_work_logs(employee_id, work_date DESC)`,
         `CREATE INDEX IF NOT EXISTS idx_daily_work_logs_work_date ON daily_work_logs(work_date DESC)`
     ],
@@ -292,10 +299,12 @@ const ENSURE_TABLE_DDL = {
             title VARCHAR(200) NOT NULL,
             description TEXT,
             priority VARCHAR(10) DEFAULT 'normal' CHECK (priority IN ('low','normal','high','urgent')),
+            start_date DATE,
             due_date DATE,
             status VARCHAR(20) DEFAULT 'assigned'
                 CHECK (status IN ('assigned','in_progress','completed','cancelled')),
             completed_at TIMESTAMP,
+            assigned_at TIMESTAMP DEFAULT NOW(),
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
         )`,
@@ -545,6 +554,18 @@ const PROJECT_MODULE_ALTER_COLUMNS = {
         notes: 'TEXT',
         created_at: 'TIMESTAMP DEFAULT NOW()',
         updated_at: 'TIMESTAMP DEFAULT NOW()',
+    },
+    // Optional link from a self-reported daily log to an assigned task, so the
+    // manager view can show WHO assigned the work the employee logged.
+    'daily_work_logs': {
+        assignment_id: 'INT REFERENCES work_assignments(id) ON DELETE SET NULL',
+    },
+    // work_assignments gained a mandatory start_date + an auto assigned_at in the
+    // work-assignment timeline release. A live DB created before it is missing
+    // both, which makes every POST /api/work-assignments 500 with 42703.
+    'work_assignments': {
+        start_date: 'DATE',
+        assigned_at: 'TIMESTAMP DEFAULT NOW()',
     }
 };
 
@@ -586,10 +607,13 @@ async function runWithSchemaRepair(fn) {
                     if (table === 'projects' || table === 'p') {
                         healed = miss.column && await ensureProjectColumn(miss.column);
                     } else if (table === 'project_employees' || table === 'pe'
-                            || table === 'project_documents' || table === 'pdoc' || table === 'project_daily_updates' || table === 'pdu') {
+                            || table === 'project_documents' || table === 'pdoc' || table === 'project_daily_updates' || table === 'pdu'
+                            || table === 'daily_work_logs' || table === 'dw'
+                            || table === 'work_assignments' || table === 'wa') {
                         const resolved = {
                             pe: 'project_employees',
-                            pdoc: 'project_documents', pdu: 'project_daily_updates'
+                            pdoc: 'project_documents', pdu: 'project_daily_updates',
+                            dw: 'daily_work_logs', wa: 'work_assignments'
                         }[table] || table;
                         healed = miss.column && await ensureProjectModuleColumn(resolved, miss.column);
                     } else if (table === 'employees' || table === 'e') {
@@ -615,7 +639,9 @@ async function runWithSchemaRepair(fn) {
                             || await ensureEmployeeColumn(miss.column)
                             || await ensureAnnouncementsColumn(miss.column)
                             || await ensureHrTemplateColumn(miss.column)
-                            || (miss.column === 'auto_checkout' ? (async () => { await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS auto_checkout BOOLEAN DEFAULT FALSE`); return true; })() : false);
+                            || await ensureProjectModuleColumn('daily_work_logs', miss.column)
+                            || await ensureProjectModuleColumn('work_assignments', miss.column)
+                            || (ATTENDANCE_ALTER_COLUMNS[miss.column] ? (async () => { await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS "${miss.column}" ${ATTENDANCE_ALTER_COLUMNS[miss.column]}`); return true; })() : false);
                     }
                     if (healed) {
                         continue;

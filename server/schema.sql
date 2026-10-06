@@ -773,13 +773,18 @@ CREATE TABLE IF NOT EXISTS work_assignments (
     title VARCHAR(200) NOT NULL,
     description TEXT,
     priority VARCHAR(10) DEFAULT 'normal' CHECK (priority IN ('low','normal','high','urgent')),
+    start_date DATE,
     due_date DATE,
     status VARCHAR(20) DEFAULT 'assigned'
         CHECK (status IN ('assigned','in_progress','completed','cancelled')),
     completed_at TIMESTAMP,
+    assigned_at TIMESTAMP DEFAULT NOW(),
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
+-- Idempotent for databases created before the assignment-timeline release.
+ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS start_date DATE;
+ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP DEFAULT NOW();
 CREATE INDEX IF NOT EXISTS idx_wa_assignee ON work_assignments(assigned_to, status);
 CREATE INDEX IF NOT EXISTS idx_wa_assigner ON work_assignments(assigned_by, status);
 CREATE INDEX IF NOT EXISTS idx_wa_project ON work_assignments(project_id);
@@ -795,10 +800,14 @@ CREATE TABLE IF NOT EXISTS daily_work_logs (
   description TEXT,
   project_id INT REFERENCES projects(id) ON DELETE SET NULL,
   unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
+  assignment_id INT REFERENCES work_assignments(id) ON DELETE SET NULL,
   logged_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),
   UNIQUE (employee_id, work_date, title)
 );
+-- Idempotent for databases created before the assignment link existed.
+ALTER TABLE daily_work_logs ADD COLUMN IF NOT EXISTS assignment_id INT REFERENCES work_assignments(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_daily_work_logs_assignment ON daily_work_logs(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_daily_work_logs_employee_date ON daily_work_logs(employee_id, work_date DESC);
 CREATE INDEX IF NOT EXISTS idx_daily_work_logs_work_date ON daily_work_logs(work_date DESC);
 
