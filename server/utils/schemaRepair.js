@@ -60,6 +60,16 @@ const EMPLOYEE_ALTER_COLUMNS = {
     last_working_day: 'DATE'
 };
 
+// Attendance: auto_checkout flag
+const ATTENDANCE_ALTER_COLUMNS = {
+    auto_checkout: 'BOOLEAN DEFAULT FALSE'
+};
+
+// Attendance: auto_checkout flag for missed checkout with grace
+const ATTENDANCE_ALTER_COLUMNS = {
+    auto_checkout: 'BOOLEAN DEFAULT FALSE'
+};
+
 // Projects module columns that a half-initialized live database may be missing.
 // ALTER ... ADD COLUMN IF NOT EXISTS is idempotent; detecting them by the
 // column name from the Postgres error message so user input is never interpolated.
@@ -146,6 +156,22 @@ const ENSURE_TABLE_DDL = {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_hr_task_templates_active ON hr_task_templates(is_active)`,
         `CREATE INDEX IF NOT EXISTS idx_hr_task_templates_type ON hr_task_templates(type, is_active)`
+    ],
+    daily_work_logs: [
+        `CREATE TABLE IF NOT EXISTS daily_work_logs (
+            id SERIAL PRIMARY KEY,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            work_date DATE NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            project_id INT REFERENCES projects(id) ON DELETE SET NULL,
+            unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
+            logged_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE (employee_id, work_date, title)
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_daily_work_logs_employee_date ON daily_work_logs(employee_id, work_date DESC)`,
+        `CREATE INDEX IF NOT EXISTS idx_daily_work_logs_work_date ON daily_work_logs(work_date DESC)`
     ],
     employee_processes: [
         `CREATE TABLE IF NOT EXISTS employee_processes (
@@ -575,8 +601,15 @@ async function runWithSchemaRepair(fn) {
                         healed = miss.column && await ensureEmployeeColumn(miss.column);
                     } else if (table === 'announcements' || table === 'a') {
                         healed = miss.column && await ensureAnnouncementsColumn(miss.column);
-                    } else if (table === 'hr_task_templates' || table === 'hrt') {
+                                    } else if (table === 'hr_task_templates' || table === 'hrt') {
                         healed = miss.column && await ensureHrTemplateColumn(miss.column);
+                    } else if (table === 'attendance' || table === 'a') {
+                        healed = miss.column && await (async () => {
+                            const ddl = ATTENDANCE_ALTER_COLUMNS[miss.column];
+                            if (!ddl) return false;
+                            await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS "${miss.column}" ${ddl}`);
+                            return true;
+                        })();
                     }
                     // If specific table didn't heal, try all known tables
                     if (!healed && miss.column) {
@@ -586,7 +619,8 @@ async function runWithSchemaRepair(fn) {
                             || await ensureProjectModuleColumn('project_daily_updates', miss.column)
                             || await ensureEmployeeColumn(miss.column)
                             || await ensureAnnouncementsColumn(miss.column)
-                            || await ensureHrTemplateColumn(miss.column);
+                            || await ensureHrTemplateColumn(miss.column)
+                            || (miss.column === 'auto_checkout' ? (async () => { await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS auto_checkout BOOLEAN DEFAULT FALSE`); return true; })() : false);
                     }
                     if (healed) {
                         continue;

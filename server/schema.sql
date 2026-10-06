@@ -652,6 +652,7 @@ DO $$ BEGIN
 EXCEPTION WHEN undefined_object THEN NULL;
 END $$;
 ALTER TABLE attendance ADD CONSTRAINT attendance_status_check CHECK (status IN ('present', 'absent', 'half-day', 'late', 'holiday', 'weekoff', 'wfh'));
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS auto_checkout BOOLEAN DEFAULT FALSE;
 
 -- Announcements: auto-expiry column (Asia/Kolkata timezone, admin sets via datetime-local)
 ALTER TABLE announcements ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
@@ -782,6 +783,24 @@ CREATE TABLE IF NOT EXISTS work_assignments (
 CREATE INDEX IF NOT EXISTS idx_wa_assignee ON work_assignments(assigned_to, status);
 CREATE INDEX IF NOT EXISTS idx_wa_assigner ON work_assignments(assigned_by, status);
 CREATE INDEX IF NOT EXISTS idx_wa_project ON work_assignments(project_id);
+
+-- ============================================================
+-- 24b. DAILY WORK LOGS (Self-reported work, no assignment)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS daily_work_logs (
+  id SERIAL PRIMARY KEY,
+  employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  work_date DATE NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  project_id INT REFERENCES projects(id) ON DELETE SET NULL,
+  unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
+  logged_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (employee_id, work_date, title)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_work_logs_employee_date ON daily_work_logs(employee_id, work_date DESC);
+CREATE INDEX IF NOT EXISTS idx_daily_work_logs_work_date ON daily_work_logs(work_date DESC);
 
 -- ============================================================
 -- 24. PROJECT LEADS (delegated project/unit ownership — P9)

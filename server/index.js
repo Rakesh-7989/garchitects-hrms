@@ -67,6 +67,7 @@ app.use('/api/team-transfers', require('./routes/team-transfers'));
 app.use('/api/team-handovers', require('./routes/team-handovers'));
 app.use('/api/project-access', require('./routes/project-access'));
 app.use('/api/team-updates', require('./routes/team-updates'));
+app.use('/api/daily-work-logs', require('./routes/daily-work-logs'));
 
 // Static files (mounted after API routes so API paths always take precedence)
 app.use(express.static(path.join(__dirname, '../public')));
