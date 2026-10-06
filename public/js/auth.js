@@ -446,6 +446,44 @@ function applyManagerPortalAdminLink() {
 }
 document.addEventListener('DOMContentLoaded', applyManagerPortalAdminLink);
 
+// The admin account is the "super admin": a monitoring / full-access role that
+// is NOT an employee. The /employee/* pages are the employee self-service
+// surface (check-in/out, leave, WFH, regularization, payslips, onboarding,
+// profile change requests) and do not apply to an admin. If an admin reaches
+// one - typed URL, stale link, or via a /manager/* oversight page whose sidebar
+// points back into /employee/* - bounce them to the admin portal instead of
+// showing widgets the server will reject anyway. On the /manager/* oversight
+// pages, also hide the employee self-service sidebar links so only oversight
+// links remain.
+function applySuperAdminSelfServiceGuard() {
+    try {
+        const user = getCurrentUser();
+        if (!user || user.role !== 'admin') return;
+        if (/^\/employee(\/|$)/.test(location.pathname)) {
+            location.replace('/admin/dashboard');
+            return;
+        }
+        if (!/^\/manager(\/|$)/.test(location.pathname)) return;
+        const nav = document.querySelector('#sidebar .sidebar-nav');
+        if (!nav) return;
+        nav.querySelectorAll('a.nav-item').forEach(a => {
+            const href = a.getAttribute('href') || '';
+            if (href === '/employee/dashboard' || href.startsWith('/employee/')) a.style.display = 'none';
+        });
+        // Collapse any section title whose child links all got hidden.
+        nav.querySelectorAll('.nav-section-title').forEach(title => {
+            let next = title.nextElementSibling;
+            let allHidden = true;
+            while (next && !next.classList.contains('nav-section-title')) {
+                if (next.tagName === 'A' && next.style.display !== 'none') { allHidden = false; break; }
+                next = next.nextElementSibling;
+            }
+            if (allHidden) title.style.display = 'none';
+        });
+    } catch (e) { /* navigation guard is cosmetic only */ }
+}
+document.addEventListener('DOMContentLoaded', applySuperAdminSelfServiceGuard);
+
 // The admin portal has no profile page of its own - an admin's only view of
 // their own details was the read-only card buried inside /admin/settings, so
 // it was effectively undiscoverable. Inject a "My Profile" entry into the

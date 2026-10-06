@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query, getClient } = require('../config/database');
-const { verifyToken, isAdminOrHr } = require('../middleware/auth');
+const { verifyToken, isAdminOrHr, blockAdminSelfService } = require('../middleware/auth');
 const { validateLeave } = require('../middleware/validation');
 const { istDateString, istYear, dateOnly } = require('../utils/date');
 const { sendToUser } = require('../services/push');
@@ -45,7 +45,7 @@ router.get('/types', verifyToken, async (req, res) => {
     }
 });
 
-router.post('/apply', verifyToken, validateLeave, async (req, res) => {
+router.post('/apply', verifyToken, blockAdminSelfService, validateLeave, async (req, res) => {
     try {
         const { leave_type_id, start_date, end_date, reason } = req.body;
 

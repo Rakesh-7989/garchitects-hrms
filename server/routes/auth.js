@@ -5,7 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 const { query } = require('../config/database');
-const { verifyToken, generateToken } = require('../middleware/auth');
+const { verifyToken, generateToken, blockAdminSelfService } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
 const { validateLogin, collectFieldErrors } = require('../middleware/validation');
 const { sendOTPEmail } = require('../services/email');
@@ -736,7 +736,7 @@ router.post('/profile-photo', verifyToken, uploadProfile.single('photo'), async 
 // @route   POST /api/auth/profile-request
 // @desc    Submit profile change request(s) for admin approval
 // @access  Private
-router.post('/profile-request', verifyToken, async (req, res) => {
+router.post('/profile-request', verifyToken, blockAdminSelfService, async (req, res) => {
     try {
         const changes = req.body.changes || req.body;
 

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query, getClient } = require('../config/database');
-const { verifyToken, isAdmin } = require('../middleware/auth');
+const { verifyToken, isAdmin, blockAdminSelfService } = require('../middleware/auth');
 const { istDateString } = require('../utils/date');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
@@ -13,7 +13,7 @@ const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
 // @route   POST /api/regularization
 // @desc    Employee submits a regularization request for one date
 // @access  Private
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, blockAdminSelfService, async (req, res) => {
     try {
         const { date, check_in, check_out, reason } = req.body || {};
 

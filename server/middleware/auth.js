@@ -135,6 +135,21 @@ const isManager = (req, res, next) => {
     next();
 };
 
+// The admin account is the "super admin": a monitoring/full-access role that is
+// NOT an employee. Self-service actions (leave, WFH, regularization, profile
+// change requests, own attendance) do not apply to it. This guard keeps those
+// endpoints honest even if a stray request reaches them.
+const blockAdminSelfService = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        return res.status(403).json({
+            success: false,
+            code: 'ADMIN_NOT_EMPLOYEE',
+            message: 'This is an employee self-service action. The admin account is a monitoring role and is not an employee.'
+        });
+    }
+    next();
+};
+
 // Generate JWT Token
 const generateToken = (user) => {
     return jwt.sign(
@@ -169,5 +184,6 @@ module.exports = {
     isAdminOrHr, 
     isManager, 
     generateToken,
-    audienceForRole
+    audienceForRole,
+    blockAdminSelfService
 };

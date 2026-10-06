@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query, getClient } = require('../config/database');
-const { verifyToken, isAdminOrHr } = require('../middleware/auth');
+const { verifyToken, isAdminOrHr, blockAdminSelfService } = require('../middleware/auth');
 const { istDateString, dateOnly } = require('../utils/date');
 const { sendToUser } = require('../services/push');
 const { getWorkWeekConfig } = require('../utils/workWeek');
@@ -28,7 +28,7 @@ function calcBusinessDays(start, end, holidays = new Set(), weekoffDay = 0) {
     return count;
 }
 
-router.post('/apply', verifyToken, async (req, res) => {
+router.post('/apply', verifyToken, blockAdminSelfService, async (req, res) => {
     try {
         const { start_date, end_date, reason } = req.body;
 
