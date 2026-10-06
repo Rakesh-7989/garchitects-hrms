@@ -3,9 +3,11 @@
 // Business rule (founder requirement):
 //   office_end_time + checkout_grace_minutes (default 120) = the checkout
 //   deadline. If an employee checked in but never checked out by then, the
-//   system auto-checks them out at the deadline and marks the day HALF-DAY
-//   (still "present", never absent). Each miss is recorded, a warning
-//   notification is sent, and the employee is asked for a reason.
+//   system auto-checks them out at the deadline. The FIRST miss in a month is
+//   only a warning; from the 2nd miss onward (once the month's miss count
+//   reaches checkout_miss_limit, default 2) the day is marked HALF-DAY (never
+//   absent). Every miss is recorded, a warning notification is sent, and the
+//   employee is asked for a reason, regardless of whether it became half-day.
 //
 // Runs two ways, both idempotent:
 //   1. Lazily, from the attendance read endpoints (so data self-corrects even
@@ -101,17 +103,9 @@ async function runAutoCheckout(dateStr) {
         const escalated = [];
 
         for (const row of open.rows) {
-            const upd = await q(
-                `UPDATE attendance
-                    SET check_out = $1, status = 'half-day', auto_checkout = TRUE,
-                        auto_checkout_at = NOW()
-                  WHERE id = $2 AND check_out IS NULL
-                  RETURNING id`,
-                [deadlineTime, row.id]
-            );
-            if (!upd.rows.length) continue;
-            closed++;
-
+            // Count this employee's auto-checkouts for the month BEFORE closing
+            // this one, so the current miss is counted exactly once and re-runs
+            // stay idempotent (already-closed rows are not in `open`).
             const cnt = await q(
                 `SELECT COUNT(*)::int AS n FROM attendance
                   WHERE employee_id = $1 AND auto_checkout = TRUE
@@ -119,14 +113,39 @@ async function runAutoCheckout(dateStr) {
                     AND date < date_trunc('month', $2::date) + INTERVAL '1 month'`,
                 [row.employee_id, date]
             );
-            const missCount = (cnt.rows[0] && cnt.rows[0].n) || 1;
+            const priorMisses = (cnt.rows[0] && cnt.rows[0].n) || 0;
+            const missCount = priorMisses + 1;
 
-            // 1) Warn the employee and ask for the reason.
+            // Rule (founder): the FIRST miss in the month is only a warning; from
+            // the 2nd miss onward (once the monthly miss count reaches the
+            // configured limit) the day is marked HALF-DAY.
+            const markHalfDay = missCount >= limit;
+            const hhmm = deadlineTime.slice(0, 5);
+
+            const upd = await q(
+                `UPDATE attendance
+                    SET check_out = $1,
+                        status = CASE WHEN $3 THEN 'half-day' ELSE status END,
+                        auto_checkout = TRUE,
+                        auto_checkout_at = NOW()
+                  WHERE id = $2 AND check_out IS NULL
+                  RETURNING id`,
+                [deadlineTime, row.id, markHalfDay]
+            );
+            if (!upd.rows.length) continue;
+            closed++;
+
+            // 1) Warn the employee and ask for the reason. The warning is sent on
+            //    EVERY miss; only the day-status differs.
             await notify({
                 employeeId: row.employee_id,
                 type: 'attendance_auto_checkout',
-                title: 'Missed checkout — day marked half-day',
-                body: `You did not check out on ${date}. The system auto-closed your attendance at the grace deadline (${deadlineTime.slice(0, 5)}) and marked the day half-day. Missed checkouts this month: ${missCount}. Please add the reason in Attendance → Missed Checkouts.`,
+                title: markHalfDay
+                    ? 'Missed checkout — day marked half-day'
+                    : 'Missed checkout — warning',
+                body: markHalfDay
+                    ? `You did not check out on ${date}. The system auto-closed your attendance at the grace deadline (${hhmm}) and marked the day half-day. Missed checkouts this month: ${missCount}. Please add the reason in Attendance → Missed Checkouts.`
+                    : `You did not check out on ${date}. The system auto-closed your attendance at the grace deadline (${hhmm}) and logged this as a warning. This is missed checkout #${missCount} this month — once you reach ${limit} in a month, the day is marked half-day. Please add the reason in Attendance → Missed Checkouts.`,
                 url: '/employee/attendance',
                 entityType: 'attendance_auto_checkout',
                 entityId: row.id
@@ -138,7 +157,7 @@ async function runAutoCheckout(dateStr) {
                 action: 'attendance.auto_checkout',
                 entityType: 'attendance',
                 entityId: row.id,
-                details: { date, employee_id: row.employee_id, misses_this_month: missCount }
+                details: { date, employee_id: row.employee_id, misses_this_month: missCount, half_day: markHalfDay, limit }
             });
 
             if (missCount > limit) {

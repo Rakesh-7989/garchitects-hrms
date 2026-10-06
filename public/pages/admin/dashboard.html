@@ -201,8 +201,8 @@
 
                 <div class="card">
                     <div class="card-header">
-                        <h2 style="font-size:1.1rem;font-weight:600;"><i class="fas fa-bullhorn" style="color:var(--primary);"></i> Recent Activity</h2>
-                        <a href="/admin/announcements" style="font-size:0.85rem;color:var(--primary);text-decoration:none;font-weight:500;">View All</a>
+                        <h2 style="font-size:1.1rem;font-weight:600;"><i class="fas fa-history" style="color:var(--primary);"></i> Recent Activity</h2>
+                        <a href="/admin/audit-logs" style="font-size:0.85rem;color:var(--primary);text-decoration:none;font-weight:500;">View All</a>
                     </div>
                     <div id="activityFeed">
                         <div style="text-align:center;padding:30px;color:var(--text-secondary);"><div class="spinner" style="margin:0 auto;"></div></div>
@@ -370,23 +370,28 @@
         }
 
         async function loadActivityFeed() {
-            const data = await apiCall('/announcements');
+            const data = await apiCall('/audit-logs?limit=6');
             const container = document.getElementById('activityFeed');
-            if (data && data.success && data.announcements.length > 0) {
-                container.innerHTML = data.announcements.slice(0, 5).map(a => `
-                    <div style="padding:12px 0;border-bottom:1px solid var(--border-light);display:flex;align-items:center;gap:12px;">
-                        <div style="width:40px;height:40px;border-radius:8px;background:var(--border-light);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                            <i class="fas fa-bullhorn"></i>
+            if (data && data.success && data.logs && data.logs.length > 0) {
+                container.innerHTML = data.logs.map(l => {
+                    const dt = formatIstTime(l.created_at);
+                    const who = l.actor_name ? l.actor_name : (l.actor_employee_id || 'System');
+                    const ent = (l.entity_type || '—') + (l.entity_id !== null && l.entity_id !== undefined ? ' #' + l.entity_id : '');
+                    return `
+                        <div style="padding:12px 0;border-bottom:1px solid var(--border-light);display:flex;align-items:flex-start;gap:12px;">
+                            <div style="width:40px;height:40px;border-radius:8px;background:var(--border-light);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                <i class="fas fa-history"></i>
+                            </div>
+                            <div style="flex:1;min-width:0;">
+                                <h4 style="font-weight:500;margin-bottom:2px;font-size:0.9rem;">${escapeHtml(l.action || 'action')}</h4>
+                                <p style="color:var(--text-secondary);font-size:0.8rem;margin-bottom:2px;">By ${escapeHtml(who)} • ${escapeHtml(ent)}</p>
+                                <p style="color:var(--text-tertiary);font-size:0.75rem;">${escapeHtml(dt)}</p>
+                            </div>
                         </div>
-                        <div style="flex:1;min-width:0;">
-                            <h4 style="font-weight:500;margin-bottom:2px;font-size:0.9rem;">${escapeHtml(a.title)}</h4>
-                            <p style="color:var(--text-secondary);font-size:0.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml((a.content || '').substring(0, 60))}...</p>
-                        </div>
-                        <span class="badge badge-${getPriorityBadge(a.priority)}">${escapeHtml(a.priority)}</span>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             } else {
-                showEmptyState(container, 'fa-bullhorn', 'No Activity', 'No recent announcements');
+                showEmptyState(container, 'fa-history', 'No Activity', 'No recent activity yet');
             }
         }
 
