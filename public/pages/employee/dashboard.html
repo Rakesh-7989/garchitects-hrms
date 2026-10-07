@@ -875,7 +875,7 @@
             if (!el) return;
             const data = await apiCall('/work-assignments/my');
             if (!data || !data.success) {
-                el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:0.82rem;">Could not load your work.</div>';
+                el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--danger);font-size:0.82rem;">Could not load your work' + (data && data.message ? ': ' + escapeHtml(data.message) : '') + '</div>';
                 return;
             }
             const list = data.assignments || [];

@@ -220,8 +220,8 @@
             const container = document.getElementById('assignmentList');
             const data = await apiCall('/work-assignments');
             if (!data || !data.success) {
-                container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);font-size:0.9rem;">Failed to load assignments. Please try again.</div>';
-                if (manual) showToast('Refresh failed', 'error');
+                container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);font-size:0.85rem;">Failed to load assignments' + (data && data.message ? ': ' + escapeHtml(data.message) : '') + '</div>';
+                if (manual) showToast(data && data.message ? data.message : 'Refresh failed', 'error');
                 return;
             }
             assignments = data.assignments || [];
