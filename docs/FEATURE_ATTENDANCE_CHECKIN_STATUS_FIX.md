@@ -63,6 +63,33 @@ tolerate that shape (`"2026-10-07".split('T')[0] → "2026-10-07"`; `formatDate`
 parses it correctly). No client changes needed. No `sw.js` bump (no static assets
 changed). No DB change.
 
+## 3b. Deadlock recovery — "already checked in" must never leave the employee stuck
+
+Follow-up found in the field: even with the date fix, a dashboard that misses
+today's row (stale tab, month/TZ boundary, or any future shape change) shows only
+a **Check In** button. Clicking it hit a dead-end `400 Already checked in today`,
+and because no today row was rendered, **Check-Out was unreachable** — the employee
+could not check out until the next day ("check-in cheyali ani chuppisthundi…
+already your check-in antundi… check-out ela cheyiyali?").
+
+Fix (server + client + PWA):
+
+- `POST /api/attendance/check-in` — when today's check-in already exists, answer
+  **409 Conflict** with the existing row instead of a dead-end 400:
+  `{ success:false, alreadyCheckedIn:true, attendance:{…}, message:'Already checked in today' }`
+  (message unchanged; `date` normalized with `dateOnly()` — it is a DATE column and
+  would otherwise hit the same serialization shift). Matches the repo's 409-conflict
+  convention (TOCTOU approvals) and `apiCall()` already surfaces non-2xx bodies.
+- `public/pages/employee/dashboard.html` — the check-in success/error handler now
+  has an `alreadyCheckedIn` branch: it renders the returned row immediately via the
+  new shared `renderTodayAttendance(row)` (extracted from `loadAttendanceStatus`,
+  which now reuses the `getTodayIST()` helper) and toasts *"You are already checked
+  in today - you can check out now."* → the **Check-Out** button appears instantly.
+- `public/sw.js` — cache name bumped `v8 → v9` (dashboard.html changed).
+
+No schema/migration; the only audit-relevant change is behavioral (no new mutating
+path, so no new `logAudit` call — check-in itself has never audited).
+
 ## 4. Verification record
 
 ### Environment (honesty note)
@@ -84,10 +111,15 @@ Under `TZ=UTC` the same value serializes `"2026-10-07T00:00:00.000Z"` (works) �
 proving the shift is strictly a host-TZ effect, and why the fix must build from
 local components (`dateOnly()`), which returns `"2026-10-07"` on every host.
 
+Deadlock pre-fix shape: duplicate check-in returned a dead-end
+`400 { success:false, message:'Already checked in today' }` (see
+`git show HEAD~?:server/routes/attendance.js` for the pre-fix branch) — the client
+had no recovery signal and no Check-Out path.
+
 ### Green evidence (post-fix)
 `scripts/qa-attendance-checkin-status.cjs` (hermetic `DATABASE_URL`, throwaway
 admin + 2 employees, today's `attendance` rows seeded directly so "admin sees it"
-is the premise, 3 logins, full API drive, then rollback) — **13/13 green**:
+is the premise, 3 logins, full API drive, then rollback) — **19/19 green**:
 
 - logins (admin / open-day employee / completed-day employee) succeed;
 - `GET /api/attendance/my` → every `date` is plain `YYYY-MM-DD`; a row exists with
@@ -95,6 +127,10 @@ is the premise, 3 logins, full API drive, then rollback) — **13/13 green**:
 - the dashboard's exact lookup (`(a.date||'').split('T')[0] === today`) now finds
   the **open** check-in (check_in + location intact) and the **completed** day
   (check_in + check_out + status intact);
+- **deadlock recovery**: duplicate check-in → **409** + `alreadyCheckedIn:true` +
+  the existing row with a plain date (check_in / location / status preserved);
+- **check-out succeeds after the recovery row** (the employee is never stranded)
+  and `/attendance/my` then shows `check_out` on today's row;
 - `GET /api/attendance/all` (admin register) ships plain dates throughout;
 - cleanup verified — DB left pristine (`0` QA employees remain).
 
@@ -103,9 +139,12 @@ login limiter allows 10 attempts/15 min per IP and the harness uses 3 — restar
 server before a rerun to reset it).
 
 ## 5. Blast radius
-- Changed: response `date` shape on `/api/attendance/my` + `/api/attendance/all`.
+- Changed: response `date` shape on `/api/attendance/my` + `/api/attendance/all`;
+  `POST /api/attendance/check-in` duplicate answer `400 → 409` (same message,
+  `alreadyCheckedIn` + row added — additive); employee dashboard check-in
+  handler + shared `renderTodayAttendance`; `sw.js` cache `v8 → v9`.
 - Consumers (verified compatible): employee dashboard (`loadAttendanceStatus`,
   month stats, recent attendance), employee `attendance.html` (calendar, summary,
   table), admin `attendance.html` (recent logs via `formatDate`).
-- Unchanged: schema, migrations, `sw.js`, other routes, manager attendance
-  endpoints (already `::text`).
+- Unchanged: schema, migrations, other routes, manager attendance
+  endpoints (already `::text`), notification paths (check-in still emits none).

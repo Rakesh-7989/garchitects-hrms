@@ -29,12 +29,26 @@ router.post('/check-in', verifyToken, async (req, res) => {
         }
 
         const existing = await query(
-            'SELECT id, check_in FROM attendance WHERE employee_id = $1 AND date = $2',
+            'SELECT id, check_in, check_out, status, check_in_location, break_start, break_end, break_log, date FROM attendance WHERE employee_id = $1 AND date = $2',
             [req.user.id, today]
         );
         
         if (existing.rows.length > 0 && existing.rows[0].check_in) {
-            return res.status(400).json({ success: false, message: 'Already checked in today' });
+            // Already checked in. Don't dead-end the UI: a client whose status
+            // view missed today's row (the historical DATE-serialization bug, a
+            // month/TZ boundary, a stale tab, ...) would otherwise show only a
+            // "Check In" button and clicking it would 400 with no way to reach
+            // Check-Out. Return the existing row so the dashboard can flip
+            // straight to the checked-in state. `date` is a DATE column (JS Date
+            // on the wire) - normalize it with dateOnly() like the read routes.
+            const row = existing.rows[0];
+            if (row.date !== undefined && row.date !== null) row.date = dateOnly(row.date);
+            return res.status(409).json({
+                success: false,
+                alreadyCheckedIn: true,
+                attendance: row,
+                message: 'Already checked in today'
+            });
         }
         
         // Check if late based on company settings

@@ -20,6 +20,13 @@
  * normalize `date` with server/utils/date.js `dateOnly()` -> plain YYYY-MM-DD,
  * independent of the server's timezone.
  *
+ * Also under test (deadlock recovery): POST /api/attendance/check-in answers
+ * 409 + `alreadyCheckedIn` + the existing row when today's check-in already
+ * exists, so a dashboard that missed today's row can flip straight to the
+ * checked-in state and Check-Out is always reachable (no more "check-in ->
+ * 'Already checked in today' -> no check-out button"). The harness proves the
+ * full recovery: duplicate check-in -> 409 -> check-out succeeds.
+ *
  * Run:
  *   1. Start the server (this machine's TZ is Asia/Kolkata, so the shift is
  *      real here; for determinism you may also `$env:TZ='Asia/Kolkata'` first).
@@ -158,6 +165,31 @@ async function main() {
     const foundOpen = rowsOpen.find(a => dd(a.date) === today);
     check('client "today" lookup finds the OPEN check-in (check_in preserved)', !!(foundOpen && String(foundOpen.check_in).startsWith('09:15')), foundOpen);
     check('open row location preserved', !!(foundOpen && (foundOpen.check_in_location || '').startsWith('17.')), foundOpen && foundOpen.check_in_location);
+
+    // ---- 3b. Deadlock recovery: "already checked in" must never strand the
+    //          employee without a Check-Out path ----------------------------
+    // Pre-fix: duplicate check-in was a dead-end 400 and the dashboard (which
+    // had missed today's row) had no Check-Out button at all. Now the server
+    // answers 409 with the existing row so the client can recover immediately.
+    const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    const dup = await api('POST', '/api/attendance/check-in', T.open, { location: '17.4255,78.4378', photo: tinyPng });
+    check('duplicate check-in -> 409 (conflict, not a dead-end 400)', dup.status === 409, { status: dup.status, json: dup.json });
+    check('409 carries alreadyCheckedIn flag', !!(dup.json && dup.json.alreadyCheckedIn === true), dup.json);
+    check('409 carries existing row with plain YYYY-MM-DD date', !!(dup.json && dup.json.attendance && dup.json.attendance.date === today), dup.json && dup.json.attendance);
+    check('409 row preserves check_in / location / status', !!(
+        dup.json && dup.json.attendance &&
+        String(dup.json.attendance.check_in).startsWith('09:15') &&
+        (dup.json.attendance.check_in_location || '').startsWith('17.') &&
+        dup.json.attendance.status === 'present'
+    ), dup.json && dup.json.attendance);
+
+    // The recovery the dashboard now performs from that 409 payload: the row is
+    // rendered as checked-in, so Check-Out is reachable and succeeds.
+    const co = await api('POST', '/api/attendance/check-out', T.open, { location: '17.4255,78.4378', photo: tinyPng });
+    check('check-out succeeds after the 409 recovery row (deadlock broken)', co.status === 200 && !!(co.json && co.json.success), co.json);
+    const myAfter = await api('GET', `/api/attendance/my?month=${month}&year=${year}`, T.open);
+    const afterRow = ((myAfter.json && myAfter.json.attendance) || []).find(a => dd(a.date) === today);
+    check(`after check-out, /attendance/my shows check_out on today's row`, !!(afterRow && afterRow.check_out), afterRow);
 
     const myDone = await api('GET', `/api/attendance/my?month=${month}&year=${year}`, T.done);
     const rowsDone = (myDone.json && myDone.json.attendance) || [];

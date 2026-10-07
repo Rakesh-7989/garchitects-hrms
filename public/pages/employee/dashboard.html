@@ -377,67 +377,75 @@
             }
         }
 
+        // Render the check-in/out widget from today's attendance row (or the
+        // "not checked in yet" state when row is falsy). Shared by the status
+        // poll and by the "already checked in" recovery path so a stale view
+        // can never strand an employee without a Check-Out button.
+        function renderTodayAttendance(row) {
+            if (!row) {
+                document.getElementById('checkInBtn').style.display = 'inline-flex';
+                document.getElementById('checkOutBtn').style.display = 'none';
+                document.getElementById('breakStartBtn').style.display = 'none';
+                document.getElementById('breakEndBtn').style.display = 'none';
+                document.getElementById('breakDuration').style.display = 'none';
+                document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--text-secondary);">Not checked in yet</p>';
+                document.getElementById('statusBadge').innerHTML = '<span class="badge badge-secondary">Not Started</span>';
+                return;
+            }
+            document.getElementById('statusCheckIn').textContent = row.check_in || '--';
+            document.getElementById('statusCheckOut').textContent = row.check_out || '--';
+            const loc = row.check_in_location || '';
+            document.getElementById('statusLocation').textContent = loc || '--';
+            if (loc) {
+                const el = document.getElementById('statusLocation');
+                if (loc.includes(',')) {
+                    const [lat, lon] = loc.split(',');
+                    el.innerHTML = '<a href="https://www.google.com/maps?q=' + encodeURIComponent(lat.trim() + ',' + lon.trim()) + '" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:none;"><i class="fas fa-map-marker-alt"></i> View on Map</a>';
+                } else {
+                    el.textContent = loc;
+                }
+            }
+            const totalBreakSecs = getTotalBreakSeconds(row, new Date());
+            if (row.break_start && !row.break_end) {
+                document.getElementById('statusBreakStart').textContent = row.break_start;
+                document.getElementById('statusBreakEnd').textContent = 'Running...';
+            } else if (totalBreakSecs > 0) {
+                document.getElementById('statusBreakStart').textContent = 'Taken';
+                document.getElementById('statusBreakEnd').textContent = String(Math.floor(totalBreakSecs/3600)).padStart(2,'0') + ':' + String(Math.floor((totalBreakSecs%3600)/60)).padStart(2,'0');
+            } else {
+                document.getElementById('statusBreakStart').textContent = '--';
+                document.getElementById('statusBreakEnd').textContent = '--';
+            }
+            document.getElementById('statusBadge').innerHTML = '<span class="badge badge-' + getStatusBadge(row.status) + '">' + escapeHtml(getStatusText(row.status)) + '</span>';
+            const onBreak = row.break_start && !row.break_end;
+            if (!row.check_out) {
+                document.getElementById('checkInBtn').style.display = 'none';
+                document.getElementById('checkOutBtn').style.display = onBreak ? 'none' : 'inline-flex';
+                document.getElementById('breakStartBtn').style.display = onBreak ? 'none' : 'inline-flex';
+                document.getElementById('breakEndBtn').style.display = onBreak ? 'inline-flex' : 'none';
+                document.getElementById('breakDuration').style.display = onBreak ? 'block' : 'none';
+                document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--secondary);font-weight:500;"><i class="fas fa-check-circle"></i> Checked in at ' + escapeHtml(row.check_in) + '</p>';
+                updateClock();
+            } else {
+                document.getElementById('checkInBtn').style.display = 'none';
+                document.getElementById('checkOutBtn').style.display = 'none';
+                document.getElementById('breakStartBtn').style.display = 'none';
+                document.getElementById('breakEndBtn').style.display = 'none';
+                document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--info);font-weight:500;"><i class="fas fa-check-double"></i> Day completed</p>';
+                document.getElementById('workDuration').style.display = 'none';
+            }
+        }
+
         async function loadAttendanceStatus() {
             const now = new Date();
             const data = await apiCall(`/attendance/my?month=${now.getMonth()+1}&year=${now.getFullYear()}`);
             if (data && data.success) {
-                const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-                todayAttendance = data.attendance?.find(a => {
-                    const adate = a.date ? a.date.split('T')[0] : '';
+                const today = getTodayIST();
+                todayAttendance = (data.attendance || []).find(a => {
+                    const adate = a.date ? String(a.date).split('T')[0] : '';
                     return adate === today;
-                });
-                if (todayAttendance) {
-                    document.getElementById('statusCheckIn').textContent = todayAttendance.check_in || '--';
-                    document.getElementById('statusCheckOut').textContent = todayAttendance.check_out || '--';
-                    const loc = todayAttendance.check_in_location || '';
-                    document.getElementById('statusLocation').textContent = loc || '--';
-                    if (loc) {
-                        const el = document.getElementById('statusLocation');
-                        if (loc.includes(',')) {
-                            const [lat, lon] = loc.split(',');
-                            el.innerHTML = '<a href="https://www.google.com/maps?q=' + encodeURIComponent(lat.trim() + ',' + lon.trim()) + '" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:none;"><i class="fas fa-map-marker-alt"></i> View on Map</a>';
-                        } else {
-                            el.textContent = loc;
-                        }
-                    }
-                    const totalBreakSecs = getTotalBreakSeconds(todayAttendance, new Date());
-                    if (todayAttendance.break_start && !todayAttendance.break_end) {
-                        document.getElementById('statusBreakStart').textContent = todayAttendance.break_start;
-                        document.getElementById('statusBreakEnd').textContent = 'Running...';
-                    } else if (totalBreakSecs > 0) {
-                        document.getElementById('statusBreakStart').textContent = 'Taken';
-                        document.getElementById('statusBreakEnd').textContent = String(Math.floor(totalBreakSecs/3600)).padStart(2,'0') + ':' + String(Math.floor((totalBreakSecs%3600)/60)).padStart(2,'0');
-                    } else {
-                        document.getElementById('statusBreakStart').textContent = '--';
-                        document.getElementById('statusBreakEnd').textContent = '--';
-                    }
-                    document.getElementById('statusBadge').innerHTML = '<span class="badge badge-' + getStatusBadge(todayAttendance.status) + '">' + escapeHtml(getStatusText(todayAttendance.status)) + '</span>';
-                    const onBreak = todayAttendance.break_start && !todayAttendance.break_end;
-                    if (!todayAttendance.check_out) {
-                        document.getElementById('checkInBtn').style.display = 'none';
-                        document.getElementById('checkOutBtn').style.display = onBreak ? 'none' : 'inline-flex';
-                        document.getElementById('breakStartBtn').style.display = onBreak ? 'none' : 'inline-flex';
-                        document.getElementById('breakEndBtn').style.display = onBreak ? 'inline-flex' : 'none';
-                        document.getElementById('breakDuration').style.display = onBreak ? 'block' : 'none';
-                        document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--secondary);font-weight:500;"><i class="fas fa-check-circle"></i> Checked in at ' + escapeHtml(todayAttendance.check_in) + '</p>';
-                        updateClock();
-                    } else {
-                        document.getElementById('checkInBtn').style.display = 'none';
-                        document.getElementById('checkOutBtn').style.display = 'none';
-                        document.getElementById('breakStartBtn').style.display = 'none';
-                        document.getElementById('breakEndBtn').style.display = 'none';
-                        document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--info);font-weight:500;"><i class="fas fa-check-double"></i> Day completed</p>';
-                        document.getElementById('workDuration').style.display = 'none';
-                    }
-                } else {
-                    document.getElementById('checkInBtn').style.display = 'inline-flex';
-                    document.getElementById('checkOutBtn').style.display = 'none';
-                    document.getElementById('breakStartBtn').style.display = 'none';
-                    document.getElementById('breakEndBtn').style.display = 'none';
-                    document.getElementById('breakDuration').style.display = 'none';
-                    document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--text-secondary);">Not checked in yet</p>';
-                    document.getElementById('statusBadge').innerHTML = '<span class="badge badge-secondary">Not Started</span>';
-                }
+                }) || null;
+                renderTodayAttendance(todayAttendance);
             }
         }
 
@@ -589,6 +597,14 @@
                 showToast('Checked in successfully!' + (data.has_photo ? ' Selfie verified.' : ''), 'success');
                 todayAttendance = null;
                 await loadAttendanceStatus();
+            } else if (data && data.alreadyCheckedIn) {
+                // The server already has today's check-in but the current view
+                // missed it - recover immediately so Check-Out is reachable
+                // instead of leaving the employee stuck with only a Check-In
+                // button that keeps 409ing.
+                todayAttendance = data.attendance || null;
+                renderTodayAttendance(todayAttendance);
+                showToast('You are already checked in today - you can check out now.', 'info');
             } else {
                 showToast(data?.message || 'Check-in failed', 'error');
             }

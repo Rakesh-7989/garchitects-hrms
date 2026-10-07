@@ -142,7 +142,11 @@ server guards (a hidden button must not be the only thing stopping a role).
   on any host east of UTC** (`DATE '2026-10-07'` → `"2026-10-06T18:30:00.000Z"` here), so the
   client's `date.split('T')[0] === getTodayIST()` lookup never matched today. Fix: normalize
   `date` with the repo `dateOnly()` helper in both routes (plain `YYYY-MM-DD`, TZ-independent).
-  No schema/client/sw changes. **QA: `scripts/qa-attendance-checkin-status.cjs` → 13/13 green**
+  **Deadlock recovery (same day):** a dashboard that missed today's row showed only "Check In",
+  which 400'd ("Already checked in today") with no Check-Out path — `POST /attendance/check-in`
+  now answers **409** + `alreadyCheckedIn` + the existing row, and the dashboard renders it
+  immediately (`renderTodayAttendance`) so Check-Out is always reachable; `sw.js` cache v9.
+  No schema changes. **QA: `scripts/qa-attendance-checkin-status.cjs` → 19/19 green**
   against a hermetic local Postgres on IST local time (see
   `docs/FEATURE_ATTENDANCE_CHECKIN_STATUS_FIX.md`).
 - **Work Assignments v2 — Increment 1 shipped (2026-10-07):** `blocked` status + reason,
