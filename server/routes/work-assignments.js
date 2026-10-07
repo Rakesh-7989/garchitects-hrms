@@ -4,7 +4,7 @@ const { query } = require('../config/database');
 const { verifyToken, isManager } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
-const { notify, managerIdsOf } = require('../services/notify');
+const { notify } = require('../services/notify');
 const { dateOnly } = require('../utils/date');
 const { leadCovers, myTreeIds } = require('./project-leads');
 
@@ -12,11 +12,14 @@ const { leadCovers, myTreeIds } = require('./project-leads');
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
 
 const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
-const STATUSES = ['assigned', 'in_progress', 'completed', 'cancelled'];
-// Legal status moves for the ASSIGNEE (assigner/admin may use the same table).
+const STATUSES = ['assigned', 'in_progress', 'blocked', 'completed', 'cancelled'];
+// Legal status moves (general). Cancellation is additionally restricted to the
+// assigner/admin in PUT: an assignee silently cancelling tracked work would make
+// the task vanish without the assigner's knowledge.
 const LEGAL_MOVES = {
-    assigned: ['in_progress', 'completed', 'cancelled'],
-    in_progress: ['completed', 'cancelled'],
+    assigned: ['in_progress', 'blocked', 'completed', 'cancelled'],
+    in_progress: ['blocked', 'completed', 'cancelled'],
+    blocked: ['in_progress', 'completed', 'cancelled'],
     completed: [],
     cancelled: []
 };
@@ -27,7 +30,8 @@ const SELECT = `
            wa.title, wa.description, wa.priority,
            COALESCE(wa.start_date, wa.created_at::date) AS start_date,
            wa.due_date, wa.status,
-           wa.completed_at,
+           wa.blocked_reason, wa.cancel_reason,
+           wa.started_at, wa.completed_at, wa.cancelled_at,
            COALESCE(wa.assigned_at, wa.created_at) AS assigned_at,
            wa.created_at, wa.updated_at,
            p.name as project_name,
@@ -161,6 +165,9 @@ router.post('/', verifyToken, isManager, async (req, res) => {
         if (!title || String(title).trim().length === 0) {
             return res.status(400).json({ success: false, message: 'Task title is required' });
         }
+        if (String(title).trim().length > 200) {
+            return res.status(400).json({ success: false, message: 'Task title must be 200 characters or fewer' });
+        }
         const to = parseInt(assignedTo, 10);
         if (isNaN(to)) return res.status(400).json({ success: false, message: 'assignedTo employee is required' });
 
@@ -192,8 +199,16 @@ router.post('/', verifyToken, isManager, async (req, res) => {
         if (due < start) {
             return res.status(400).json({ success: false, message: 'Expected end date cannot be before start date' });
         }
+        // A task cannot be born already closed.
         const st = status || 'assigned';
-        if (!STATUSES.includes(st)) return res.status(400).json({ success: false, message: 'Invalid status' });
+        if (!['assigned', 'in_progress', 'blocked'].includes(st)) {
+            return res.status(400).json({ success: false, message: 'Invalid status' });
+        }
+        // A task created straight into "blocked" must say why.
+        const blockedReason = req.body.blockedReason ? String(req.body.blockedReason).trim() : null;
+        if (st === 'blocked' && !blockedReason) {
+            return res.status(400).json({ success: false, message: 'A blocked reason is required' });
+        }
 
         // Assignee must exist and be active.
         const emp = await q(`SELECT id, status, employee_id FROM employees WHERE id = $1`, [to]);
@@ -223,7 +238,7 @@ router.post('/', verifyToken, isManager, async (req, res) => {
         // Duplicate-open warning: same assignee + project + title already open.
         const dup = await q(
             `SELECT id FROM work_assignments
-             WHERE assigned_to = $1 AND status IN ('assigned','in_progress')
+             WHERE assigned_to = $1 AND status IN ('assigned','in_progress','blocked')
                AND LOWER(title) = LOWER($2)
                AND project_id IS NOT DISTINCT FROM $3`,
             [to, String(title).trim(), proj]
@@ -237,10 +252,12 @@ router.post('/', verifyToken, isManager, async (req, res) => {
 
         const ins = await q(
             `INSERT INTO work_assignments
-                (project_id, unit_id, assigned_by, assigned_to, title, description, priority, start_date, due_date, status, completed_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                (project_id, unit_id, assigned_by, assigned_to, title, description, priority, start_date, due_date, status, blocked_reason, started_at, completed_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
              RETURNING id`,
             [proj, unit, req.user.id, to, String(title).trim(), description || null, prio, start, due, st,
+             st === 'blocked' ? blockedReason : null,
+             st === 'in_progress' ? new Date() : null,
              st === 'completed' ? new Date() : null]
         );
 
@@ -285,8 +302,9 @@ router.post('/', verifyToken, isManager, async (req, res) => {
 
 /**
  * PUT /api/work-assignments/:id
- * - Assignee: may only change status (assigned → in_progress → completed/cancelled)
- * - Assigner or admin/hr: full edit (details + status)
+ * - Assignee: may only move status (assigned → in_progress/blocked → completed),
+ *   and must give a reason to block. Cannot cancel.
+ * - Assigner or admin/hr: full edit (details + status), including cancel (with reason).
  */
 router.put('/:id', verifyToken, async (req, res) => {
     try {
@@ -297,33 +315,67 @@ router.put('/:id', verifyToken, async (req, res) => {
         if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Assignment not found' });
         const row = cur.rows[0];
 
+        const MANAGER_ROLES = ['admin', 'hr', 'manager', 'team_lead'];
         const isAssignee = Number(row.assigned_to) === Number(req.user.id);
         const isAssigner = Number(row.assigned_by) === Number(req.user.id);
         const overlord = req.user.role === 'admin' || req.user.role === 'hr';
-        if (!isAssignee && !isAssigner && !overlord) {
+        // Authority follows the row's assigner, but a DEMOTED assigner must not
+        // retain full control: they may only edit if they still hold a manager
+        // role. (Employees who are merely the assignee use the status-only path.)
+        const editor = (isAssigner && MANAGER_ROLES.includes(req.user.role)) || overlord;
+        if (!isAssignee && !editor) {
             return res.status(403).json({ success: false, message: 'Access denied. Only the assigner, the assignee, or admin can update this assignment.' });
         }
 
-        const { status, title, description, priority, startDate, dueDate, projectId, unitId, assignedTo } = req.body;
+        const { status, title, description, priority, startDate, dueDate, projectId, unitId, assignedTo, blockedReason, cancelReason } = req.body;
         const changes = {};
+        // Moving into "blocked"/"cancelled" is a deliberate act that needs a note.
+        const blockedNote = blockedReason !== undefined && blockedReason !== null ? String(blockedReason).trim() : '';
+        const cancelNote = cancelReason !== undefined && cancelReason !== null ? String(cancelReason).trim() : '';
+        // Only the assigner (or admin/hr) may cancel tracked work.
+        const canCancel = editor;
 
         if (status !== undefined && status !== null) {
             if (!canMove(row.status, status)) {
                 return res.status(400).json({ success: false, message: `Cannot move assignment from '${row.status}' to '${status}'` });
             }
+            const moving = status !== row.status;
+            if (status === 'cancelled' && !canCancel) {
+                return res.status(403).json({ success: false, message: 'Only the assigner or admin can cancel this assignment' });
+            }
+            if (moving && status === 'blocked' && !blockedNote) {
+                return res.status(400).json({ success: false, message: 'A blocked reason is required' });
+            }
+            if (moving && status === 'cancelled' && !cancelNote) {
+                return res.status(400).json({ success: false, message: 'A cancellation reason is required' });
+            }
             changes.status = status;
-            changes.completed_at = status === 'completed' ? new Date() : null;
+            if (status === 'blocked') {
+                changes.blocked_reason = blockedNote || row.blocked_reason || null;
+                changes.cancel_reason = null;
+            } else if (status === 'cancelled') {
+                changes.cancel_reason = cancelNote || row.cancel_reason || null;
+                changes.blocked_reason = null;
+            } else {
+                changes.blocked_reason = null;
+                changes.cancel_reason = null;
+            }
+            // Record the actual moments; the planned start_date/due_date stay as plans.
+            if (moving && status === 'in_progress' && !row.started_at) changes.started_at = new Date();
+            changes.completed_at = status === 'completed' ? (row.completed_at || new Date()) : null;
+            changes.cancelled_at = status === 'cancelled' ? (row.cancelled_at || new Date()) : null;
         }
 
-        // Assignee may ONLY change status.
-        if (isAssignee && !isAssigner && !overlord) {
-            const extra = Object.keys(req.body).filter(k => k !== 'status');
+        // Assignee may ONLY change status (plus the blocked note that explains it).
+        if (isAssignee && !editor) {
+            const extra = Object.keys(req.body).filter(k => k !== 'status' && k !== 'blockedReason');
             if (extra.length > 0) {
                 return res.status(400).json({ success: false, message: 'Assignees may only update the status' });
             }
         } else {
             if (title !== undefined && title !== null) {
                 if (String(title).trim().length === 0) return res.status(400).json({ success: false, message: 'Task title is required' });
+                if (String(title).trim().length > 200) return res.status(400).json({ success: false, message: 'Task title must be 200 characters or fewer' });
                 changes.title = String(title).trim();
             }
             if (description !== undefined && description !== null) changes.description = description;
@@ -347,9 +399,10 @@ router.put('/:id', verifyToken, async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Expected end date (Due date) is required and cannot be cleared' });
             }
 
-            // Validate timeline if both exist (after setting changes)
-            const finalStart = changes.start_date || row.start_date;
-            const finalDue = changes.due_date || row.due_date;
+            // Validate timeline if both exist. dateOnly() normalises the mixed
+            // string/Date operands (a raw `string < Date` compare is always false).
+            const finalStart = dateOnly(changes.start_date || row.start_date);
+            const finalDue = dateOnly(changes.due_date || row.due_date);
             if (finalStart && finalDue && finalDue < finalStart) {
                 return res.status(400).json({ success: false, message: 'Expected end date cannot be before start date' });
             }
@@ -358,12 +411,16 @@ router.put('/:id', verifyToken, async (req, res) => {
                 if (!pu.ok) return res.status(pu.status).json({ success: false, message: pu.message });
                 const puErr = await validateProjectUnit(pu.proj, pu.unit);
                 if (puErr) return res.status(puErr.status).json({ success: false, message: puErr.message });
-                // P9/D11 parallel: a team_lead assigner may not move the work
-                // onto a project/unit they do not lead.
-                if (req.user.role === 'team_lead' && pu.proj !== null) {
-                    const covers = await leadCovers(pu.proj, pu.unit, req.user.id);
-                    if (!covers) {
-                        return res.status(403).json({ success: false, message: 'You can only assign work on projects/units you lead' });
+                // P9/D11 parallel: a team_lead assigner may not move the work onto
+                // a project/unit they don't lead — and may not CLEAR a project
+                // they don't lead (that would drop the boundary check entirely).
+                if (req.user.role === 'team_lead') {
+                    const targetProj = pu.proj !== null ? pu.proj : row.project_id;
+                    if (targetProj !== null) {
+                        const covers = await leadCovers(targetProj, pu.proj !== null ? pu.unit : row.unit_id, req.user.id);
+                        if (!covers) {
+                            return res.status(403).json({ success: false, message: 'You can only assign work on projects/units you lead' });
+                        }
                     }
                 }
                 changes.project_id = pu.proj;
@@ -391,17 +448,29 @@ router.put('/:id', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'No changes to apply' });
         }
 
-        const colMap = { status: 'status', title: 'title', description: 'description', priority: 'priority', start_date: 'start_date', due_date: 'due_date', project_id: 'project_id', unit_id: 'unit_id', assigned_to: 'assigned_to', completed_at: 'completed_at' };
+        const colMap = { status: 'status', title: 'title', description: 'description', priority: 'priority', start_date: 'start_date', due_date: 'due_date', project_id: 'project_id', unit_id: 'unit_id', assigned_to: 'assigned_to', blocked_reason: 'blocked_reason', cancel_reason: 'cancel_reason', started_at: 'started_at', completed_at: 'completed_at', cancelled_at: 'cancelled_at' };
         const sets = ['updated_at = NOW()'];
         const vals = [];
         let p = 1;
         for (const k of Object.keys(changes)) {
-            sets.push(`${colMap[k]} = $${p}`);
+            const col = colMap[k];
+            // Guard against a future change key with no column mapping (that would
+            // otherwise interpolate "undefined" and 500 with a syntax error).
+            if (!col) { console.error('work-assignments: unmapped change key skipped:', k); continue; }
+            sets.push(`${col} = $${p}`);
             vals.push(changes[k]);
             p++;
         }
         vals.push(id);
-        await q(`UPDATE work_assignments SET ${sets.join(', ')} WHERE id = $${p}`, vals);
+        // TOCTOU-safe: apply only if the row still holds the status we validated
+        // against, so two concurrent edits cannot both win.
+        const upd = await q(
+            `UPDATE work_assignments SET ${sets.join(', ')} WHERE id = $${p} AND status = $${p + 1}`,
+            [...vals, row.status]
+        );
+        if (upd.rowCount === 0) {
+            return res.status(409).json({ success: false, message: 'This assignment was changed by someone else. Please reload and try again.' });
+        }
 
         logAudit({
             actorId: req.user.id, action: 'work.assign_update', entityType: 'work_assignment',
@@ -416,33 +485,38 @@ router.put('/:id', verifyToken, async (req, res) => {
         // signal was the status flipping in a list someone had to remember to
         // re-open.
         const newStatus = changes.status;
-        if (newStatus && newStatus !== row.status && (newStatus === 'completed' || newStatus === 'cancelled' || newStatus === 'in_progress')) {
-            // Name who actually did it. An assigner/admin may also move the
-            // status, so crediting the assignee for it would be a lie in the
-            // manager's feed.
-            const actorIsAssignee = Number(req.user.id) === Number(after.assigned_to);
-            // req.user carries the JWT payload (id, employee_id, email, role, name) —
-            // NOT first_name/last_name, so do not reach for those here.
-            const actorName = actorIsAssignee
-                ? ([after.assigned_to_first, after.assigned_to_last].filter(Boolean).join(' ') || 'The assignee')
-                : (req.user.name || [after.assigned_by_first, after.assigned_by_last].filter(Boolean).join(' ')
-                    || req.user.employee_id || 'Someone');
-            const done = newStatus === 'completed';
-            const cancelled = newStatus === 'cancelled';
-            const verb = done ? 'completed' : cancelled ? 'cancelled' : 'started';
-            // The assigner hears about it; when the assigner updated it
-            // themselves there is nothing to tell them (notify() drops self-sends).
-            notify({
-                employeeId: after.assigned_by,
-                type: done ? 'work_completed' : cancelled ? 'work_cancelled' : 'work_started',
-                title: `${actorName} ${verb}: ${after.title}`,
-                body: (after.project_name ? after.project_name + (after.unit_name ? ' · ' + after.unit_name : '') : '')
-                    + (changes.due_date ? `\nDue ${dateOnly(changes.due_date)}` : ''),
-                url: '/manager/team-work',
-                entityType: 'work_assignment',
-                entityId: id,
-                actorId: req.user.id
-            }).catch(() => {});
+        if (newStatus && newStatus !== row.status) {
+            const VERBS = { in_progress: 'started', completed: 'completed', cancelled: 'cancelled', blocked: 'blocked' };
+            const TYPES = { in_progress: 'work_started', completed: 'work_completed', cancelled: 'work_cancelled', blocked: 'work_blocked' };
+            const verb = VERBS[newStatus];
+            if (verb) {
+                // Name who actually did it. An assigner/admin may also move the
+                // status, so crediting the assignee for it would be a lie in the
+                // assigner's feed. req.user carries the JWT payload (id,
+                // employee_id, email, role, name) — NOT first_name/last_name.
+                const actorIsAssignee = Number(req.user.id) === Number(after.assigned_to);
+                const actorName = actorIsAssignee
+                    ? ([after.assigned_to_first, after.assigned_to_last].filter(Boolean).join(' ') || 'The assignee')
+                    : (req.user.name || [after.assigned_by_first, after.assigned_by_last].filter(Boolean).join(' ')
+                        || req.user.employee_id || 'Someone');
+                // Tell the party who did NOT act: the assigner learns their work
+                // progressed or stalled; the assignee learns it was changed.
+                const recipient = actorIsAssignee ? Number(after.assigned_by) : Number(after.assigned_to);
+                const reason = newStatus === 'blocked' ? after.blocked_reason
+                    : newStatus === 'cancelled' ? after.cancel_reason : null;
+                notify({
+                    employeeId: recipient,
+                    type: TYPES[newStatus],
+                    title: `${actorName} ${verb}: ${after.title}`,
+                    body: (after.project_name ? after.project_name + (after.unit_name ? ' · ' + after.unit_name : '') : '')
+                        + (reason ? `\nReason: ${reason}` : '')
+                        + (changes.due_date ? `\nDue ${dateOnly(changes.due_date)}` : ''),
+                    url: recipient === Number(after.assigned_to) ? '/employee/my-work' : '/manager/team-work',
+                    entityType: 'work_assignment',
+                    entityId: id,
+                    actorId: req.user.id
+                }).catch(() => {});
+            }
         }
 
         // Reassignment moves ownership - the new owner must be told, or the task
@@ -460,6 +534,21 @@ router.put('/:id', verifyToken, async (req, res) => {
                 entityId: id,
                 actorId: req.user.id
             }).catch(() => {});
+
+            // The previous owner should know the task moved away, or it silently
+            // vanishes from their list with no signal.
+            if (Number(row.assigned_to) !== Number(req.user.id)) {
+                notify({
+                    employeeId: row.assigned_to,
+                    type: 'work_reassigned_away',
+                    title: `Work reassigned: ${after.title}`,
+                    body: 'This task is no longer assigned to you.',
+                    url: '/employee/my-work',
+                    entityType: 'work_assignment',
+                    entityId: id,
+                    actorId: req.user.id
+                }).catch(() => {});
+            }
         }
 
         res.json({ success: true, message: 'Assignment updated', assignment: after });
@@ -479,16 +568,33 @@ router.delete('/:id', verifyToken, async (req, res) => {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id)) return res.status(400).json({ success: false, message: 'Invalid assignment id' });
 
-        const cur = await q(`SELECT id, assigned_by FROM work_assignments WHERE id = $1`, [id]);
+        const cur = await q(`SELECT id, assigned_by, assigned_to, title FROM work_assignments WHERE id = $1`, [id]);
         if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Assignment not found' });
 
-        const allowed = Number(cur.rows[0].assigned_by) === Number(req.user.id) || req.user.role === 'admin';
+        // A demoted assigner no longer has delete authority; admin always may.
+        const isAssigner = Number(cur.rows[0].assigned_by) === Number(req.user.id)
+            && ['admin', 'hr', 'manager', 'team_lead'].includes(req.user.role);
+        const allowed = isAssigner || req.user.role === 'admin';
         if (!allowed) {
             return res.status(403).json({ success: false, message: 'Only the assigner or admin can delete this assignment' });
         }
 
         await q(`DELETE FROM work_assignments WHERE id = $1`, [id]);
         logAudit({ actorId: req.user.id, action: 'work.delete', entityType: 'work_assignment', entityId: id, details: {}, ip: req.ip });
+
+        // Tell the assignee their task disappeared (unless they withdrew it).
+        if (Number(cur.rows[0].assigned_to) !== Number(req.user.id)) {
+            notify({
+                employeeId: cur.rows[0].assigned_to,
+                type: 'work_withdrawn',
+                title: `Assignment withdrawn: ${cur.rows[0].title}`,
+                body: 'This task was withdrawn by the assigner.',
+                url: '/employee/my-work',
+                entityType: 'work_assignment',
+                entityId: id,
+                actorId: req.user.id
+            }).catch(() => {});
+        }
         res.json({ success: true, message: 'Assignment deleted' });
     } catch (error) {
         console.error('Error deleting work assignment:', error);

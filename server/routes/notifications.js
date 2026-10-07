@@ -77,8 +77,8 @@ router.get('/counts', verifyToken, isManager, async (req, res) => {
             // Work assignments still open in the caller's scope (D3): admin/HR see
             // all, manager/team-lead see the ones THEY created (same scope as GET /).
             (req.user.role === 'admin' || req.user.role === 'hr')
-                ? safe(query("SELECT COUNT(*) as count FROM work_assignments WHERE status IN ('assigned','in_progress')"))
-                : safe(query("SELECT COUNT(*) as count FROM work_assignments WHERE status IN ('assigned','in_progress') AND assigned_by = $1", [req.user.id])),
+                ? safe(query("SELECT COUNT(*) as count FROM work_assignments WHERE status IN ('assigned','in_progress','blocked')"))
+                : safe(query("SELECT COUNT(*) as count FROM work_assignments WHERE status IN ('assigned','in_progress','blocked') AND assigned_by = $1", [req.user.id])),
             // Projects the caller leads (project-level or unit-level rows),
             // distinct per project — lights up the bell / nav badge on
             // "My Led Projects" the moment a lead is designated (P9).

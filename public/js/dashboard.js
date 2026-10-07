@@ -524,7 +524,9 @@ async function loadNotifBadge() {
     if (!user) return;
     try {
         let count = 0;
-        if (user.role === 'admin') {
+        if (user.role === 'admin' || user.role === 'hr') {
+            // HR has the same pending-action surface as admin (incl. Team Work),
+            // and the server already computes org-wide counts for role 'hr'.
             const data = await apiCall('/notifications/counts');
             if (data && data.success) {
                 count = data.counts.pendingLeaves + data.counts.pendingWfh + data.counts.pendingProfileUpdates + data.counts.announcementsUnread + data.counts.pendingTickets + (parseInt(data.counts.openWorkAssignments) || 0) + (parseInt(data.counts.openLeadProjects) || 0) + (parseInt(data.counts.pendingTransfers) || 0) + (parseInt(data.counts.pendingAccessRequests) || 0) + (parseInt(data.counts.activeHandovers) || 0) + (parseInt(data.counts.unreadNotifications) || 0);

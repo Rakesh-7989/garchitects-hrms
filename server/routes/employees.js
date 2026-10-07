@@ -1270,6 +1270,10 @@ router.delete('/:id/permanent', verifyToken, isAdmin, async (req, res) => {
             await client.query('DELETE FROM profile_update_requests WHERE employee_id = $1', [req.params.id]);
             await client.query('DELETE FROM announcement_reads WHERE employee_id = $1', [req.params.id]);
             await client.query('DELETE FROM password_reset_otps WHERE email = $1', [employee.email]);
+            // work_assignments has NOT NULL FKs to employees with no ON DELETE rule,
+            // so rows the employee assigned or received must go first or the final
+            // DELETE FROM employees throws 23503 and rolls the whole purge back.
+            await client.query('DELETE FROM work_assignments WHERE assigned_by = $1 OR assigned_to = $1', [req.params.id]);
             await client.query('DELETE FROM employees WHERE id = $1', [req.params.id]);
             await client.query('COMMIT');
         } catch (e) {

@@ -135,8 +135,22 @@ server guards (a hidden button must not be the only thing stopping a role).
   grace/missed-checkout tracking, self-reported daily work logs, work-assignment mandatory
   timelines, full offboarding journey, and governance workflows (cross-team transfers,
   TL leave-handover with cover lead, project read-access requests).
+- **Work Assignments v2 — Increment 1 shipped (2026-10-07):** `blocked` status + reason,
+  assignee cannot hard-cancel, cancel/block require a reason, actual timestamps
+  (`started_at`/`cancelled_at`/`assigned_at` + `start_date`), counterpart notifications
+  (incl. `work_blocked`/`work_withdrawn`/`work_reassigned_away`), TOCTOU-safe conditional
+  update (409), born-closed POST blocked, title/length + date guards, daily-log
+  assignment-link ownership guard (H1), admin permanent-delete cleans WA FKs (H2),
+  demoted-assigner role guard (H3), HR dashboard badge parity, `work_date` honored on
+  log PUT, assigned_at backfill. Schema in all three layers
+  (schema.sql / index.js startup / schemaRepair). **QA: `scripts/qa-work-assignments-v2.cjs`
+  → 38/38 green** against a hermetic local Postgres (no prod DB reachable from this
+  machine — see `docs/FEATURE_WORK_ASSIGNMENTS_REDESIGN.md` §9). Increment 2 (events
+  timeline + filters/search/pagination + daily-log roll-up) and Increment 3 (bulk
+  assign/comments) remain.
 - Existing docs: `docs/FEATURE_UNITS_WORK_ASSIGN.md`,
-  `docs/FEATURE_OFFBOARDING.md`, `docs/FEATURE_WORKFLOWS_GOVERNANCE.md`.
+  `docs/FEATURE_WORK_ASSIGNMENTS_REDESIGN.md`, `docs/FEATURE_OFFBOARDING.md`,
+  `docs/FEATURE_WORKFLOWS_GOVERNANCE.md`.
 
 ---
 

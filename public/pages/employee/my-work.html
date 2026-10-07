@@ -108,6 +108,11 @@
                     <div class="stat-label">In Progress</div>
                 </div>
                 <div class="work-stat">
+                    <div class="stat-icon" style="background:#EDE9FE;color:#5B21B6;"><i class="fas fa-circle-exclamation"></i></div>
+                    <div class="stat-num" id="statBlocked">0</div>
+                    <div class="stat-label">Blocked</div>
+                </div>
+                <div class="work-stat">
                     <div class="stat-icon" style="background:#D1FAE5;color:#059669;"><i class="fas fa-check-circle"></i></div>
                     <div class="stat-num" id="statDone">0</div>
                     <div class="stat-label">Completed</div>
@@ -130,6 +135,7 @@
                     <button class="chip-btn active" data-f="all" onclick="setFilter('all')">All</button>
                     <button class="chip-btn" data-f="open" onclick="setFilter('open')">Open</button>
                     <button class="chip-btn" data-f="in_progress" onclick="setFilter('in_progress')">In Progress</button>
+                    <button class="chip-btn" data-f="blocked" onclick="setFilter('blocked')">Blocked</button>
                     <button class="chip-btn" data-f="completed" onclick="setFilter('completed')">Completed</button>
                     <button class="chip-btn" data-f="cancelled" onclick="setFilter('cancelled')">Cancelled</button>
                     <button class="chip-btn" data-f="overdue" onclick="setFilter('overdue')">Overdue</button>
@@ -191,7 +197,7 @@
 
         function isOverdue(t) {
             if (!t.due_date) return false;
-            if (t.status !== 'assigned' && t.status !== 'in_progress') return false;
+            if (!['assigned', 'in_progress', 'blocked'].includes(t.status)) return false;
             return String(t.due_date).slice(0, 10) < getTodayIST();
         }
 
@@ -212,10 +218,12 @@
         function renderStats() {
             const open = allTasks.filter(t => t.status === 'assigned').length;
             const prog = allTasks.filter(t => t.status === 'in_progress').length;
+            const blocked = allTasks.filter(t => t.status === 'blocked').length;
             const done = allTasks.filter(t => t.status === 'completed').length;
             const due = allTasks.filter(isOverdue).length;
             document.getElementById('statOpen').textContent = open;
             document.getElementById('statProgress').textContent = prog;
+            document.getElementById('statBlocked').textContent = blocked;
             document.getElementById('statDone').textContent = done;
             document.getElementById('statDue').textContent = due;
         }
@@ -229,6 +237,10 @@
         function filterTasks() {
             if (curFilter === 'all') return allTasks;
             if (curFilter === 'overdue') return allTasks.filter(isOverdue);
+            // "Open" = not yet started (mirrors the Open stat tile). Previously
+            // this compared against a literal status 'open' that never exists,
+            // so the chip always showed an empty list.
+            if (curFilter === 'open') return allTasks.filter(t => t.status === 'assigned');
             return allTasks.filter(t => t.status === curFilter);
         }
 
@@ -241,6 +253,7 @@
             const map = {
                 assigned: ['badge-warning', 'Assigned'],
                 in_progress: ['badge-warning', 'In Progress'],
+                blocked: ['badge-danger', 'Blocked'],
                 completed: ['badge-success', 'Completed'],
                 cancelled: ['badge-secondary', 'Cancelled']
             };
@@ -248,15 +261,20 @@
             return '<span class="badge ' + cls + '" style="font-size:0.68rem;">' + label + '</span>';
         }
 
+        // The assignee drives progress but cannot cancel (only the assigner/admin
+        // can) — a silent cancel would make the task vanish for the assigner.
         function actionButtons(t) {
             if (t.status === 'completed' || t.status === 'cancelled') return '';
             const btns = [];
             if (t.status === 'assigned') {
                 btns.push('<button class="btn btn-sm btn-primary" onclick="updateStatus(' + t.id + ', \'in_progress\')"><i class="fas fa-play"></i> Start</button>');
             }
-            if (t.status === 'assigned' || t.status === 'in_progress') {
-                btns.push('<button class="btn btn-sm btn-success" onclick="updateStatus(' + t.id + ', \'completed\')"><i class="fas fa-check"></i> Mark Complete</button>');
-                btns.push('<button class="btn btn-sm btn-danger" onclick="cancelTask(' + t.id + ')"><i class="fas fa-times"></i> Cancel</button>');
+            if (t.status === 'blocked') {
+                btns.push('<button class="btn btn-sm btn-primary" onclick="updateStatus(' + t.id + ', \'in_progress\')"><i class="fas fa-rotate-right"></i> Unblock</button>');
+            }
+            btns.push('<button class="btn btn-sm btn-success" onclick="updateStatus(' + t.id + ', \'completed\')"><i class="fas fa-check"></i> Mark Complete</button>');
+            if (t.status !== 'blocked') {
+                btns.push('<button class="btn btn-sm btn-secondary" onclick="blockTask(' + t.id + ')"><i class="fas fa-circle-exclamation"></i> Blocked</button>');
             }
             return btns.join('');
         }
@@ -269,6 +287,9 @@
             const assignerHtml = t.assigned_by_first ? '<i class="fas fa-user-tie"></i> ' + escapeHtml((t.assigned_by_first || '') + ' ' + (t.assigned_by_last || '')) : '';
             const assignedOnHtml = t.assigned_at ? '<i class="fas fa-paper-plane"></i> Assigned ' + formatDate(t.assigned_at) : '';
             const doneHtml = (t.status === 'completed' && t.completed_at) ? '<span><i class="fas fa-check-circle"></i> Completed ' + formatDate(t.completed_at) + '</span>' : '';
+            const blockedHtml = (t.status === 'blocked' && t.blocked_reason)
+                ? '<div class="task-meta" style="margin-top:8px;color:#B91C1C;"><i class="fas fa-circle-exclamation"></i> Blocked: ' + escapeHtml(t.blocked_reason) + '</div>'
+                : '';
             return '<div class="task-card">' +
                 '<div class="task-top">' +
                     '<div><div class="task-title">' + escapeHtml(t.title) + ' ' + prioPill(t.priority) + '</div>' +
@@ -277,6 +298,7 @@
                 '</div>' +
                 (t.description ? '<div class="task-desc">' + escapeHtml(t.description) + '</div>' : '') +
                 (doneHtml ? '<div class="task-meta" style="margin-top:8px;">' + doneHtml + '</div>' : '') +
+                blockedHtml +
                 '<div class="task-actions">' + actionButtons(t) + '</div>' +
             '</div>';
         }
@@ -291,19 +313,24 @@
             container.innerHTML = list.map(taskCard).join('');
         }
 
-        async function updateStatus(id, status) {
-            const r = await apiCall('/work-assignments/' + id, 'PUT', { status });
+        async function updateStatus(id, status, extra) {
+            const r = await apiCall('/work-assignments/' + id, 'PUT', Object.assign({ status }, extra || {}));
             if (r && r.success) {
-                showToast(status === 'completed' ? 'Task completed 🎉' : 'Status updated', 'success');
+                const msg = status === 'completed' ? 'Task completed 🎉'
+                    : status === 'blocked' ? 'Marked as blocked'
+                    : 'Status updated';
+                showToast(msg, 'success');
                 loadMyWork();
             } else if (r && r.message) {
                 showToast(r.message, 'error');
             }
         }
 
-        function cancelTask(id) {
-            if (!confirm('Cancel this assignment?')) return;
-            updateStatus(id, 'cancelled');
+        function blockTask(id) {
+            const reason = prompt('What is blocking this task? (required)');
+            if (reason === null) return;
+            if (!reason.trim()) { showToast('A blocked reason is required', 'error'); return; }
+            updateStatus(id, 'blocked', { blockedReason: reason.trim() });
         }
 
         // ---------- Daily Work Log (self-reported) ----------
@@ -370,7 +397,7 @@
             if (!sel || sel.dataset.loaded === '1') return;
             const data = await apiCall('/work-assignments/my');
             const list = (data && data.success ? data.assignments || [] : [])
-                .filter(a => a.status === 'assigned' || a.status === 'in_progress');
+                .filter(a => ['assigned', 'in_progress', 'blocked'].includes(a.status));
             list.forEach(a => {
                 const o = document.createElement('option');
                 o.value = a.id;
@@ -396,8 +423,15 @@
                     descEl.value = l.description || '';
                     asgEl.value = l.assignment_id ? String(l.assignment_id) : '';
                 }
-                // Adjust the select if the linked task is no longer in the open list.
-                if (asgEl.value && asgEl.selectedIndex < 0) asgEl.value = '';
+                // Keep an already-linked task selectable even if it has since been
+                // completed/cancelled, so editing the log never silently unlinks it.
+                if (asgEl.value && asgEl.selectedIndex < 0) {
+                    const o = document.createElement('option');
+                    o.value = asgEl.value;
+                    o.textContent = (l && l.assignment_title ? l.assignment_title : 'Linked task') + ' (closed)';
+                    asgEl.appendChild(o);
+                    asgEl.value = String(l.assignment_id);
+                }
             } else {
                 dateEl.value = todayStr();
                 titleEl.value = '';

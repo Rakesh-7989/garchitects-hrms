@@ -109,6 +109,7 @@
                     <button class="chip-btn active" data-f="all" onclick="setFilter('all')">All</button>
                     <button class="chip-btn" data-f="assigned" onclick="setFilter('assigned')">Assigned</button>
                     <button class="chip-btn" data-f="in_progress" onclick="setFilter('in_progress')">In Progress</button>
+                    <button class="chip-btn" data-f="blocked" onclick="setFilter('blocked')">Blocked</button>
                     <button class="chip-btn" data-f="completed" onclick="setFilter('completed')">Completed</button>
                     <button class="chip-btn" data-f="cancelled" onclick="setFilter('cancelled')">Cancelled</button>
                     <button class="chip-btn" data-f="overdue" onclick="setFilter('overdue')">Overdue</button>
@@ -158,7 +159,9 @@
                 </div>
                 <div class="form-group"><label>Task Title *</label><input type="text" class="form-control" id="waTitle" maxlength="200" placeholder="e.g. Draft section drawings for Tower B"></div>
                 <div class="form-group"><label>Description</label><textarea class="form-control" id="waDesc" rows="3" placeholder="Details of the work expected"></textarea></div>
-                <div class="form-group" id="waStatusRow" style="display:none;"><label>Status</label><select class="form-control" id="waStatus"><option value="assigned">Assigned</option><option value="in_progress">In Progress</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>
+                <div class="form-group" id="waStatusRow" style="display:none;"><label>Status</label><select class="form-control" id="waStatus" onchange="onStatusChange()"><option value="assigned">Assigned</option><option value="in_progress">In Progress</option><option value="blocked">Blocked</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>
+                <div class="form-group" id="waBlockedReasonRow" style="display:none;"><label>Blocked reason *</label><input type="text" class="form-control" id="waBlockedReason" maxlength="255" placeholder="e.g. Waiting on client approval"></div>
+                <div class="form-group" id="waCancelReasonRow" style="display:none;"><label>Cancellation reason *</label><input type="text" class="form-control" id="waCancelReason" maxlength="255" placeholder="e.g. Scope dropped by client"></div>
                 <div class="modal-footer" style="padding:0;margin-top:12px;">
                     <button type="button" class="btn btn-secondary" onclick="closeWorkModal()">Cancel</button>
                     <button type="button" class="btn btn-primary" id="workSaveBtn" onclick="saveAssignment()"><i class="fas fa-paper-plane"></i> Assign</button>
@@ -192,8 +195,9 @@
         let editingId = null;
         // Only legal status targets are offered (mirrors the server's LEGAL_MOVES).
         const STATUS_TARGETS = {
-            assigned: ['assigned', 'in_progress', 'completed', 'cancelled'],
-            in_progress: ['in_progress', 'completed', 'cancelled'],
+            assigned: ['assigned', 'in_progress', 'blocked', 'completed', 'cancelled'],
+            in_progress: ['in_progress', 'blocked', 'completed', 'cancelled'],
+            blocked: ['blocked', 'in_progress', 'completed', 'cancelled'],
             completed: ['completed'],
             cancelled: ['cancelled']
         };
@@ -208,11 +212,19 @@
                 sel.appendChild(o);
             });
             sel.value = cur;
+            onStatusChange();
+        }
+
+        // Show the reason box the moment the status needs one.
+        function onStatusChange() {
+            const s = document.getElementById('waStatus').value;
+            document.getElementById('waBlockedReasonRow').style.display = s === 'blocked' ? 'block' : 'none';
+            document.getElementById('waCancelReasonRow').style.display = s === 'cancelled' ? 'block' : 'none';
         }
 
         function isOverdue(t) {
             if (!t.due_date) return false;
-            if (t.status !== 'assigned' && t.status !== 'in_progress') return false;
+            if (!['assigned', 'in_progress', 'blocked'].includes(t.status)) return false;
             return String(t.due_date).slice(0, 10) < getTodayIST();
         }
 
@@ -255,6 +267,7 @@
             const map = {
                 assigned: ['badge-warning', 'Assigned'],
                 in_progress: ['badge-warning', 'In Progress'],
+                blocked: ['badge-danger', 'Blocked'],
                 completed: ['badge-success', 'Completed'],
                 cancelled: ['badge-secondary', 'Cancelled']
             };
@@ -286,6 +299,11 @@
             const assignedOnHtml = a.assigned_at ? '<span><i class="fas fa-paper-plane"></i> Assigned ' + formatDate(a.assigned_at) + '</span>' : '';
             const startHtml = a.start_date ? '<span><i class="fas fa-play"></i> Start ' + formatDate(a.start_date) + '</span>' : '';
             const doneHtml = (a.status === 'completed' && a.completed_at) ? '<span><i class="fas fa-check-circle"></i> Completed ' + formatDate(a.completed_at) + '</span>' : '';
+            const reasonHtml = (a.status === 'blocked' && a.blocked_reason)
+                ? '<div class="task-meta" style="margin-top:8px;color:#B91C1C;"><i class="fas fa-circle-exclamation"></i> Blocked: ' + escapeHtml(a.blocked_reason) + '</div>'
+                : (a.status === 'cancelled' && a.cancel_reason)
+                ? '<div class="task-meta" style="margin-top:8px;color:var(--text-secondary);"><i class="fas fa-ban"></i> Cancelled: ' + escapeHtml(a.cancel_reason) + '</div>'
+                : '';
             return '<div class="task-card">' +
                 '<div class="task-top">' +
                     '<div><div class="task-title">' + escapeHtml(a.title) + ' ' + prioPill(a.priority) + '</div>' +
@@ -294,6 +312,7 @@
                 '</div>' +
                 (a.description ? '<div class="task-desc">' + escapeHtml(a.description) + '</div>' : '') +
                 (doneHtml ? '<div class="task-meta" style="margin-top:8px;">' + doneHtml + '</div>' : '') +
+                reasonHtml +
                 '<div class="task-actions">' + cardActions(a) + '</div>' +
             '</div>';
         }
@@ -380,6 +399,10 @@
             document.getElementById('waTitle').value = '';
             document.getElementById('waDesc').value = '';
             document.getElementById('waStatusRow').style.display = 'none';
+            document.getElementById('waBlockedReasonRow').style.display = 'none';
+            document.getElementById('waCancelReasonRow').style.display = 'none';
+            document.getElementById('waBlockedReason').value = '';
+            document.getElementById('waCancelReason').value = '';
             document.getElementById('workSaveBtn').innerHTML = '<i class="fas fa-paper-plane"></i> Assign';
             document.getElementById('workModal').classList.add('active');
         }
@@ -402,6 +425,8 @@
             document.getElementById('waTitle').value = a.title || '';
             document.getElementById('waDesc').value = a.description || '';
             document.getElementById('waStatusRow').style.display = 'block';
+            document.getElementById('waBlockedReason').value = a.blocked_reason || '';
+            document.getElementById('waCancelReason').value = a.cancel_reason || '';
             fillStatusOptions(a.status);
             document.getElementById('workSaveBtn').innerHTML = '<i class="fas fa-save"></i> Save';
             document.getElementById('workModal').classList.add('active');
@@ -431,7 +456,16 @@
                 projectId: document.getElementById('waProject').value ? parseInt(document.getElementById('waProject').value, 10) : null,
                 unitId: document.getElementById('waUnit').value ? parseInt(document.getElementById('waUnit').value, 10) : null
             };
-            if (editingId) payload.status = document.getElementById('waStatus').value;
+            if (editingId) {
+                const st = document.getElementById('waStatus').value;
+                const blockedReason = document.getElementById('waBlockedReason').value.trim();
+                const cancelReason = document.getElementById('waCancelReason').value.trim();
+                if (st === 'blocked' && !blockedReason) { showToast('A blocked reason is required', 'error'); return; }
+                if (st === 'cancelled' && !cancelReason) { showToast('A cancellation reason is required', 'error'); return; }
+                payload.status = st;
+                if (st === 'blocked') payload.blockedReason = blockedReason;
+                if (st === 'cancelled') payload.cancelReason = cancelReason;
+            }
             const btn = document.getElementById('workSaveBtn');
             btn.disabled = true;
             const r = editingId

@@ -102,7 +102,7 @@ router.get('/attendance', verifyToken, isAdminOrHr, async (req, res) => {
 // @access  Private (Admin)
 router.get('/work-assignments', verifyToken, isAdminOrHr, async (req, res) => {
     try {
-        const openFilter = `wa.status IN ('assigned','in_progress')`;
+        const openFilter = `wa.status IN ('assigned','in_progress','blocked')`;
         const [byStatus, byEmployee, byProject, recent] = await Promise.all([
             query(`SELECT wa.status, COUNT(*)::int as count FROM work_assignments wa GROUP BY wa.status`),
             query(

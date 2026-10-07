@@ -364,11 +364,47 @@ async function runMigrations() {
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
         )`);
+        // Work-assignments redesign (v2): "blocked" state + reasons + actual
+        // timestamps. Additive columns; the status CHECK is re-created so the
+        // new state is accepted on databases created before this release.
+        await query(`ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS blocked_reason TEXT`);
+        await query(`ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS cancel_reason TEXT`);
+        await query(`ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS started_at TIMESTAMP`);
+        await query(`ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP`);
+        await query(`ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS start_date DATE`);
+        await query(`ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP DEFAULT NOW()`);
+        // One-off repair: legacy rows were backfilled with the migration instant
+        // when assigned_at was added; restore it to the created_at we do know.
+        await query(`UPDATE work_assignments SET assigned_at = created_at WHERE assigned_at IS NOT NULL AND created_at IS NOT NULL AND assigned_at > created_at + interval '1 minute'`);
+        await query(`ALTER TABLE work_assignments DROP CONSTRAINT IF EXISTS work_assignments_status_check`);
+        await query(`ALTER TABLE work_assignments ADD CONSTRAINT work_assignments_status_check CHECK (status IN ('assigned','in_progress','blocked','completed','cancelled'))`);
         await query(`CREATE INDEX IF NOT EXISTS idx_wa_assignee ON work_assignments(assigned_to, status)`);
         await query(`CREATE INDEX IF NOT EXISTS idx_wa_assigner ON work_assignments(assigned_by, status)`);
         await query(`CREATE INDEX IF NOT EXISTS idx_wa_project ON work_assignments(project_id)`);
         console.log('[Migration] work_assignments ensured.');
     } catch (e) { console.warn('[Migration] work_assignments migration skipped:', e.message); }
+
+    // Daily work logs (self-reported) + optional link to an assignment.
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS daily_work_logs (
+            id SERIAL PRIMARY KEY,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            work_date DATE NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            project_id INT REFERENCES projects(id) ON DELETE SET NULL,
+            unit_id INT REFERENCES project_units(id) ON DELETE SET NULL,
+            assignment_id INT REFERENCES work_assignments(id) ON DELETE SET NULL,
+            logged_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE (employee_id, work_date, title)
+        )`);
+        await query(`ALTER TABLE daily_work_logs ADD COLUMN IF NOT EXISTS assignment_id INT REFERENCES work_assignments(id) ON DELETE SET NULL`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_daily_work_logs_assignment ON daily_work_logs(assignment_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_daily_work_logs_employee_date ON daily_work_logs(employee_id, work_date DESC)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_daily_work_logs_work_date ON daily_work_logs(work_date DESC)`);
+        console.log('[Migration] daily_work_logs ensured.');
+    } catch (e) { console.warn('[Migration] daily_work_logs migration skipped:', e.message); }
 
     // Project Leads (P9): designated owners of a project / its units. unit_id
     // NULL = whole project (future units auto-follow); rows are additive only.

@@ -302,8 +302,12 @@ const ENSURE_TABLE_DDL = {
             start_date DATE,
             due_date DATE,
             status VARCHAR(20) DEFAULT 'assigned'
-                CHECK (status IN ('assigned','in_progress','completed','cancelled')),
+                CHECK (status IN ('assigned','in_progress','blocked','completed','cancelled')),
+            blocked_reason TEXT,
+            cancel_reason TEXT,
+            started_at TIMESTAMP,
             completed_at TIMESTAMP,
+            cancelled_at TIMESTAMP,
             assigned_at TIMESTAMP DEFAULT NOW(),
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
@@ -566,6 +570,11 @@ const PROJECT_MODULE_ALTER_COLUMNS = {
     'work_assignments': {
         start_date: 'DATE',
         assigned_at: 'TIMESTAMP DEFAULT NOW()',
+        // Redesign (v2): blocked state + reasons + actual timestamps.
+        blocked_reason: 'TEXT',
+        cancel_reason: 'TEXT',
+        started_at: 'TIMESTAMP',
+        cancelled_at: 'TIMESTAMP',
     }
 };
 
@@ -684,6 +693,9 @@ function pgErrorResponse(error) {
     }
     if (error && error.code === '23502') {
         return { status: 400, message: 'A required field is missing.' };
+    }
+    if (error && error.code === '22001') {
+        return { status: 400, message: 'One of the entered values is too long.' };
     }
     return { status: 500, message: 'Server error' };
 }

@@ -2,12 +2,15 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken } = require('../middleware/auth');
-const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { runWithSchemaRepair, pgErrorResponse: basePgError } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
+const { dateOnly, istDateString } = require('../utils/date');
 const { myTreeIds } = require('./project-leads');
 
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
 
+// Feature-specific friendly messages on top of the shared mapper (which covers
+// 22001/22008/23514/23502 too, instead of the old narrow local copy).
 function pgErrorResponse(error) {
     if (!error) return { status: 500, message: 'Server error' };
     if (error.code === '23505') {
@@ -16,10 +19,32 @@ function pgErrorResponse(error) {
     if (error.code === '23503') {
         return { status: 400, message: 'Invalid reference (project/unit/assignment).' };
     }
-    if (error.code === '22P02' || error.code === '22007') {
-        return { status: 400, message: 'Invalid date format.' };
+    return basePgError(error);
+}
+
+// A daily log may link only to the caller's OWN open assignment. Without this,
+// any employee could attach a log to someone else's task and read its title and
+// assigner back through GET /api/daily-work-logs (FK oracle + cross-scope leak).
+async function validateAssignmentLink(aid, userId) {
+    if (aid === null) return null;
+    if (Number.isNaN(aid)) return { status: 400, message: 'Invalid assignment id' };
+    const r = await q(`SELECT status FROM work_assignments WHERE id = $1 AND assigned_to = $2`, [aid, userId]);
+    if (r.rows.length === 0) return { status: 404, message: 'Linked assignment not found' };
+    // A closed assignment the caller already owns stays linkable (so editing an
+    // old log never force-unlinks it); only foreign/unknown ids are rejected.
+    return null;
+}
+
+// Unit must belong to the selected project (mirrors work-assignments validation).
+async function validateLogProjectUnit(pid, uid) {
+    if (pid !== null && Number.isNaN(pid)) return { status: 400, message: 'Invalid project id' };
+    if (uid !== null && Number.isNaN(uid)) return { status: 400, message: 'Invalid unit id' };
+    if (uid !== null && pid === null) return { status: 400, message: 'A unit requires a project' };
+    if (pid !== null && uid !== null) {
+        const u = await q(`SELECT id FROM project_units WHERE id = $1 AND project_id = $2`, [uid, pid]);
+        if (u.rows.length === 0) return { status: 400, message: 'Unit does not belong to the selected project' };
     }
-    return { status: 500, message: 'Server error' };
+    return null;
 }
 
 // Shared SELECT so the employee ("mine") and manager ("team") views return the
@@ -106,10 +131,18 @@ router.post('/', verifyToken, async (req, res) => {
         if (!title || String(title).trim().length === 0) {
             return res.status(400).json({ success: false, message: 'Title is required' });
         }
-        const wd = work_date || new Date().toISOString().slice(0, 10);
+        if (String(title).trim().length > 255) {
+            return res.status(400).json({ success: false, message: 'Title must be 255 characters or fewer' });
+        }
+        const wd = work_date ? dateOnly(work_date) : istDateString();
+        if (!wd) return res.status(400).json({ success: false, message: 'Invalid work date (YYYY-MM-DD)' });
         const pid = projectId ? parseInt(projectId, 10) : null;
         const uid = unitId ? parseInt(unitId, 10) : null;
         const aid = assignmentId ? parseInt(assignmentId, 10) : null;
+        const linkErr = await validateAssignmentLink(aid, req.user.id);
+        if (linkErr) return res.status(linkErr.status).json({ success: false, message: linkErr.message });
+        const puErr = await validateLogProjectUnit(pid, uid);
+        if (puErr) return res.status(puErr.status).json({ success: false, message: puErr.message });
         const ins = await q(
             `INSERT INTO daily_work_logs (employee_id, work_date, title, description, project_id, unit_id, assignment_id)
              VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
@@ -134,19 +167,30 @@ router.put('/:id', verifyToken, async (req, res) => {
         if (existing.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Work log not found' });
         }
-        const { title, description, projectId, unitId, assignmentId } = req.body;
+        const { title, description, projectId, unitId, assignmentId, work_date } = req.body;
         if (!title || String(title).trim().length === 0) {
             return res.status(400).json({ success: false, message: 'Title is required' });
         }
+        if (String(title).trim().length > 255) {
+            return res.status(400).json({ success: false, message: 'Title must be 255 characters or fewer' });
+        }
+        const wd = work_date ? dateOnly(work_date) : null;
+        if (work_date && !wd) return res.status(400).json({ success: false, message: 'Invalid work date (YYYY-MM-DD)' });
+        const pid = projectId ? parseInt(projectId, 10) : null;
+        const uid = unitId ? parseInt(unitId, 10) : null;
+        const aid = assignmentId ? parseInt(assignmentId, 10) : null;
+        const linkErr = await validateAssignmentLink(aid, req.user.id);
+        if (linkErr) return res.status(linkErr.status).json({ success: false, message: linkErr.message });
+        const puErr = await validateLogProjectUnit(pid, uid);
+        if (puErr) return res.status(puErr.status).json({ success: false, message: puErr.message });
         await q(
             `UPDATE daily_work_logs
-             SET title = $1, description = $2, project_id = $3, unit_id = $4, assignment_id = $5, updated_at = NOW()
-             WHERE id = $6 AND employee_id = $7`,
+             SET title = $1, description = $2, project_id = $3, unit_id = $4, assignment_id = $5,
+                 work_date = COALESCE($6, work_date), updated_at = NOW()
+             WHERE id = $7 AND employee_id = $8`,
             [
                 String(title).trim(), description || null,
-                projectId ? parseInt(projectId, 10) : null,
-                unitId ? parseInt(unitId, 10) : null,
-                assignmentId ? parseInt(assignmentId, 10) : null,
+                pid, uid, aid, wd,
                 id, req.user.id
             ]
         );
