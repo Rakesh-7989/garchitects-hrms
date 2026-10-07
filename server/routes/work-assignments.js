@@ -304,7 +304,7 @@ router.put('/:id', verifyToken, async (req, res) => {
             return res.status(403).json({ success: false, message: 'Access denied. Only the assigner, the assignee, or admin can update this assignment.' });
         }
 
-        const { status, title, description, priority, dueDate, projectId, unitId, assignedTo } = req.body;
+        const { status, title, description, priority, startDate, dueDate, projectId, unitId, assignedTo } = req.body;
         const changes = {};
 
         if (status !== undefined && status !== null) {
