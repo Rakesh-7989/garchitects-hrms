@@ -135,6 +135,16 @@ server guards (a hidden button must not be the only thing stopping a role).
   grace/missed-checkout tracking, self-reported daily work logs, work-assignment mandatory
   timelines, full offboarding journey, and governance workflows (cross-team transfers,
   TL leave-handover with cover lead, project read-access requests).
+- **Attendance check-in status fix shipped (2026-10-07):** employee dashboard/calendar
+  showed "Not checked in yet" (and demanded a re-check-in) even though the row existed and
+  admin saw it. Root cause: `GET /api/attendance/my` + `/all` returned the Postgres `DATE`
+  raw; pg parses it at LOCAL midnight and `res.json()` serializes to the **previous UTC day
+  on any host east of UTC** (`DATE '2026-10-07'` → `"2026-10-06T18:30:00.000Z"` here), so the
+  client's `date.split('T')[0] === getTodayIST()` lookup never matched today. Fix: normalize
+  `date` with the repo `dateOnly()` helper in both routes (plain `YYYY-MM-DD`, TZ-independent).
+  No schema/client/sw changes. **QA: `scripts/qa-attendance-checkin-status.cjs` → 13/13 green**
+  against a hermetic local Postgres on IST local time (see
+  `docs/FEATURE_ATTENDANCE_CHECKIN_STATUS_FIX.md`).
 - **Work Assignments v2 — Increment 1 shipped (2026-10-07):** `blocked` status + reason,
   assignee cannot hard-cancel, cancel/block require a reason, actual timestamps
   (`started_at`/`cancelled_at`/`assigned_at` + `start_date`), counterpart notifications
@@ -150,7 +160,7 @@ server guards (a hidden button must not be the only thing stopping a role).
   assign/comments) remain.
 - Existing docs: `docs/FEATURE_UNITS_WORK_ASSIGN.md`,
   `docs/FEATURE_WORK_ASSIGNMENTS_REDESIGN.md`, `docs/FEATURE_OFFBOARDING.md`,
-  `docs/FEATURE_WORKFLOWS_GOVERNANCE.md`.
+  `docs/FEATURE_WORKFLOWS_GOVERNANCE.md`, `docs/FEATURE_ATTENDANCE_CHECKIN_STATUS_FIX.md`.
 
 ---
 

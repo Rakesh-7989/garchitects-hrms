@@ -402,6 +402,13 @@ router.get('/my', verifyToken, async (req, res) => {
         
         sqlQuery += ' ORDER BY a.date DESC';
         const result = await query(sqlQuery, params);
+        // node-postgres parses DATE columns (OID 1082) at LOCAL midnight, so
+        // JSON-serializing them yields the PREVIOUS UTC day on any host east of
+        // UTC (e.g. "2026-10-07" -> "2026-10-06T18:30:00.000Z"). The client finds
+        // "today" via date.split('T')[0], gets yesterday, and never matches the
+        // row - showing "Not checked in yet" while the record exists. Ship a
+        // plain YYYY-MM-DD built from local components (TZ-independent).
+        result.rows.forEach(r => { r.date = dateOnly(r.date); });
         res.json({ success: true, attendance: result.rows });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
@@ -447,6 +454,9 @@ router.get('/all', verifyToken, isAdminOrHr, async (req, res) => {
             params.push(parseInt(limit));
         }
         const result = await query(sqlQuery, params);
+        // Same DATE-serialization fix as /my: ship plain YYYY-MM-DD so every
+        // consumer sees the stored calendar date regardless of server TZ.
+        result.rows.forEach(r => { r.date = dateOnly(r.date); });
         res.json({ success: true, attendance: result.rows });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
