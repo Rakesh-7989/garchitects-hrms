@@ -124,15 +124,16 @@ probes skipped (no `QA_LIVE_ADMIN_*` creds) as designed.
 
 ### Hermetic self-check (2026-10-09)
 
-`node scripts/qa-commander.cjs` (hermetic, own PG cluster + server) → **50/50 green,
+`node scripts/qa-commander.cjs` (hermetic, own PG cluster + server) → **55/55 green,
 exit 0**:
 
 - discover: manifest written (35 modules / 7 guards / portals).
 - regression: check-in status **24/24**, break finalize **41/41**, my read-path
-  **15/15**, work assignments v2 **38/38** — with a fresh server (login-limiter
-  reset) between each.
-- rbac: 5/5 role logins; no-token sweep 4/4; **34 matrix rows / 160 cell probes
-  all green**; `db:permEmp-deleted` confirms the permanent-delete row actually
+  **15/15**, work assignments v2 **38/38**, fix-sprint audit batch **57/57** —
+  with a fresh server (login-limiter reset) between each.
+- rbac: 5/5 role logins; no-token sweep 4/4; **37 matrix rows / 175 cell probes
+  all green** (increments: `regularize-review`, `wfh-apply`, `att-photo` from
+  the fix batch); `db:permEmp-deleted` confirms the permanent-delete row actually
   removed the QA row; cleanup leaves **0 leftover rows**.
 - db: 3 WARN-only scans, 0 leftovers.
 

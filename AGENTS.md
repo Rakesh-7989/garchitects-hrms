@@ -132,6 +132,31 @@ server guards (a hidden button must not be the only thing stopping a role).
 
 ## 11. Current state (update this as work ships)
 
+- **Sprint-1 fix batch shipped (2026-10-09):** the full-system + My Info audit
+  fixes all landed in one hermetic-verified push. Closes **MI-1…MI-7** (raw
+  Postgres `DATE` normalization across 9 read surfaces, 3-way loaders,
+  profile-request cancel TOCTOU+audit, project-access approve/reject/cancel
+  race → single grant + audited cancel, office-timezone weekday math,
+  `getTodayIST()` instead of `toISOString()`, client timeout+retry) plus the
+  shared batch: A1 one-time migration ledger (destructive reshape DDL now gated
+  + recorded), A2 cloudinary removed, A3 bare `/manager` `/employee` roots,
+  F5 token_version + F7 indexes + F8 `MIN_PASSWORD_LEN=8` + schema F3/F4/F6/F8/F9
+  3-layer parity, F10 central `pgErrorResponse` handler, C-F1 document download
+  guard `admin||hr||owner`, D-F5 MAIN_ADMIN-only admin edits, D-F7 forgot-password
+  uniform 200 (incl. SMTP-down branch — no enumeration), D-F6 full logAudit
+  coverage, security F1–F4 raw-error hygiene, contract F6 photo widen + F9 bell
+  sum, and Gamma admin-UI parity (write buttons + HR page redirects). **QA:
+  hermetic `npm run qa` 55/55 stages green** (regression 24+41+15+38+**57**,
+  RBAC **37 rows / 175 probes**, invariants 43, zero leftovers); new
+  `scripts/qa-fix-sprint.cjs` (57 checks) + 3 matrix rows
+  (`regularize-review`, `wfh-apply`, `att-photo`); `sw.js` v14. The new harness
+  caught 3 real bugs pre-ship (regularization `dateOnly` ReferenceError,
+  forgot-password 502 oracle, reset-password token_version trap). See
+  `docs/FEATURE_MYINFO_FIXES.md` + `qa/triage.md` (all 36 findings now SHIPPED/
+  DEFERRED/DECISION-NEEDED — 0 high open). **Decision gate open:** contract F8 /
+  security F11 (projects read parity), security F12 (audit-log rows), F9
+  (block-admin-self-service exceptions), F13/F15 (accepted), F14 (verify).
+
 - **Standing AI-agent team chartered (2026-10-09):** `docs/AGENT_TEAM.md` declares the
   G-Architects HRMS Product Crew — a versioned roster of 7 specialist agents, each trained by
   its role file in `agents/*.md` (schema-architect, api-engineer, ui-engineer, qa-engineer,
