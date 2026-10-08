@@ -164,7 +164,7 @@ server guards (a hidden button must not be the only thing stopping a role).
   `auth.js` now calls `reg.update()` on `visibilitychange` (app regains focus) —
   `sw.js` is served `no-cache`, so a fresh deploy auto-applies on the next open;
   the sw cache name is bumped on every static-asset change per §8 (currently
-  `v11`). Reload is always the only step needed — never a reinstall.
+  `v12`). Reload is always the only step needed — never a reinstall.
 - **Attendance reload + break-integrity fixes shipped (2026-10-08), four atomic
   commits (`2bc74d7`, `4c5d8b8`, `e119c16`, docs):**
   - **Reload false "Check In" fixed (A):** the dashboard's static HTML defaulted
