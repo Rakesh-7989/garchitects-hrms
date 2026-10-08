@@ -8,7 +8,6 @@ const { sendToUser } = require('../services/push');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
 const { logAudit } = require('../utils/audit');
 const { getWorkWeekConfig } = require('../utils/workWeek');
-const { runWithSchemaRepair } = require('../utils/schemaRepair');
 const { resolveApproverRouting } = require('../utils/approvalRouting');
 
 function isWeekend(dateStr, weekoffDay = 0) {
@@ -203,6 +202,21 @@ router.post('/apply', verifyToken, blockAdminSelfService, validateLeave, async (
             } catch (e) { console.error('Push notify error:', e.message); }
         }
 
+        logAudit({
+            actorId: req.user.id,
+            action: 'leave.apply',
+            entityType: 'leave_application',
+            entityId: result.rows[0].id,
+            details: {
+                leave_type_id,
+                start_date,
+                end_date,
+                total_days: totalDays,
+                reason
+            },
+            ip: req.ip
+        });
+
         res.status(201).json({ success: true, leave: result.rows[0] });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
@@ -221,6 +235,10 @@ router.get('/my', verifyToken, async (req, res) => {
             ORDER BY la.created_at DESC`,
             [req.user.id]
         );
+        result.rows.forEach(r => {
+            if (r.start_date) r.start_date = dateOnly(r.start_date);
+            if (r.end_date) r.end_date = dateOnly(r.end_date);
+        });
         res.json({ success: true, leaves: result.rows });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
@@ -251,6 +269,10 @@ router.get('/all', verifyToken, isAdminOrHr, async (req, res) => {
 
         sqlQuery += ' ORDER BY la.created_at DESC';
         const result = await query(sqlQuery, params);
+        result.rows.forEach(r => {
+            if (r.start_date) r.start_date = dateOnly(r.start_date);
+            if (r.end_date) r.end_date = dateOnly(r.end_date);
+        });
 
         const counts = await query(
             `SELECT status, COUNT(*) as count FROM leave_applications GROUP BY status`
@@ -276,6 +298,10 @@ router.get('/pending', verifyToken, isAdminOrHr, async (req, res) => {
             WHERE la.status = 'pending'
             ORDER BY la.created_at DESC`
         );
+        result.rows.forEach(r => {
+            if (r.start_date) r.start_date = dateOnly(r.start_date);
+            if (r.end_date) r.end_date = dateOnly(r.end_date);
+        });
         res.json({ success: true, leaves: result.rows });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });

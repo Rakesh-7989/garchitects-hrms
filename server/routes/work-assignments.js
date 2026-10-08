@@ -86,6 +86,10 @@ async function validateProjectUnit(proj, unit) {
 router.get('/my', verifyToken, async (req, res) => {
     try {
         const result = await q(`${SELECT} WHERE wa.assigned_to = $1 ORDER BY wa.created_at DESC`, [req.user.id]);
+        result.rows.forEach(r => {
+            if (r.start_date) r.start_date = dateOnly(r.start_date);
+            if (r.due_date) r.due_date = dateOnly(r.due_date);
+        });
         res.json({ success: true, assignments: result.rows });
     } catch (error) {
         console.error('Error fetching my work assignments:', error);
@@ -111,6 +115,10 @@ router.get('/', verifyToken, isManager, async (req, res) => {
         if (projectId) { p++; conditions.push(`wa.project_id = $${p}`); params.push(projectId); }
         const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
         const result = await q(`${SELECT} ${where} ORDER BY wa.created_at DESC`, params);
+        result.rows.forEach(r => {
+            if (r.start_date) r.start_date = dateOnly(r.start_date);
+            if (r.due_date) r.due_date = dateOnly(r.due_date);
+        });
         res.json({ success: true, assignments: result.rows });
     } catch (error) {
         console.error('Error listing work assignments:', error);

@@ -7,11 +7,12 @@ const crypto = require('crypto');
 const { query } = require('../config/database');
 const { verifyToken, generateToken, blockAdminSelfService } = require('../middleware/auth');
 const { logAudit } = require('../utils/audit');
-const { validateLogin, collectFieldErrors } = require('../middleware/validation');
+const { validateLogin, collectFieldErrors, MIN_PASSWORD_LEN } = require('../middleware/validation');
 const { sendOTPEmail } = require('../services/email');
 const { uploadBuffer } = require('../services/storage');
 const { EDITABLE_FIELDS } = require('./profileUpdates');
 const { rateLimit, clientIp } = require('../utils/rateLimit');
+const { dateOnly } = require('../utils/date');
 
 const uploadProfile = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1 * 1024 * 1024 }, fileFilter: (req, file, cb) => { const allowed = /jpeg|jpg|png|gif/; const ext = allowed.test(path.extname(file.originalname).toLowerCase()); const mime = allowed.test(file.mimetype); cb(null, ext && mime); } });
 
@@ -83,11 +84,14 @@ router.post('/forgot-password', forgotLimiter, async (req, res) => {
             [identifier, 'active']
         );
 
-        // Be explicit: an identifier that does not match any active account
-        // (employee ID, office email or personal email) is simply invalid -
-        // no OTP is generated for unknown users.
+        // Uniform response: never reveal whether an account exists (an
+        // unauthenticated caller must not be able to enumerate the workforce).
+        // The lookup stays silent; only the limiter (5/15m/IP) throttles probing.
+        const GENERIC_RESET_MESSAGE = 'If this account exists, a reset code has been sent to your registered email.';
+
         if (result.rows.length === 0 || !result.rows[0].email) {
-            return res.status(404).json({ success: false, message: 'Invalid Employee ID or Email' });
+            console.log('Forgot password: no active account for identifier (silent 200).');
+            return res.json({ success: true, message: GENERIC_RESET_MESSAGE });
         }
 
         const user = result.rows[0];
@@ -112,11 +116,15 @@ router.post('/forgot-password', forgotLimiter, async (req, res) => {
 
         const sent = await sendOTPEmail(deliveryEmail, otp, { empId: user.employee_id });
         if (!sent) {
+            // Uniform response survives email outages too: an unauthenticated
+            // caller must never distinguish "no account" (silent 200 above) from
+            // "account exists but SMTP is down" — that difference is account
+            // enumeration. Log the delivery failure (ops visibility), reply the
+            // SAME generic 200 either way.
             console.error('Forgot password: OTP email not sent (SMTP not configured). deliveryEmail=' + deliveryEmail);
-            return res.status(502).json({ success: false, message: 'Email service is not configured. Contact your administrator.' });
         }
 
-        res.json({ success: true, message: 'Reset code sent to your registered email. Valid for 5 minutes.' });
+        res.json({ success: true, message: GENERIC_RESET_MESSAGE });
     } catch (error) {
         console.error('Forgot password error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -182,8 +190,8 @@ router.post('/reset-password', otpResetLimiter, async (req, res) => {
         if (!identifier || !otp || !new_password) {
             return res.status(400).json({ success: false, message: 'All fields are required' });
         }
-        if (new_password.length < 6) {
-            return res.status(400).json({ success: false, message: 'New password must be at least 6 characters' });
+        if (new_password.length < MIN_PASSWORD_LEN) {
+            return res.status(400).json({ success: false, message: `New password must be at least ${MIN_PASSWORD_LEN} characters` });
         }
 
         const result = await query(
@@ -396,7 +404,11 @@ router.get('/me', verifyToken, async (req, res) => {
         
         const user = result.rows[0];
         delete user.password_hash;
-        
+
+        // DATE columns arrive as JS Date at local midnight; serialize as plain
+        // YYYY-MM-DD so TZ-independent consumers never see the previous day.
+        if (user.date_of_birth) user.date_of_birth = dateOnly(user.date_of_birth);
+
         res.json({
             success: true,
             user
@@ -598,10 +610,10 @@ router.put('/change-password', verifyToken, passwordLimiter, async (req, res) =>
             });
         }
         
-        if (new_password.length < 6) {
+        if (new_password.length < MIN_PASSWORD_LEN) {
             return res.status(400).json({ 
                 success: false, 
-                message: 'New password must be at least 6 characters' 
+                message: `New password must be at least ${MIN_PASSWORD_LEN} characters` 
             });
         }
         
@@ -787,6 +799,15 @@ router.post('/profile-request', verifyToken, blockAdminSelfService, async (req, 
             return res.json({ success: true, message: 'No changes to submit', requests: [] });
         }
 
+        logAudit({
+            actorId: req.user.id,
+            action: 'profile_request.create',
+            entityType: 'profile_update_request',
+            entityId: null,
+            details: { field_count: created.length, fields: created.map((c) => c.field) },
+            ip: req.ip
+        });
+
         res.status(201).json({
             success: true,
             message: `${created.length} change request(s) submitted for admin approval`,
@@ -823,20 +844,28 @@ router.get('/profile-requests', verifyToken, async (req, res) => {
 // @access  Private
 router.post('/profile-request/:id/cancel', verifyToken, async (req, res) => {
     try {
-        const check = await query(
-            'SELECT id FROM profile_update_requests WHERE id = $1 AND employee_id = $2 AND status = $3',
-            [req.params.id, req.user.id, 'pending']
-        );
-
-        if (check.rows.length === 0) {
-            return res.status(400).json({ success: false, message: 'Pending request not found' });
-        }
-
+        // TOCTOU-safe (AGENTS §5): ONE guarded UPDATE — exactly one winner. If an
+        // admin approval/rejection lands between read and write, the conditional
+        // WHERE status='pending' fails and the cancel loses instead of overwriting
+        // an already-reviewed request (MI-3: race could clobber approved → cancelled).
         const result = await query(
             `UPDATE profile_update_requests SET status = 'cancelled', updated_at = NOW()
-            WHERE id = $1 RETURNING id, status`,
-            [req.params.id]
+            WHERE id = $1 AND employee_id = $2 AND status = 'pending' RETURNING id, status`,
+            [req.params.id, req.user.id]
         );
+
+        if (result.rows.length === 0) {
+            return res.status(400).json({ success: false, message: 'Pending request not found or already reviewed' });
+        }
+
+        logAudit({
+            actorId: req.user.id,
+            action: 'profile_request.cancel',
+            entityType: 'profile_update_request',
+            entityId: result.rows[0].id,
+            details: { status: 'cancelled' },
+            ip: req.ip
+        });
 
         res.json({ success: true, message: 'Request cancelled', request: result.rows[0] });
     } catch (error) {

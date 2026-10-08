@@ -82,6 +82,9 @@ router.get('/', verifyToken, async (req, res) => {
         const params = [req.user.id];
         sql = applyDateFilters(sql, params, 2, req.query);
         const r = await q(sql, params);
+        r.rows.forEach(row => {
+            if (row.work_date) row.work_date = dateOnly(row.work_date);
+        });
         res.json({ success: true, logs: r.rows });
     } catch (error) {
         console.error('Get daily work logs error:', error);
@@ -114,6 +117,9 @@ router.get('/team', verifyToken, async (req, res) => {
         }
         sql = applyDateFilters(sql, params, idx, { work_date, start_date, end_date, limit });
         const r = await q(sql, params);
+        r.rows.forEach(row => {
+            if (row.work_date) row.work_date = dateOnly(row.work_date);
+        });
         res.json({ success: true, logs: r.rows });
     } catch (error) {
         console.error('Get team daily work logs error:', error);

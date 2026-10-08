@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const { logAudit } = require('../utils/audit');
 
 router.get('/company', verifyToken, async (req, res) => {
     try {
@@ -44,6 +45,7 @@ router.put('/company', verifyToken, isAdmin, async (req, res) => {
                 [name || null, email || null, phone || null, address || null, website || null, logo || null]
             );
         }
+        logAudit({ actorId: req.user.id, action: 'settings.company_update', entityType: 'company', entityId: result.rows[0].id, details: { fields: Object.keys(req.body || {}).filter((k) => k !== 'logo') }, ip: req.ip });
         res.json({ success: true, company: result.rows[0] });
     } catch (error) {
         console.error('Update company error:', error);
@@ -65,6 +67,7 @@ router.put('/timing', verifyToken, isAdmin, async (req, res) => {
             { key: 'checkout_grace_minutes', value: checkout_grace_minutes },
             { key: 'checkout_miss_limit', value: checkout_miss_limit }
         ];
+        const applied = updates.filter((u) => u.value !== undefined && u.value !== null && String(u.value).trim() !== '').map((u) => u.key);
         for (const u of updates) {
             if (u.value !== undefined && u.value !== null && String(u.value).trim() !== '') {
                 await query(
@@ -75,6 +78,7 @@ router.put('/timing', verifyToken, isAdmin, async (req, res) => {
                 );
             }
         }
+        logAudit({ actorId: req.user.id, action: 'settings.timing_update', entityType: 'company_setting', entityId: null, details: { settings: applied }, ip: req.ip });
         res.json({ success: true, message: 'Settings updated' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });

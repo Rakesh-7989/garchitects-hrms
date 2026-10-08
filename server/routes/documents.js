@@ -67,7 +67,9 @@ router.post('/upload', verifyToken, (req, res, next) => {
             if (err instanceof multer.MulterError && err.code === 'LIMIT_UNEXPECTED_FILE') {
                 return res.status(400).json({ success: false, message: 'File type not allowed. Use PDF, images, Word, Excel, PowerPoint, CSV or text files.' });
             }
-            return res.status(400).json({ success: false, message: 'Upload failed: ' + err.message });
+            // audit-security F3: multer error text can carry filesystem paths — log, don't echo.
+            console.error('Document upload failed:', err.message);
+            return res.status(400).json({ success: false, message: 'Upload failed. Please try again.' });
         }
         next();
     });
@@ -113,7 +115,9 @@ router.get('/:id/download', verifyToken, async (req, res) => {
         const doc = result.rows[0];
 
         const isAdminUser = req.user.role === 'admin';
-        let canAccess = isAdminUser || doc.employee_id === req.user.id;
+        // HR is org-wide on the documents vault (lists via /all, deletes via /:id/admin),
+        // so download access must match — otherwise the HR vault rows are un-openable.
+        let canAccess = isAdminUser || req.user.role === 'hr' || doc.employee_id === req.user.id;
         if (!canAccess && (req.user.role === 'manager' || req.user.role === 'team_lead')) {
             // Grant access only if the document owner sits inside the requester's
             // reporting subtree (requester is their manager, or higher up the chain).

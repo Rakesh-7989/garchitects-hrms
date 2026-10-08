@@ -376,6 +376,7 @@ router.post('/mark-present', verifyToken, isManager, async (req, res) => {
                 WHERE employee_id = $2 AND date = $3 RETURNING *`,
                 [officeStart, employee_id, date]
             );
+            logAudit({ actorId: req.user.id, action: 'attendance.mark_present', entityType: 'attendance', entityId: result.rows[0].id, details: { employee_id, date, scope: 'update' }, ip: req.ip });
             res.json({ success: true, attendance: result.rows[0], message: 'Marked as present' });
         } else {
             const result = await query(
@@ -383,6 +384,7 @@ router.post('/mark-present', verifyToken, isManager, async (req, res) => {
                 VALUES ($1, $2, $3, 'present') RETURNING *`,
                 [employee_id, date, officeStart]
             );
+            logAudit({ actorId: req.user.id, action: 'attendance.mark_present', entityType: 'attendance', entityId: result.rows[0].id, details: { employee_id, date, scope: 'create' }, ip: req.ip });
             res.json({ success: true, attendance: result.rows[0], message: 'Marked as present' });
         }
     } catch (error) {
@@ -412,6 +414,7 @@ router.post('/mark-absent', verifyToken, isManager, async (req, res) => {
                 'DELETE FROM attendance WHERE employee_id = $1 AND date = $2',
                 [employee_id, date]
             );
+            logAudit({ actorId: req.user.id, action: 'attendance.reset', entityType: 'attendance', entityId: null, details: { employee_id, date, scope: 'delete' }, ip: req.ip });
             return res.json({ success: true, message: 'Attendance reset' });
         }
         const existing = await query(
@@ -426,6 +429,7 @@ router.post('/mark-absent', verifyToken, isManager, async (req, res) => {
                 WHERE employee_id = $2 AND date = $3 RETURNING *`,
                 [remarks, employee_id, date]
             );
+            logAudit({ actorId: req.user.id, action: 'attendance.mark_absent', entityType: 'attendance', entityId: result.rows[0].id, details: { employee_id, date, scope: 'update' }, ip: req.ip });
             res.json({ success: true, attendance: result.rows[0], message: 'Marked as absent' });
         } else {
             const result = await query(
@@ -433,6 +437,7 @@ router.post('/mark-absent', verifyToken, isManager, async (req, res) => {
                 VALUES ($1, $2, 'absent', $3) RETURNING *`,
                 [employee_id, date, remarks]
             );
+            logAudit({ actorId: req.user.id, action: 'attendance.mark_absent', entityType: 'attendance', entityId: result.rows[0].id, details: { employee_id, date, scope: 'create' }, ip: req.ip });
             res.json({ success: true, attendance: result.rows[0], message: 'Marked as absent' });
         }
     } catch (error) {
@@ -919,7 +924,7 @@ router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
 // @route   GET /api/attendance/photo/:token
 // @desc    Serve check-in photo once, then delete it (one-time view)
 // @access  Admin/HR only
-router.get('/photo/:token', verifyToken, isAdmin, async (req, res) => {
+router.get('/photo/:token', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await query(
             'SELECT * FROM attendance_photos WHERE token = $1',

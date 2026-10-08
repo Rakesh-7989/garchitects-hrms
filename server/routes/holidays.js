@@ -71,6 +71,9 @@ router.get('/', verifyToken, async (req, res) => {
 
         sqlQuery += ' ORDER BY date';
         const result = await query(sqlQuery, params);
+        result.rows.forEach(r => {
+            if (r.date) r.date = fmtDate(r.date);
+        });
         res.json({ success: true, holidays: result.rows });
     } catch (error) {
         console.error('List holidays error:', error);

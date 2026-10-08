@@ -1,5 +1,9 @@
 // Input validation middleware
 
+// Single source of truth for the minimum password length, enforced on all entry
+// points (create, OTP reset, change-password, admin reset) — audit-security F8.
+const MIN_PASSWORD_LEN = 8;
+
 const validateEmail = (email) => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return re.test(email);
@@ -11,7 +15,7 @@ const validatePhone = (phone) => {
 };
 
 const validatePassword = (password) => {
-    return password && password.length >= 8;
+    return password && password.length >= MIN_PASSWORD_LEN;
 };
 
 const validatePan = (pan) => {
@@ -180,6 +184,7 @@ const validateLeave = (req, res, next) => {
 };
 
 module.exports = { 
+    MIN_PASSWORD_LEN,
     validateRegistration, 
     validateLogin, 
     validateEmployee, 

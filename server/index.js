@@ -11,6 +11,7 @@ const app = express();
 app.set('trust proxy', true);
 const PORT = process.env.PORT || 3000;
 const { query } = require('./config/database');
+const { pgErrorResponse } = require('./utils/schemaRepair');
 
 // Middleware
 // 15MB JSON limit: payroll generate/generate-bulk payloads carry base64 PDFs
@@ -81,6 +82,15 @@ app.get(['/admin', '/admin/'], (req, res) => {
     res.sendFile(path.join(__dirname, '../public/pages/admin-login.html'));
 });
 
+// Bare portal roots must never 404 (audit-wiring F3): typing /manager or
+// /employee in the address bar lands on the login page, matching /admin.
+app.get(['/manager', '/manager/'], (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/pages/login.html'));
+});
+app.get(['/employee', '/employee/'], (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/pages/login.html'));
+});
+
 // Clean professional URLs: /admin/employees serves pages/admin/employees.html,
 // /employee/leave serves pages/employee/leave.html, and so on. The slug is
 // strictly validated ([a-z0-9-]) so path traversal is impossible; unknown
@@ -105,12 +115,15 @@ app.get('/manager/:page', servePortalPage('manager'));
 app.get('/employee/:page', servePortalPage('employee'));
 app.get('/admin/:page', servePortalPage('admin'));
 
-// Error handling middleware
+// Error handling middleware. Every error that reaches this handler is mapped
+// through pgErrorResponse so known Postgres codes become friendly 400s and
+// nothing raw ever leaks (audit-security F10: centralized friendly-400 net).
 app.use((err, req, res, next) => {
     console.error(err.stack);
-    res.status(500).json({ 
-        success: false, 
-        message: 'Something went wrong!',
+    const mapped = pgErrorResponse(err);
+    res.status(mapped.status).json({
+        success: false,
+        message: mapped.message,
         error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
 });
@@ -189,6 +202,21 @@ async function runMigrations() {
         console.warn('[Migration] DATABASE_URL not set – skipping migrations.');
         return;
     }
+    // One-time destructive-migration ledger (audit-wiring F1). Drops/reshapes
+    // must run exactly once per database, NOT on every cold start — re-queuing
+    // ~9 DROP statements behind the first user request on Vercel's single-pool
+    // instance is latency jitter + a silent-drop maintenance hazard. Applied
+    // names are recorded here; additive ALTER/CREATE IF NOT EXISTS blocks
+    // everywhere else stay on the every-boot path (idempotent, cheap).
+    async function appliedMigrations() {
+        await query(`CREATE TABLE IF NOT EXISTS schema_migrations (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE,
+            applied_at TIMESTAMP DEFAULT NOW()
+        )`);
+        const r = await query(`SELECT name FROM schema_migrations`);
+        return new Set(r.rows.map((m) => m.name));
+    }
     try {
         await query(`INSERT INTO leave_types (name, days_per_year, description, gender_eligibility) VALUES ('Sick or Casual', 12, 'For medical or casual reasons (1 paid day per month, rest LOP)', 'all') ON CONFLICT (name) DO NOTHING`);
         await query(`UPDATE leave_types SET is_active = 1, days_per_year = 12 WHERE name = 'Sick or Casual'`);
@@ -204,8 +232,24 @@ async function runMigrations() {
         await query(`ALTER TABLE wfh_requests ADD COLUMN IF NOT EXISTS hr_id INT REFERENCES employees(id) ON DELETE SET NULL`);
         await query(`ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS manager_id INT REFERENCES employees(id) ON DELETE SET NULL`);
         await query(`ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS hr_id INT REFERENCES employees(id) ON DELETE SET NULL`);
+        // Schema F4 parity: attendance break_* columns live in layer A (schema.sql)
+        // and C (schemaRepair); mirror them here so a live DB that predates the
+        // break feature gets them at startup, not only via a lazy self-heal.
+        await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS break_start TIME`);
+        await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS break_end TIME`);
+        await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS break_log TEXT`);
         console.log('[Migration] Multi-approver columns ensured.');
     } catch (e) { console.warn('[Migration] Multi-approver columns skipped:', e.message); }
+
+    // audit-schema F7: approver + employee indexes for the My Team pending
+    // lists and per-employee ticket scans. Additive; performance, not
+    // correctness (a missing index never fails a request).
+    try {
+        await query(`CREATE INDEX IF NOT EXISTS idx_leave_applications_approver ON leave_applications(manager_id, hr_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_wfh_requests_approver ON wfh_requests(manager_id, hr_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_support_tickets_employee ON support_tickets(employee_id)`);
+        console.log('[Migration] Approver/employee indexes ensured.');
+    } catch (e) { console.warn('[Migration] Approver/employee indexes skipped:', e.message); }
 
     // Announcements auto-expiry column – added after the original schema.
     // Without this, every GET /api/announcements 500s with 42703.
@@ -278,24 +322,31 @@ async function runMigrations() {
     // labour register, materials, snags, closeout) and the financial lifecycle
     // columns (contract_value, phase) bolted onto the projects module. They are
     // replaced by a single plain architecture-studio daily-update table.
-    // Destructive by design (user-approved); runs once after the routes that
-    // used these tables are gone.
+    // The DROPs are destructive (user-approved) and run exactly ONCE per
+    // database (audit-wiring F1), recorded in schema_migrations so no cold
+    // start ever re-queues them. The additive project_daily_updates bootstrap
+    // below stays idempotent and runs on every boot like the other ensure-blocks.
     try {
-        await query(`DROP TABLE IF EXISTS project_closeout_items`);
-        await query(`DROP TABLE IF EXISTS project_snags`);
-        await query(`DROP TABLE IF EXISTS project_materials`);
-        await query(`DROP TABLE IF EXISTS project_labour_register`);
-        await query(`DROP TABLE IF EXISTS dpr_activities`);
-        await query(`DROP TABLE IF EXISTS project_daily_reports`);
-        await query(`DROP TABLE IF EXISTS project_invoices`);
-        // Sets/working-days removal: daily_work_counts references project_sets,
-        // so the dependent table must be dropped first.
-        await query(`DROP TABLE IF EXISTS daily_work_counts`);
-        await query(`DROP TABLE IF EXISTS project_sets`);
-        await query(`ALTER TABLE projects DROP COLUMN IF EXISTS contract_value`);
-        await query(`ALTER TABLE projects DROP COLUMN IF EXISTS phase`);
-        // Attendance overtime removed (no overtime concept at the studio).
-        await query(`ALTER TABLE attendance DROP COLUMN IF EXISTS overtime_hours`);
+        const applied = await appliedMigrations();
+        if (!applied.has('hrms_project_reshape')) {
+            await query(`DROP TABLE IF EXISTS project_closeout_items`);
+            await query(`DROP TABLE IF EXISTS project_snags`);
+            await query(`DROP TABLE IF EXISTS project_materials`);
+            await query(`DROP TABLE IF EXISTS project_labour_register`);
+            await query(`DROP TABLE IF EXISTS dpr_activities`);
+            await query(`DROP TABLE IF EXISTS project_daily_reports`);
+            await query(`DROP TABLE IF EXISTS project_invoices`);
+            // Sets/working-days removal: daily_work_counts references project_sets,
+            // so the dependent table must be dropped first.
+            await query(`DROP TABLE IF EXISTS daily_work_counts`);
+            await query(`DROP TABLE IF EXISTS project_sets`);
+            await query(`ALTER TABLE projects DROP COLUMN IF EXISTS contract_value`);
+            await query(`ALTER TABLE projects DROP COLUMN IF EXISTS phase`);
+            // Attendance overtime removed (no overtime concept at the studio).
+            await query(`ALTER TABLE attendance DROP COLUMN IF EXISTS overtime_hours`);
+            await query(`INSERT INTO schema_migrations (name) VALUES ('hrms_project_reshape') ON CONFLICT (name) DO NOTHING`);
+            console.log('[Migration] one-time HRMS project reshape applied (construction tables dropped).');
+        }
         await query(`CREATE TABLE IF NOT EXISTS project_daily_updates (
             id SERIAL PRIMARY KEY,
             project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -314,7 +365,7 @@ async function runMigrations() {
         await query(`ALTER TABLE project_daily_updates DROP CONSTRAINT IF EXISTS project_daily_updates_project_id_employee_id_update_date_key`);
         await query(`CREATE INDEX IF NOT EXISTS idx_project_daily_updates_project_date ON project_daily_updates(project_id, update_date DESC)`);
         await query(`CREATE INDEX IF NOT EXISTS idx_project_daily_updates_employee_date ON project_daily_updates(employee_id, update_date DESC)`);
-        console.log('[Migration] construction tables dropped; project_daily_updates ensured.');
+        console.log('[Migration] project_daily_updates ensured.');
     } catch (e) { console.warn('[Migration] HRMS project reshape skipped:', e.message); }
 
     // Units (sub-projects): a project contains physical/functional units (tower,
@@ -452,6 +503,10 @@ async function runMigrations() {
         await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMP DEFAULT NOW()`);
         await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS status_changed_by INT REFERENCES employees(id) ON DELETE SET NULL`);
         await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_working_day DATE`);
+        // audit-schema F5: token_version (force-logout on password reset) was
+        // schema-only — add to startup layer B so pre-token_version DBs can
+        // use the reset-password flow without a 42703.
+        await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS token_version INT DEFAULT 0`);
         await query(`ALTER TABLE employees DROP CONSTRAINT IF EXISTS employees_status_check`);
         await query(`ALTER TABLE employees ADD CONSTRAINT employees_status_check
             CHECK (status IN ('active', 'inactive', 'paused', 'terminated', 'on_hold', 'absconded'))`);

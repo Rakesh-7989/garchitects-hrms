@@ -4,6 +4,7 @@ const { query } = require('../config/database');
 const { verifyToken, isAdmin, audienceForRole } = require('../middleware/auth');
 const { sendToAudience } = require('../services/push');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { logAudit } = require('../utils/audit');
 
 router.get('/', verifyToken, async (req, res) => {
     try {
@@ -126,6 +127,7 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
             if (sent.sent > 0) console.log(`[Push] Announcement "${title}" sent to ${sent.sent} device(s)`);
         }).catch(e => console.error('Push notify error:', e.message));
 
+        logAudit({ actorId: req.user.id, action: 'announcement.create', entityType: 'announcement', entityId: result.rows[0].id, details: { title, priority: priority || 'normal' }, ip: req.ip });
         res.status(201).json({ success: true, announcement: result.rows[0] });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
@@ -152,6 +154,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
                 )
             );
             if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
+            logAudit({ actorId: req.user.id, action: 'announcement.update', entityType: 'announcement', entityId: result.rows[0].id, details: { fields: ['title','content','priority','target_audience','expires_at'].filter((k) => req.body[k] !== undefined) }, ip: req.ip });
             return res.json({ success: true, announcement: result.rows[0] });
         }
         const result = await runWithSchemaRepair(() =>
@@ -163,6 +166,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
             )
         );
         if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
+        logAudit({ actorId: req.user.id, action: 'announcement.update', entityType: 'announcement', entityId: result.rows[0].id, details: { fields: ['title','content','priority','target_audience'].filter((k) => req.body[k] !== undefined) }, ip: req.ip });
         res.json({ success: true, announcement: result.rows[0] });
     } catch (error) {
         console.error('Announcement update error:', error);
@@ -179,6 +183,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
             )
         );
         if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
+        logAudit({ actorId: req.user.id, action: 'announcement.delete', entityType: 'announcement', entityId: result.rows[0].id, details: { soft: true }, ip: req.ip });
         res.json({ success: true, message: 'Deleted successfully' });
     } catch (error) {
         console.error('Delete announcement error:', error);

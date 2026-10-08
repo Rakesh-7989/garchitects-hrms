@@ -132,6 +132,8 @@ CREATE TABLE IF NOT EXISTS leave_applications (
     employee_id INT REFERENCES employees(id) ON DELETE CASCADE,
     leave_type_id INT REFERENCES leave_types(id) ON DELETE SET NULL,
     reporting_manager_id INT REFERENCES employees(id) ON DELETE SET NULL,
+    manager_id INT REFERENCES employees(id) ON DELETE SET NULL,
+    hr_id INT REFERENCES employees(id) ON DELETE SET NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     total_days INT NOT NULL,
@@ -148,6 +150,8 @@ CREATE TABLE IF NOT EXISTS wfh_requests (
     id SERIAL PRIMARY KEY,
     employee_id INT REFERENCES employees(id) ON DELETE CASCADE,
     reporting_manager_id INT REFERENCES employees(id) ON DELETE SET NULL,
+    manager_id INT REFERENCES employees(id) ON DELETE SET NULL,
+    hr_id INT REFERENCES employees(id) ON DELETE SET NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     total_days INT NOT NULL,
@@ -176,6 +180,8 @@ CREATE TABLE IF NOT EXISTS support_tickets (
     id SERIAL PRIMARY KEY,
     employee_id INT REFERENCES employees(id) ON DELETE CASCADE,
     reporting_manager_id INT REFERENCES employees(id) ON DELETE SET NULL,
+    manager_id INT REFERENCES employees(id) ON DELETE SET NULL,
+    hr_id INT REFERENCES employees(id) ON DELETE SET NULL,
     category VARCHAR(100) NOT NULL,
     subject VARCHAR(255) NOT NULL,
     description TEXT,
@@ -344,6 +350,11 @@ CREATE INDEX IF NOT EXISTS idx_attendance_employee ON attendance(employee_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
 CREATE INDEX IF NOT EXISTS idx_leave_applications_employee ON leave_applications(employee_id);
 CREATE INDEX IF NOT EXISTS idx_leave_applications_status ON leave_applications(status);
+-- audit-schema F7: the multi-approver routes filter/order by manager_id + hr_id
+-- (My Team pending lists); these composite indexes keep those scans indexed.
+CREATE INDEX IF NOT EXISTS idx_leave_applications_approver ON leave_applications(manager_id, hr_id);
+CREATE INDEX IF NOT EXISTS idx_wfh_requests_approver ON wfh_requests(manager_id, hr_id);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_employee ON support_tickets(employee_id);
 CREATE INDEX IF NOT EXISTS idx_wfh_requests_employee ON wfh_requests(employee_id);
 CREATE INDEX IF NOT EXISTS idx_payroll_employee ON payroll(employee_id);
 CREATE INDEX IF NOT EXISTS idx_payroll_month_year ON payroll(month, year);
@@ -709,6 +720,10 @@ CREATE TABLE IF NOT EXISTS project_employees (
     assigned_at TIMESTAMP DEFAULT NOW(),
     status VARCHAR(20) DEFAULT 'active'
 );
+-- audit-schema F7: project-scoped + employee-scoped lookups (assign worker to
+-- project, list my projects) scan these columns.
+CREATE INDEX IF NOT EXISTS idx_project_employees_project ON project_employees(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_employees_employee ON project_employees(employee_id);
 -- An employee may belong to several units on one project. Two partial unique
 -- indexes: at most one no-unit assignment per (project, employee), and at most
 -- one assignment per (project, employee, unit).
@@ -900,19 +915,6 @@ CREATE TABLE IF NOT EXISTS daily_update_reads (
     UNIQUE (manager_id, daily_update_id)
 );
 CREATE INDEX IF NOT EXISTS idx_dur_manager ON daily_update_reads(manager_id);
-
--- ============================================================
--- PROJECT SETTINGS (for holiday config, etc.)
--- ============================================================
-CREATE TABLE IF NOT EXISTS project_settings (
-    id SERIAL PRIMARY KEY,
-    project_id INT REFERENCES projects(id) ON DELETE CASCADE,
-    setting_key VARCHAR(100) NOT NULL,
-    setting_value TEXT,
-    description TEXT,
-    updated_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(project_id, setting_key)
-);
 
 -- ============================================================
 -- 22. PROJECT DOCUMENTS (repository for drawings, contracts, approvals...)

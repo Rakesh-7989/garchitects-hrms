@@ -3,6 +3,7 @@ const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isAdminOrHr } = require('../middleware/auth');
 const { sendToUser } = require('../services/push');
+const { logAudit } = require('../utils/audit');
 
 const EDITABLE_FIELDS = [
     'gender',
@@ -133,6 +134,7 @@ router.post('/:id/approve', verifyToken, isAdminOrHr, async (req, res) => {
             [req.user.id, req.params.id]
         );
 
+        logAudit({ actorId: req.user.id, action: 'profile_update.approve', entityType: 'profile_update_request', entityId: request.id, details: { field: request.field, employee_id: request.employee_id }, ip: req.ip });
         res.json({ success: true, message: 'Request approved and applied', request: updateResult.rows[0] });
 
         const fieldLabel = FIELD_LABELS[request.field] || request.field;
@@ -177,6 +179,7 @@ router.post('/:id/reject', verifyToken, isAdminOrHr, async (req, res) => {
             [req.user.id, remarks || null, req.params.id]
         );
 
+        logAudit({ actorId: req.user.id, action: 'profile_update.reject', entityType: 'profile_update_request', entityId: request.id, details: { field: request.field, employee_id: request.employee_id }, ip: req.ip });
         res.json({ success: true, message: 'Request rejected', request: updateResult.rows[0] });
 
         const fieldLabel = FIELD_LABELS[request.field] || request.field;

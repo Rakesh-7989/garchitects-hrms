@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { query, getPool } = require('../config/database');
 const { verifyToken, isAdmin, isAdminOrHr } = require('../middleware/auth');
-const { validateEmployee, collectFieldErrors } = require('../middleware/validation');
+const { validateEmployee, collectFieldErrors, MIN_PASSWORD_LEN } = require('../middleware/validation');
 const { deleteFile, deleteFileByUrl } = require('../services/storage');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
@@ -663,11 +663,7 @@ router.post('/', verifyToken, isAdminOrHr, validateEmployee, async (req, res) =>
     } catch (error) {
         console.error('Create employee error:', error);
         const mapped = pgErrorResponse(error);
-        const body = { success: false, message: mapped.message };
-        if (req.user && req.user.role === 'admin') {
-            body.detail = error && error.message;
-        }
-        res.status(mapped.status).json(body);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -762,11 +758,15 @@ router.put('/:id', verifyToken, isAdminOrHr, async (req, res) => {
             }
         }
 
-        // Only the main Admin can manage admin accounts (promote to admin, or change an admin's role/status).
+        // Only the main Admin can manage admin accounts. This covers ANY field on an
+        // admin target (salary/bank/reporting included, not just role/status — HR was
+        // able to rewrite an admin's compensation before), and any promotion to admin.
+        // Admins self-edit their basic profile via PUT /api/auth/profile (name/phone/email);
+        // compensation & structure on admin accounts are MAIN_ADMIN-only by design.
         if (Number(req.user.id) !== MAIN_ADMIN_ID) {
             const cur = await query('SELECT role FROM employees WHERE id = $1', [req.params.id]);
             const curIsAdmin = cur.rows[0] && cur.rows[0].role === 'admin';
-            if (role === 'admin' || (curIsAdmin && (role !== undefined || status !== undefined))) {
+            if (role === 'admin' || curIsAdmin) {
                 return res.status(403).json({ success: false, message: 'Only the main Admin can manage admin accounts.' });
             }
         }
@@ -897,11 +897,7 @@ router.put('/:id', verifyToken, isAdminOrHr, async (req, res) => {
     } catch (error) {
         console.error('Update employee error:', error);
         const mapped = pgErrorResponse(error);
-        const body = { success: false, message: mapped.message };
-        if (req.user && req.user.role === 'admin') {
-            body.detail = error && error.message;
-        }
-        res.status(mapped.status).json(body);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -913,6 +909,12 @@ router.post('/:id/reset-password', verifyToken, isAdminOrHr, async (req, res) =>
         const adminGuardError = await adminTargetGuard(req.params.id, req.user.id);
         if (adminGuardError) {
             return res.status(403).json({ success: false, message: adminGuardError });
+        }
+
+        // audit-security F8: an admin-provided password must meet the same
+        // minimum as every other entry point (create/OTP/change-password).
+        if (req.body.password && String(req.body.password).length < MIN_PASSWORD_LEN) {
+            return res.status(400).json({ success: false, message: `Password must be at least ${MIN_PASSWORD_LEN} characters` });
         }
 
         const tempPassword = req.body.password || crypto.randomBytes(6).toString('base64url') + 'A1';

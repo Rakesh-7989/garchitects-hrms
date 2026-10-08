@@ -92,6 +92,9 @@ router.get('/', verifyToken, async (req, res) => {
              LIMIT $${p + 1}`,
             [...params, maxRows]
         );
+        result.rows.forEach(r => {
+            if (r.update_date) r.update_date = dateOnly(r.update_date);
+        });
         res.json({ success: true, updates: result.rows });
     } catch (error) {
         console.error('Error fetching project updates:', error);

@@ -86,9 +86,15 @@ router.get('/my', verifyToken, async (req, res) => {
             unitsByProject[r.project_id].push({ id: r.id, name: r.name, code: r.code });
         });
         const assignedIds = new Set(result.rows.map(p => p.id));
-        const projects = result.rows.map(p => ({ ...p, units: unitsByProject[p.id] || [], viaGrant: false, accessLevel: null }));
+        const projects = result.rows.map(p => {
+            if (p.start_date) p.start_date = dateOnly(p.start_date);
+            if (p.end_date) p.end_date = dateOnly(p.end_date);
+            return { ...p, units: unitsByProject[p.id] || [], viaGrant: false, accessLevel: null };
+        });
         for (const g of granted.rows) {
             if (assignedIds.has(g.id)) continue; // assigned wins
+            if (g.start_date) g.start_date = dateOnly(g.start_date);
+            if (g.end_date) g.end_date = dateOnly(g.end_date);
             projects.push({ ...g, units: [], viaGrant: true, accessLevel: g.access_level });
         }
         res.json({
@@ -114,6 +120,10 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
              FROM projects p
              ORDER BY p.name`
         );
+        result.rows.forEach(r => {
+            if (r.start_date) r.start_date = dateOnly(r.start_date);
+            if (r.end_date) r.end_date = dateOnly(r.end_date);
+        });
         res.json({ success: true, projects: result.rows });
     } catch (error) {
         console.error('Error fetching projects:', error);
@@ -247,6 +257,8 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
             entityId: created.id, details: { name: created.name, client: created.client || null, status: created.status },
             ip: req.ip
         });
+        if (created.start_date) created.start_date = dateOnly(created.start_date);
+        if (created.end_date) created.end_date = dateOnly(created.end_date);
         res.json({ success: true, project: created });
     } catch (error) {
         console.error('Error creating project:', error);
@@ -270,6 +282,8 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Project not found' });
         }
+        if (result.rows[0].start_date) result.rows[0].start_date = dateOnly(result.rows[0].start_date);
+        if (result.rows[0].end_date) result.rows[0].end_date = dateOnly(result.rows[0].end_date);
         res.json({ success: true, project: result.rows[0] });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
@@ -321,6 +335,8 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
             entityId: req.params.id, details: { name: trimmedName, client: client || null, statusChange: hasStatus ? { to: finalStatus } : null },
             ip: req.ip
         });
+        if (result.rows[0].start_date) result.rows[0].start_date = dateOnly(result.rows[0].start_date);
+        if (result.rows[0].end_date) result.rows[0].end_date = dateOnly(result.rows[0].end_date);
         res.json({ success: true, project: result.rows[0] });
     } catch (error) {
         console.error(`Error updating project ${req.params.id}:`, error);

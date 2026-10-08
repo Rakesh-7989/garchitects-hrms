@@ -350,7 +350,9 @@ router.post('/start/:employeeId', verifyToken, isAdminOrHr, async (req, res) => 
             ? await startOffboarding(emp.id, req.user.id)
             : await startOnboarding(emp.id, req.user.id);
         if (!r.ok) {
-            return res.status(500).json({ success: false, message: 'Could not start ' + type + ': ' + r.error });
+            // audit-security F2: never echo the raw driver message to the client.
+            console.error(`Onboarding start failed for ${type} (employee ${emp.employee_id}):`, r.error);
+            return res.status(500).json({ success: false, message: 'Could not start ' + type + '. Please try again or contact your administrator.' });
         }
         if (r.already) {
             return res.json({ success: true, message: 'This checklist is already started for this employee' });

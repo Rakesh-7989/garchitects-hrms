@@ -67,7 +67,13 @@ const ATTENDANCE_ALTER_COLUMNS = {
     // and the employee's later explanation for missing it.
     auto_checkout_at: 'TIMESTAMP',
     checkout_miss_reason: 'TEXT',
-    checkout_miss_reason_at: 'TIMESTAMP'
+    checkout_miss_reason_at: 'TIMESTAMP',
+    // Break tracking (audit-schema F4): break_start/break_end are TIME, break_log
+    // is a JSON array (TEXT). Layer-C parity so a cold instance can self-heal
+    // the break-finalize routes without a 42703/undefined-column.
+    break_start: 'TIME',
+    break_end: 'TIME',
+    break_log: 'TEXT'
 };
 
 // Projects module columns that a half-initialized live database may be missing.
@@ -218,6 +224,10 @@ const ENSURE_TABLE_DDL = {
             client VARCHAR(255),
             description TEXT,
             status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'paused', 'terminated', 'on_hold', 'completed', 'cancelled')),
+            start_date DATE,
+            end_date DATE,
+            location VARCHAR(255),
+            project_type VARCHAR(50) DEFAULT 'other',
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
         )`,

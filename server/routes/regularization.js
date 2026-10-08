@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query, getClient } = require('../config/database');
 const { verifyToken, isAdmin, blockAdminSelfService } = require('../middleware/auth');
-const { istDateString } = require('../utils/date');
+const { istDateString, dateOnly } = require('../utils/date');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
 
@@ -55,6 +55,20 @@ router.post('/', verifyToken, blockAdminSelfService, async (req, res) => {
             [req.user.id, date, check_in ? String(check_in).slice(0, 5) : null, check_out ? String(check_out).slice(0, 5) : null, String(reason).trim()]
         );
 
+        logAudit({
+            actorId: req.user.id,
+            action: 'regularization.apply',
+            entityType: 'attendance_regularization',
+            entityId: result.rows[0].id,
+            details: {
+                date,
+                check_in: check_in ? String(check_in).slice(0, 5) : null,
+                check_out: check_out ? String(check_out).slice(0, 5) : null,
+                reason: String(reason).trim()
+            },
+            ip: req.ip
+        });
+
         res.status(201).json({ success: true, request: result.rows[0] });
     } catch (error) {
         console.error('Create regularization error:', error);
@@ -75,6 +89,9 @@ router.get('/mine', verifyToken, async (req, res) => {
             ORDER BY r.created_at DESC LIMIT 60`,
             [req.user.id]
         );
+        result.rows.forEach(r => {
+            if (r.date) r.date = dateOnly(r.date);
+        });
         res.json({ success: true, requests: result.rows });
     } catch (error) {
         console.error('List my regularizations error:', error);
@@ -120,6 +137,9 @@ router.get('/pending', verifyToken, async (req, res) => {
                 [req.user.id]
             );
         }
+        rows.rows.forEach(r => {
+            if (r.date) r.date = dateOnly(r.date);
+        });
         res.json({ success: true, requests: rows.rows });
     } catch (error) {
         console.error('Pending regularizations error:', error);

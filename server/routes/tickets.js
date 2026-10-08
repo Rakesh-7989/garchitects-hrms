@@ -4,6 +4,7 @@ const { query } = require('../config/database');
 const { verifyToken, isAdminOrHr } = require('../middleware/auth');
 const { sendToUser } = require('../services/push');
 const { resolveApproverRouting } = require('../utils/approvalRouting');
+const { logAudit } = require('../utils/audit');
 
 router.post('/', verifyToken, async (req, res) => {
     try {
@@ -84,6 +85,7 @@ router.post('/', verifyToken, async (req, res) => {
             } catch (e) { console.error('Push notify error:', e.message); }
         }
 
+        logAudit({ actorId: req.user.id, action: 'ticket.create', entityType: 'support_ticket', entityId: result.rows[0].id, details: { category, subject: subject.trim(), priority: prio }, ip: req.ip });
         res.status(201).json({ success: true, ticket: result.rows[0] });
     } catch (error) {
         console.error('Ticket create error:', error);
@@ -185,6 +187,7 @@ router.put('/respond/:id', verifyToken, isAdminOrHr, async (req, res) => {
             [status, response || '', req.user.id, req.params.id]
         );
 
+        logAudit({ actorId: req.user.id, action: 'ticket.respond', entityType: 'support_ticket', entityId: result.rows[0].id, details: { status }, ip: req.ip });
         res.json({ success: true, ticket: result.rows[0] });
 
         const tk = ticket.rows[0];

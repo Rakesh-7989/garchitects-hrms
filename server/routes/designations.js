@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const { logAudit } = require('../utils/audit');
 
 router.get('/', verifyToken, async (req, res) => {
     try {
@@ -27,6 +28,7 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
             'INSERT INTO designations (name, level, department_id, team_lead_id) VALUES ($1, $2, $3, $4) RETURNING *',
             [name, level || 1, department_id || null, team_lead_id || null]
         );
+        logAudit({ actorId: req.user.id, action: 'designation.create', entityType: 'designation', entityId: result.rows[0].id, details: { name }, ip: req.ip });
         res.status(201).json({ success: true, designation: result.rows[0] });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
@@ -41,6 +43,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
             [name, level, department_id, team_lead_id ?? '', req.params.id]
         );
         if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
+        logAudit({ actorId: req.user.id, action: 'designation.update', entityType: 'designation', entityId: result.rows[0].id, details: { fields: Object.keys(req.body || {}) }, ip: req.ip });
         res.json({ success: true, designation: result.rows[0] });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
@@ -51,6 +54,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         const result = await query('DELETE FROM designations WHERE id = $1 RETURNING id', [req.params.id]);
         if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
+        logAudit({ actorId: req.user.id, action: 'designation.delete', entityType: 'designation', entityId: result.rows[0].id, details: {}, ip: req.ip });
         res.json({ success: true, message: 'Deleted successfully' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });

@@ -208,7 +208,9 @@ async function runAutoCheckout(dateStr) {
         return { success: true, date, closed };
     } catch (error) {
         console.error('runAutoCheckout failed:', error && error.message);
-        return { success: false, error: error && error.message };
+        // audit-security F4: never surface the raw driver message to the cron
+        // caller (cron.js spreads ...result into the response).
+        return { success: false, error: 'Auto-checkout scan failed. See server logs.' };
     }
 }
 

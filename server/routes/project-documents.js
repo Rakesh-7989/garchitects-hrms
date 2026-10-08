@@ -70,7 +70,9 @@ router.post('/:projectId/upload', verifyToken, isAdmin, (req, res, next) => {
             if (err instanceof multer.MulterError && err.code === 'LIMIT_UNEXPECTED_FILE') {
                 return res.status(400).json({ success: false, message: 'File type not allowed. Use PDF, images, Word, Excel, PowerPoint, CSV, DWG or text files.' });
             }
-            return res.status(400).json({ success: false, message: 'Upload failed: ' + err.message });
+            // audit-security F3: multer error text can carry filesystem paths — log, don't echo.
+            console.error('Project document upload failed:', err.message);
+            return res.status(400).json({ success: false, message: 'Upload failed. Please try again.' });
         }
         next();
     });

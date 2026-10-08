@@ -19,6 +19,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
+const { getClient } = require('../config/database');
 const { verifyToken } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
@@ -99,6 +100,9 @@ router.get('/requests', verifyToken, async (req, res) => {
             ${whereSql}
             ORDER BY r.created_at DESC LIMIT 300`;
         const result = await q(sql, params);
+        result.rows.forEach(r => {
+            if (r.expires_at) r.expires_at = dateOnly(r.expires_at);
+        });
         res.json({ success: true, requests: result.rows });
     } catch (error) {
         console.error('project-access/requests error:', error);
@@ -124,6 +128,9 @@ router.get('/grants/my', verifyToken, async (req, res) => {
              ORDER BY g.created_at DESC`,
             [req.user.id]
         );
+        r.rows.forEach(x => {
+            if (x.expires_at) x.expires_at = dateOnly(x.expires_at);
+        });
         res.json({ success: true, grants: r.rows });
     } catch (error) {
         console.error('project-access/grants/my error:', error);
@@ -153,6 +160,9 @@ router.get('/grants', verifyToken, async (req, res) => {
                  ORDER BY g.created_at DESC LIMIT 300`,
                 [req.user.id]
             );
+            r.rows.forEach(x => {
+                if (x.expires_at) x.expires_at = dateOnly(x.expires_at);
+            });
             return res.json({ success: true, grants: r.rows });
         }
         if (!['admin', 'manager', 'hr'].includes(req.user.role)) {
@@ -248,6 +258,13 @@ router.post('/requests', verifyToken, async (req, res) => {
 });
 
 // ---------------- approve / reject / cancel
+// TOCTOU-safe (AGENTS §5): the pre-check below is only a friendly fast path.
+// The real arbiter is a CONDITIONAL `UPDATE ... WHERE status='pending'` whose
+// row-count decides the winner — two concurrent decisions on the same request
+// yield exactly one winner and the loser 400s (MI-4: select-then-write could
+// double-approve and create duplicate grants). Approve additionally commits its
+// grant INSERT in the SAME transaction as the status flip so an approved
+// request can never lack a grant.
 async function decideRequest(req, res, action) {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ success: false, message: 'Invalid request id' });
@@ -261,7 +278,16 @@ async function decideRequest(req, res, action) {
             if (req.user.role !== 'admin' && R.requester_id !== req.user.id) {
                 return res.status(403).json({ success: false, message: 'Only the requester or an admin can cancel this request' });
             }
-            await q(`UPDATE project_access_requests SET status = 'cancelled', decided_by = $1, decided_at = NOW() WHERE id = $2`, [req.user.id, id]);
+            const upd = await q(
+                `UPDATE project_access_requests SET status = 'cancelled', decided_by = $1, decided_at = NOW()
+                 WHERE id = $2 AND status = 'pending'`,
+                [req.user.id, id]
+            );
+            if (upd.rowCount === 0) {
+                return res.status(400).json({ success: false, message: 'This request is already reviewed' });
+            }
+            logAudit({ actorId: req.user.id, action: 'project-access.cancel', entityType: 'project', entityId: R.project_id,
+                details: { requestId: id, requester: R.requester_id, scope: R.scope } });
             return res.json({ success: true, message: 'Access request cancelled' });
         }
 
@@ -271,7 +297,14 @@ async function decideRequest(req, res, action) {
         }
 
         if (action === 'reject') {
-            await q(`UPDATE project_access_requests SET status = 'rejected', decided_by = $1, decided_at = NOW() WHERE id = $2`, [req.user.id, id]);
+            const upd = await q(
+                `UPDATE project_access_requests SET status = 'rejected', decided_by = $1, decided_at = NOW()
+                 WHERE id = $2 AND status = 'pending'`,
+                [req.user.id, id]
+            );
+            if (upd.rowCount === 0) {
+                return res.status(400).json({ success: false, message: 'This request is already reviewed' });
+            }
             logAudit({ actorId: req.user.id, action: 'project-access.reject', entityType: 'project', entityId: R.project_id,
                 details: { requestId: id, requester: R.requester_id, scope: R.scope } });
             sendToUser(R.requester_id, {
@@ -289,20 +322,41 @@ async function decideRequest(req, res, action) {
         if (!validRoleLevel(roleLevel)) {
             return res.status(400).json({ success: false, message: 'Invalid role level for grant' });
         }
-        const ins = await q(
-            `INSERT INTO project_access_grants (project_id, employee_id, granted_by, scope, role_level, reason, expires_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-            [R.project_id, R.requester_id, req.user.id, R.scope, roleLevel, R.reason, R.expires_at]
-        );
-        await q(`UPDATE project_access_requests SET status = 'approved', decided_by = $1, decided_at = NOW() WHERE id = $2`, [req.user.id, id]);
-        logAudit({ actorId: req.user.id, action: 'project-access.approve', entityType: 'project', entityId: R.project_id,
-            details: { requestId: id, requester: R.requester_id, scope: R.scope, roleLevel, grantId: ins.rows[0].id } });
-        sendToUser(R.requester_id, {
-            title: 'Project access granted',
-            body: `You now have ${roleLevel}-level read access to project #${R.project_id}${R.expires_at ? ' until ' + (dateOnly(R.expires_at) || '') : ''}`,
-            url: '/employee/my-projects'
-        }).catch(() => {});
-        res.json({ success: true, message: 'Access granted', grantId: ins.rows[0].id });
+        // Conditional flip + grant INSERT in ONE transaction (checked-out
+        // connection): exactly one concurrent approver wins the flip, and the
+        // grant lands atomically with it → no duplicate grants, no approved
+        // request without a grant.
+        const client = await getClient();
+        try {
+            await client.query('BEGIN');
+            const flip = await client.query(
+                `UPDATE project_access_requests SET status = 'approved', decided_by = $1, decided_at = NOW()
+                 WHERE id = $2 AND status = 'pending'`,
+                [req.user.id, id]
+            );
+            if (flip.rowCount === 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, message: 'This request is already reviewed' });
+            }
+            const ins = await client.query(
+                `INSERT INTO project_access_grants (project_id, employee_id, granted_by, scope, role_level, reason, expires_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+                [R.project_id, R.requester_id, req.user.id, R.scope, roleLevel, R.reason, R.expires_at]
+            );
+            await client.query('COMMIT');
+            const grantId = ins.rows[0].id;
+            logAudit({ actorId: req.user.id, action: 'project-access.approve', entityType: 'project', entityId: R.project_id,
+                details: { requestId: id, requester: R.requester_id, scope: R.scope, roleLevel, grantId } });
+            sendToUser(R.requester_id, {
+                title: 'Project access granted',
+                body: `You now have ${roleLevel}-level read access to project #${R.project_id}${R.expires_at ? ' until ' + (dateOnly(R.expires_at) || '') : ''}`,
+                url: '/employee/my-projects'
+            }).catch(() => {});
+            res.json({ success: true, message: 'Access granted', grantId });
+        } catch (e) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw e;
+        }
     } catch (error) {
         console.error('project-access decide error:', error);
         const r = pgErrorResponse(error);
