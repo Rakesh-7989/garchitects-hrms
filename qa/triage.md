@@ -11,9 +11,9 @@
 verify + commit · `QUEUED` planned · `DECISION-NEEDED` owner/product call · `DEFERRED` documented risk.
 
 Counts: 36 findings = **3 high** (schema F1, schema F2, contract F1) · 9 medium · 24 low.
-After the fix batch: **0 high open · 1 medium open (security F9, DECISION-NEEDED) ·
-8 low open** (contract F4, security F11/F12/F13/F14/F15, contract F8 — all
-DECISION-NEEDED/DEFERRED/Phase-2 except security F14 verify).
+After the fix batch + owner decisions: **0 high open · 0 medium open · 1 low open**
+(security F12 — audit-log admin rows, owner decision pending; all other lows
+SHIPPED or explicitly DEFERRED-by-owner).
 
 ---
 
@@ -53,20 +53,20 @@ DECISION-NEEDED/DEFERRED/Phase-2 except security F14 verify).
 | schema F9 | Layer C `projects` DDL narrower than layer A (mitigated) | audit-schema.md F9 | Add `start_date/end_date/location/project_type` to C create DDL | **SHIPPED** (layer C widened; layer A already full) |
 | contract F6 | HR views check-in photo button but `/attendance/photo/:token` is `isAdmin` → generic "Failed to load photo" | audit-contract.md F6 | Hide photo buttons for non-admin OR widen to `isAdminOrHr` (attendance read surface is HR-capable) | **SHIPPED** (widen; harness: HR 404-not-403, manager 403) |
 | contract F7 | Hidden admin pages stay URL-reachable for hr/manager → broken pages (no data exposure) | audit-contract.md F7 | Page-onload role redirect (like team_lead bounce) or leave as-is (API boundary holds) | **SHIPPED** (Gamma: HR redirected on project-management/audit-logs/settings) |
-| contract F8 | `AGENTS.md` §6 "HR read-only on projects" vs `GET /api/projects` = `isAdmin` | audit-contract.md F8 | **DECISION-NEEDED**: widen to `isAdminOrHr` or amend §6 | **DECISION-NEEDED** |
+| contract F8 | `AGENTS.md` §6 "HR read-only on projects" vs `GET /api/projects` = `isAdmin` | audit-contract.md F8 | **DECISION-NEEDED**: widen to `isAdminOrHr` or amend §6 | **SHIPPED** (owner DECIDED 2026-10-09: widen. `GET /`, `/stats`, `/:id` → `isAdminOrHr`; writes admin-only; matrix `proj-list` cell flipped hr→allow + re-verified) |
 | contract F9 | Admin/HR bell sum omits `pendingRegularizations` (server `total` unused) | audit-contract.md F9 | Add `pendingRegularizations` to dashboard.js admin/hr sum | **SHIPPED** (Beta: bell-sum includes it; my-team badge parity) |
 | security F1 | employees.js:668/902 admin `detail = error.message` (raw PG text) | audit-security.md F1 | `pgErrorResponse(error).message` or drop `detail` | **SHIPPED** (raw detail dropped) |
 | security F2 | onboarding start concatenates raw driver message | audit-security.md F2 | Log `r.error`, return `pgErrorResponse(e).message` | **SHIPPED** |
 | security F3 | Multer failures echo `err.message` (any authed user) | audit-security.md F3 | Map known multer codes, else generic | **SHIPPED** (documents upload mapping) |
 | security F4 | Cron responses can carry raw error string (secret-holder-only) | audit-security.md F4 | Generic string in attendanceAutoCheckout failure branch | **SHIPPED** |
 | security F8 | Inconsistent password minimums (6/8/none) | audit-security.md F8 | Single `MIN_PASSWORD_LEN = 8` on all 4 paths (create/change/OTP-reset/admin reset) | **SHIPPED** (validation.js constant; harness asserts change-password <8 → 400) |
-| security F9 | `blockAdminSelfService` gaps: daily-work-logs, tickets, documents/upload | audit-security.md F9 | Mount guard on the 3, or document deliberate exceptions in §6 | **DECISION-NEEDED** (document accepted exceptions) |
+| security F9 | `blockAdminSelfService` gaps: daily-work-logs, tickets, documents/upload | audit-security.md F9 | Mount guard on the 3, or document deliberate exceptions in §6 | **SHIPPED** (owner DECIDED 2026-10-09: deliberate exceptions — documented in AGENTS.md §6; admins log own work, file tickets, upload own docs) |
 | security F10 | ~20 DB routes don't import `pgErrorResponse` (friendly-400 convention) | audit-security.md F10 | Centralise mapping in global error handler (index.js:109-116) so every route inherits | **SHIPPED** (central handler in index.js) |
-| security F11 | Role-model divergences stricter than §6: designations/departments manager-blocked, projects HR-blocked, documents download HR-blocked | audit-security.md F11 | Decide per row (align code ↔ §6); keep `applyRoleNav()` parity | **DECISION-NEEDED** (overlaps contract F8; documents row now SHIPPED via contract F1) |
+| security F11 | Role-model divergences stricter than §6: designations/departments manager-blocked, projects HR-blocked, documents download HR-blocked | audit-security.md F11 | Decide per row (align code ↔ §6); keep `applyRoleNav()` parity | **SHIPPED** (owner DECIDED 2026-10-09: projects reads widened to `isAdminOrHr` — contract F8 row; documents download already SHIPPED via contract F1; designations/departments stay manager-403 by design) |
 | security F12 | Audit-log UI hides every admin-actor row | audit-security.md F12 | Confirm intent; filter by event type instead of actor role if accidental | **DECISION-NEEDED** |
-| security F13 | Rate limiting in-memory per serverless instance | audit-security.md F13 | Store counters in Postgres/Redis, or accept + document | **DEFERRED** (documented accepted risk; F7 fix reduces the worst case) |
+| security F13 | Rate limiting in-memory per serverless instance | audit-security.md F13 | Store counters in Postgres/Redis, or accept + document | **DEFERRED** (owner ACCEPTED 2026-10-09 + documented; D-F7 removed the worst-case oracle) |
 | security F14 | CORS falls back to `localhost:3000` when `ALLOWED_ORIGINS` unset (SUSPECTED) | audit-security.md F14 | Verify Vercel env has `ALLOWED_ORIGINS`; fail closed if unset | **SHIPPED** (verified live 2026-10-09: fallback allow-list active — `garchitects.in`/localhost get ACAO, all other origins fail-closed; deployed SPA is same-origin, unaffected. Optional hardening: set `ALLOWED_ORIGINS` explicitly on Vercel) |
-| security F15 | Login discloses account status (deliberate UX) | audit-security.md F15 | Optional: generic "Invalid credentials" post-auth statuses | **DEFERRED** (intentional) |
+| security F15 | Login discloses account status (deliberate UX) | audit-security.md F15 | Optional: generic "Invalid credentials" post-auth statuses | **DEFERRED** (owner CONFIRMED 2026-10-09: intentional UX — kept) |
 
 ---
 
@@ -104,5 +104,5 @@ DECISION-NEEDED/DEFERRED/Phase-2 except security F14 verify).
 2. **Fix batch (hermetic-verified, atomic commits):**
    - My Info agent findings (from `qa/audit-myinfo.md`) — priority. — ✅
    - C-F1 verify + commit; A2 (cloudinary); A3 (bare roots); schema F5/F7/F8/F9 layers; security F1–F4, F8–F10; contract F6/F9; D-F5 (admin-edit), D-F7 (forgot-password); schema F3/F4/F6 (leave/wfh/attendance wrapper+layers+dateOnly). — ✅
-3. **DECISION-NEEDED triage** → present to owner: contract F8/security F11 (projects+download parity), security F12 (audit-log), F13 (rate-limit), F15 (login statuses). — **OPEN** (presented at end of fix-sprint session)
+3. **DECISION-NEEDED triage** → present to owner: contract F8/security F11 (projects+download parity), security F12 (audit-log), F13 (rate-limit), F15 (login statuses). — ✅ **RESOLVED 2026-10-09** (F8/F11 widen SHIPPED, F9 exceptions documented, F13/F15 accepted/kept, F14 verified live). Only **security F12** (audit-log UI hides admin rows) remains — owner follow-up pending.
 4. **Phase 2 (roadmap, deferred by earlier decision):** matrix auto-discovery, Playwright golden journeys, CI wiring, Work Assignments v2 Increment 2/3.

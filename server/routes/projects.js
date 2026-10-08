@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query, getClient } = require('../config/database');
-const { verifyToken, isAdmin, isManager } = require('../middleware/auth');
+const { verifyToken, isAdmin, isAdminOrHr, isManager } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
 const { leadCovers, myTreeIds } = require('./project-leads');
@@ -111,7 +111,10 @@ router.get('/my', verifyToken, async (req, res) => {
  * GET /api/projects
  * Get all projects
  */
-router.get('/', verifyToken, isAdmin, async (req, res) => {
+// Contract F8 / security F11 decision (2026-10-09): §6 grants HR read-only
+// access to the projects module — widen the read surfaces to isAdminOrHr;
+// all writes stay admin-only.
+router.get('/', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await q(
             `SELECT ${PROJECT_SELECT_COLS},
@@ -136,7 +139,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
  * GET /api/projects/stats
  * Global counters for the top summary cards (MUST be before /:id)
  */
-router.get('/stats', verifyToken, isAdmin, async (req, res) => {
+router.get('/stats', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await q(
             `SELECT
@@ -271,7 +274,8 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
  * GET /api/projects/:id
  * Get a single project by ID
  */
-router.get('/:id', verifyToken, isAdmin, async (req, res) => {
+// Read-only detail for HR too (contract F8 decision); writes remain admin-only.
+router.get('/:id', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await q(
             `SELECT id, name, COALESCE(client, customer) as client, description, status,

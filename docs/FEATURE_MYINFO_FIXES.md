@@ -111,10 +111,21 @@ Also fixed en route: `GET /attendance/photo/:token` now `isAdminOrHr` (was
 4. `logAudit` is fire-and-forget by design — audit asserts now poll
    (`waitForAudit`), not race the async INSERT.
 
-## 5. Remaining decision gates
+## 5. Decision gate — resolved 2026-10-09
 
-See `qa/triage.md` §DECISION-NEEDED: contract F8 / security F11 (projects
-read parity `GET /api/projects` → `isAdminOrHr`?), security F12 (audit-log UI
-hides admin rows), security F13 (in-memory rate limiting accepted), security
-F15 (login statuses intentional), security F9 (block-admin-self-service
-exceptions documented in AGENTS §6).
+Owner decisions taken this session (see `qa/triage.md`):
+
+- **contract F8 / security F11** — `GET /api/projects` **widened to `isAdminOrHr`**
+  (list + stats + detail; writes stay admin-only) to match §6's "HR read-only on
+  the projects module". `proj-list` matrix cell flipped hr→allow and re-verified.
+- **security F9** — `blockAdminSelfService` deliberate exceptions documented in
+  AGENTS.md §6 (daily-work-logs, tickets create, documents upload).
+- **security F13** — in-memory rate limiting accepted + documented.
+- **security F14** — verified live: fallback allow-list is fail-closed
+  (`garchitects.in`/localhost get ACAO, everything else blocked); the deployed
+  SPA is same-origin so unaffected. Optional hardening: set `ALLOWED_ORIGINS`
+  explicitly on Vercel.
+- **security F15** — login status messages kept (intentional UX).
+
+**Still awaiting the owner: security F12** (audit-log UI hides admin-actor rows —
+intentional or filter bug?).

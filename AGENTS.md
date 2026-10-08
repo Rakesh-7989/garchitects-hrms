@@ -96,6 +96,13 @@ vercel.json               rewrites (/api/* -> function, static mounts), headers,
 Frontend nav is role-filtered at runtime by `auth.js` `applyRoleNav()`; keep it in parity with the
 server guards (a hidden button must not be the only thing stopping a role).
 
+**Deliberate `blockAdminSelfService` exceptions (security F9, decided 2026-10-09):** the guard that
+prevents admin accounts from filing *self-*applications (leave/WFH/regularization) is intentionally
+NOT mounted on: (1) `daily-work-logs` — an admin still logs their own daily work like any employee;
+(2) `tickets.create` — admins may legitimately raise support tickets; (3) `documents` upload — admins
+upload their own documents. These are employee-self-service features an admin is expected to use for
+themself; do not expand the guard to them without an owner decision.
+
 ## 7. Notifications
 
 - **Durable**: bell counters `GET /api/notifications/counts` + sidebar badges (`dashboard.js`).
@@ -153,9 +160,12 @@ server guards (a hidden button must not be the only thing stopping a role).
   caught 3 real bugs pre-ship (regularization `dateOnly` ReferenceError,
   forgot-password 502 oracle, reset-password token_version trap). See
   `docs/FEATURE_MYINFO_FIXES.md` + `qa/triage.md` (all 36 findings now SHIPPED/
-  DEFERRED/DECISION-NEEDED — 0 high open). **Decision gate open:** contract F8 /
-  security F11 (projects read parity), security F12 (audit-log rows), F9
-  (block-admin-self-service exceptions), F13/F15 (accepted), F14 (verify).
+  DEFERRED/DECISION-NEEDED — 0 high open). **Decision gate resolved 2026-10-09:**
+  contract F8 / security F11 (projects reads widened to `isAdminOrHr`, writes
+  admin-only, matrix row flipped + re-verified), security F9 (block-admin-self-service
+  exceptions documented in §6), F13 (rate-limit accepted), F14 (CORS verified live —
+  fallback fail-closed, same-origin SPA unaffected), F15 (login statuses kept).
+  **Only security F12 (audit-log UI hides admin-actor rows) awaits the owner.**
 
 - **Standing AI-agent team chartered (2026-10-09):** `docs/AGENT_TEAM.md` declares the
   G-Architects HRMS Product Crew — a versioned roster of 7 specialist agents, each trained by
