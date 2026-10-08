@@ -165,6 +165,35 @@ server guards (a hidden button must not be the only thing stopping a role).
   `sw.js` is served `no-cache`, so a fresh deploy auto-applies on the next open;
   the sw cache name is bumped on every static-asset change per §8 (currently
   `v11`). Reload is always the only step needed — never a reinstall.
+- **Attendance reload + break-integrity fixes shipped (2026-10-08), four atomic
+  commits (`2bc74d7`, `4c5d8b8`, `e119c16`, docs):**
+  - **Reload false "Check In" fixed (A):** the dashboard's static HTML defaulted
+    to a visible Check-In button, so during a slow/cold `/attendance/my` fetch
+    (it runs company-wide `runAutoCheckout()` first) — or after a failed fetch
+    (`apiCall()` returns `null`) — a reload showed "Check In" with a row
+    present, inviting a duplicate 409 check-in. `loadAttendanceStatus()` now
+    renders a neutral "Syncing..." state, then either the server's truth or an
+    error+Retry card; **Check-In appears only when the server confirms no row**.
+  - **Dangling breaks finalized (B/C):** a break left running when the day
+    closes (manual Check-Out or auto-checkout at the grace deadline) previously
+    stayed open-ended forever — never in `break_log`, completed days showed
+    "Break End: Running...", and Hours Worked silently inflated. Check-out and
+    `runAutoCheckout()` now append `{start, end:<closure time>}` to `break_log`
+    in the SAME atomic, self-guarded UPDATE that closes the day (never
+    double-recorded). `break_log` stays a JSON array. **G:** "Running..." only
+    on live days; `getTotalBreakSeconds` and the attendance-page Hours Worked
+    close legacy open breaks at `check_out`.
+  - **Atomic break-end (D):** `POST /attendance/break-end` was read-modify-write
+    (concurrent requests could overwrite each other's entries); it's now ONE
+    guarded UPDATE — exactly one concurrent winner, loser 400s, nothing lost.
+    Dashboard refetches on break-end failure so a lost race/auto-close never
+    leaves the card on "Running...".
+  - **QA:** new `scripts/qa-attendance-break-finalize.cjs` → **41/41 green**
+    against hermetic local Postgres (manual finalize, multi-break, auto-checkout
+    finalize at a forced 00:00 deadline, concurrent break-end race) + new
+    reusable `scripts/check-inline-js.cjs` inline-JS syntax gate. See
+    `docs/FEATURE_ATTENDANCE_BREAK_FINALIZE.md`. E (server-side/admin-facing
+    break deduction) stays deferred — employee-view-only, as scoped.
 - **Work Assignments v2 — Increment 1 shipped (2026-10-07):** `blocked` status + reason,
   assignee cannot hard-cancel, cancel/block require a reason, actual timestamps
   (`started_at`/`cancelled_at`/`assigned_at` + `start_date`), counterpart notifications
