@@ -338,6 +338,14 @@
                                     diffMin -= ((be[0]*60+be[1]) - (bs[0]*60+bs[1]));
                                 }
                             });
+                            // Legacy rows can still carry an open break on a
+                            // completed day (started but never ended before
+                            // check-out/auto-checkout). Count it up to check-out
+                            // so Hours Worked is honest.
+                            if (a.break_start && !a.break_end) {
+                                const bs = String(a.break_start).split(':').map(Number);
+                                diffMin -= ((co[0]*60+co[1]) - (bs[0]*60+bs[1]));
+                            }
                             if (diffMin < 0) diffMin = 0;
                             if (diffMin > 0) hoursWorked = (diffMin/60).toFixed(1) + 'h';
                         }

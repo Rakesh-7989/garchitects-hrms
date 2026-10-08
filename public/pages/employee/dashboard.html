@@ -336,7 +336,15 @@
             if (attendance.break_start && !attendance.break_end) {
                 const s = new Date(dateRef); const bp = attendance.break_start.split(':');
                 s.setHours(parseInt(bp[0]), parseInt(bp[1]) || 0, parseInt(bp[2]) || 0);
-                total += Math.floor((now - s) / 1000);
+                // Live day -> count up to now; completed day with a legacy
+                // dangling break -> count up to check_out so hours stay honest.
+                let e = now;
+                if (attendance.check_out) {
+                    const cp = String(attendance.check_out).split(':');
+                    e = new Date(dateRef);
+                    e.setHours(parseInt(cp[0]), parseInt(cp[1]) || 0, parseInt(cp[2]) || 0);
+                }
+                total += Math.floor((e - s) / 1000);
             }
             return total;
         }
@@ -432,7 +440,7 @@
                 }
             }
             const totalBreakSecs = getTotalBreakSeconds(row, new Date());
-            if (row.break_start && !row.break_end) {
+            if (row.break_start && !row.break_end && !row.check_out) {
                 document.getElementById('statusBreakStart').textContent = row.break_start;
                 document.getElementById('statusBreakEnd').textContent = 'Running...';
             } else if (totalBreakSecs > 0) {

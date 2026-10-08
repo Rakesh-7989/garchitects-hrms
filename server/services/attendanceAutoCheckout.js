@@ -91,7 +91,8 @@ async function runAutoCheckout(dateStr) {
         }
 
         const open = await q(
-            `SELECT a.id, a.employee_id, e.first_name, e.last_name
+            `SELECT a.id, a.employee_id, e.first_name, e.last_name,
+                    a.break_start, a.break_end
                FROM attendance a
                JOIN employees e ON e.id = a.employee_id
               WHERE a.date = $1 AND a.check_in IS NOT NULL AND a.check_out IS NULL
@@ -122,15 +123,32 @@ async function runAutoCheckout(dateStr) {
             const markHalfDay = missCount >= limit;
             const hhmm = deadlineTime.slice(0, 5);
 
+            // A break still running when the deadline hits must not dangle forever:
+            // finalize it into break_log up to the auto-check-out time (same
+            // self-guarded append as the manual check-out route).
+            const breakEntry = (row.break_start && !row.break_end)
+                ? JSON.stringify({ start: row.break_start, end: deadlineTime })
+                : null;
+            const finalizeBreak = breakEntry ? `,
+                break_log = CASE
+                    WHEN (break_log IS NULL OR break_log = '' OR break_log = '[]')
+                         AND break_start IS NOT NULL AND break_end IS NULL THEN '[' || $4 || ']'
+                    WHEN break_start IS NOT NULL AND break_end IS NULL
+                         THEN left(break_log, length(break_log) - 1) || ', ' || $4 || ']'
+                    ELSE break_log
+                END,
+                break_start = CASE WHEN break_start IS NOT NULL AND break_end IS NULL THEN NULL ELSE break_start END,
+                break_end = NULL` : '';
+
             const upd = await q(
                 `UPDATE attendance
                     SET check_out = $1,
                         status = CASE WHEN $3 THEN 'half-day' ELSE status END,
                         auto_checkout = TRUE,
-                        auto_checkout_at = NOW()
+                        auto_checkout_at = NOW()${finalizeBreak}
                   WHERE id = $2 AND check_out IS NULL
                   RETURNING id`,
-                [deadlineTime, row.id, markHalfDay]
+                breakEntry ? [deadlineTime, row.id, markHalfDay, breakEntry] : [deadlineTime, row.id, markHalfDay]
             );
             if (!upd.rows.length) continue;
             closed++;

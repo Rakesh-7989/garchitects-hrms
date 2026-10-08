@@ -169,7 +169,7 @@ router.post('/check-out', verifyToken, async (req, res) => {
         }
 
         const checkIn = await query(
-            'SELECT check_in, status FROM attendance WHERE employee_id = $1 AND date = $2 AND check_out IS NULL',
+            'SELECT check_in, status, break_start, break_end FROM attendance WHERE employee_id = $1 AND date = $2 AND check_out IS NULL',
             [req.user.id, today]
         );
         
@@ -190,11 +190,32 @@ router.post('/check-out', verifyToken, async (req, res) => {
         const shortDay = workedMins < 180 &&
             ['present', 'late'].includes(checkIn.rows[0].status);
 
+        // Dangling break: if a break is still running at check-out (the API
+        // allows checking out mid-break, and the UI hides the button only),
+        // finalize it into break_log up to the check-out time so no break is
+        // ever left open-ended and Hours Worked stays honest. The append is
+        // self-guarded (only fires while break_start is still set), so a break
+        // ended concurrently is never double-recorded.
+        const checkInRow = checkIn.rows[0];
+        const breakEntry = (checkInRow.break_start && !checkInRow.break_end)
+            ? JSON.stringify({ start: checkInRow.break_start, end: now })
+            : null;
+        const finalizeBreak = breakEntry ? `,
+            break_log = CASE
+                WHEN (break_log IS NULL OR break_log = '' OR break_log = '[]')
+                     AND break_start IS NOT NULL AND break_end IS NULL THEN '[' || $5 || ']'
+                WHEN break_start IS NOT NULL AND break_end IS NULL
+                     THEN left(break_log, length(break_log) - 1) || ', ' || $5 || ']'
+                ELSE break_log
+            END,
+            break_start = CASE WHEN break_start IS NOT NULL AND break_end IS NULL THEN NULL ELSE break_start END,
+            break_end = NULL` : '';
+
         const result = await query(
-            `UPDATE attendance SET check_out = $1, check_out_location = $2${shortDay ? ", status = 'half-day'" : ''}
+            `UPDATE attendance SET check_out = $1, check_out_location = $2${shortDay ? ", status = 'half-day'" : ''}${finalizeBreak}
             WHERE employee_id = $3 AND date = $4 AND check_out IS NULL 
             RETURNING *`,
-            [now, location, req.user.id, today]
+            breakEntry ? [now, location, req.user.id, today, breakEntry] : [now, location, req.user.id, today]
         );
 
         let has_photo = false;
