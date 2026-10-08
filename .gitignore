@@ -36,3 +36,7 @@ session-history.json
 
 # Runtime pid file written by the local launcher script
 *.pid
+
+# QA Commander generated artifacts (regenerated on every run)
+qa/manifest.json
+qa/report*.json

@@ -8,7 +8,10 @@
     "dev": "nodemon server/index.js",
     "db:init": "node server/scripts/init-db.js",
     "db:migrate": "node server/scripts/migrate.js",
-    "test:smtp": "node server/scripts/test-smtp.js"
+    "test:smtp": "node server/scripts/test-smtp.js",
+    "qa": "node scripts/qa-commander.cjs",
+    "qa:live": "node scripts/qa-commander.cjs --target=live",
+    "qa:json": "node scripts/qa-commander.cjs --json=qa/report.json"
   },
   "keywords": [
     "hrms",

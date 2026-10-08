@@ -131,6 +131,31 @@ server guards (a hidden button must not be the only thing stopping a role).
 
 ## 11. Current state (update this as work ships)
 
+- **HRMS QA Commander v1 shipped (2026-10-09):** one command (`npm run qa`)
+  turns the repo's hermetic harnesses + a declared RBAC expectation matrix into a
+  single regression pass with a unified report. `scripts/qa-commander.cjs` runs 4
+  stages — `discover` (writes `qa/manifest.json`: 35 modules / 7 guards /
+  portals), `regression` (runs the 4 QA harnesses, restarting the app server
+  between each so the in-memory 10/15-min login limiter never 429s), `rbac`
+  (seeds a throwaway admin/hr/manager/team_lead/employee + target accounts world,
+  logs in each role, probes `qa/rbac-matrix.json` — **34 rows × role cells, the
+  "UI hides it but the API accepts it" detector** — plus a no-token 401 sweep,
+  then cleans up to **zero leftovers**), and `db` (WARN-only leftover scan).
+  Targets: `hermetic` (default — boots its own throwaway PostgreSQL on 5433 +
+  app on 3000 and tears both down; refuses any non-5433 `DATABASE_URL`) and
+  `live` (401/static sweep on the deployed API; full role probes only when
+  `QA_LIVE_ADMIN_ID`/`QA_LIVE_ADMIN_PW` are set — writes throwaway users to the
+  live DB, cleaned up after). Report + exit code; `--json=` writes
+  `qa/report.json` (gitignored); `--issues` files GitHub issues (explicit opt-in
+  only). **QA: hermetic 50/50 green** (24+41+15+38 regression, 160 RBAC cell
+  probes, zero leftovers) and live smoke **12/12** — see
+  `docs/FEATURE_QA_COMMANDER.md`. Two Windows/test-design lessons the commander's
+  own QA caught: (a) a raw-`spawn`ed detached `postgres.exe` EPIPE-dies/hangs —
+  boot with `pg_ctl start` + `stdio:'ignore'` and let a `pgReady()` gate wait;
+  (b) a reset-password probe must target a **dedicated** account, never the QA
+  employee — resetting bumps `token_version` and revokes that token mid-matrix.
+  Phase 2 (deferred by decision): Playwright UI⇔API⇔DB golden journeys, matrix
+  auto-discovery, CI wiring.
 - `master` is green and auto-deploys. Recent shipped themes: attendance auto-checkout +
   grace/missed-checkout tracking, self-reported daily work logs, work-assignment mandatory
   timelines, full offboarding journey, and governance workflows (cross-team transfers,
