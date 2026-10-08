@@ -1,4 +1,4 @@
-const CACHE_NAME = 'garchitects-hrms-v9';
+const CACHE_NAME = 'garchitects-hrms-v10';
 const SHELL_URLS = [
   '/',
   '/login',

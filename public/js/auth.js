@@ -529,6 +529,21 @@ if (PWA_CAN_REGISTER) {
             });
         }).catch(() => {});
     });
+
+    // Re-validate the service worker whenever the app becomes visible again.
+    // Resumed PWA windows (tapped from the home screen) often restore a session
+    // WITHOUT a network navigation, so the browser's update check is skipped and
+    // a fresh deploy would wait until the next full reload - which makes users
+    // think they must reinstall to get updates. reg.update() forces the browser
+    // to re-fetch sw.js (served with no-cache) right away; the updatefound
+    // handler above then auto-refreshes the page.
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            navigator.serviceWorker.ready
+                .then((reg) => reg.update())
+                .catch(() => {});
+        }
+    });
 }
 
 // Offline / online toasts

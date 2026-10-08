@@ -151,6 +151,17 @@ server guards (a hidden button must not be the only thing stopping a role).
   check-in path: success payload date plain + refetch finds the row, no re-check-in prompt)
   against a hermetic local Postgres on IST local time (see
   `docs/FEATURE_ATTENDANCE_CHECKIN_STATUS_FIX.md`).
+- **Duplicate check-ins are impossible (same day):** `attendance` has
+  `UNIQUE(employee_id, date)`, the check-in INSERT is `ON CONFLICT (employee_id, date)
+  DO UPDATE`, and a repeat click answers 409 before any write — repeated check-in
+  taps can never create a second row or a second check-in photo for the day.
+- **PWA update revalidation (2026-10-08):** resumed PWA windows restore a session
+  without a navigation, so the browser could skip the service-worker update check
+  and a reload appeared to "not apply changes" (leading users to reinstall).
+  `auth.js` now calls `reg.update()` on `visibilitychange` (app regains focus) —
+  `sw.js` is served `no-cache`, so a fresh deploy auto-applies on the next open;
+  sw cache bumped to `v10` (static asset change per §8). Reload is always the only
+  step needed — never a reinstall.
 - **Work Assignments v2 — Increment 1 shipped (2026-10-07):** `blocked` status + reason,
   assignee cannot hard-cancel, cancel/block require a reason, actual timestamps
   (`started_at`/`cancelled_at`/`assigned_at` + `start_date`), counterpart notifications
