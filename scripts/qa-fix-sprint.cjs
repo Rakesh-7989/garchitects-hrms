@@ -313,6 +313,15 @@ async function main() {
     const tkAuditN = await waitForAudit('ticket.create', world.emp.id);
     check('D-F6: ticket.create audit row written', tkAuditN >= 1);
 
+    // ---- 12b. security F12: audit-log UI shows ALL rows incl. admin actors --
+    // The approve above wrote an admin-actor row (action project-access.approve,
+    // actor_id = world.admin.id). GET /api/audit-logs must return it — the old
+    // "e.role IS DISTINCT FROM 'admin'" visibility clause would have hidden it.
+    const al = await api('GET', '/api/audit-logs?limit=100', T.admin);
+    const adminRowVisible = Array.isArray(al.json && al.json.logs) &&
+        al.json.logs.some(l => l.action === 'project-access.approve' && l.actor_id === world.admin.id);
+    check('security F12: admin-actor audit row visible in GET /api/audit-logs', al.status === 200 && adminRowVisible, { status: al.status, total: al.json && al.json.total, found: adminRowVisible });
+
     // ---- 13. Cleanup + report ----------------------------------------------
     extra = { projectId: projId };
     const leftovers = await cleanup(world, extra);

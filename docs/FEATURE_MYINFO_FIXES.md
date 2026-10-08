@@ -126,6 +126,7 @@ Owner decisions taken this session (see `qa/triage.md`):
   SPA is same-origin so unaffected. Optional hardening: set `ALLOWED_ORIGINS`
   explicitly on Vercel.
 - **security F15** — login status messages kept (intentional UX).
+- **security F12** — audit-log shows **all rows** incl. admin-actor entries
+  (visibility filter removed; asserted in the fix-sprint harness).
 
-**Still awaiting the owner: security F12** (audit-log UI hides admin-actor rows —
-intentional or filter bug?).
+All six decision gates are now resolved; the 36-finding triage ledger is **0 open**.

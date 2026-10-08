@@ -45,11 +45,12 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         params.push(offset);
         const offsetIdx = params.length;
 
-        // The admin's own trail is hidden from the log view; every other
-        // actor (employees, managers, and unattributed/system entries whose
-        // actor row is missing) stays visible.
+        // security F12 decision (2026-10-09): audit logs exist for
+        // accountability and this page is admin-only — show ALL rows,
+        // including admin-actor entries (the previous filter hid the admin's
+        // own trail, creating a blind spot).
         const fromJoin = 'FROM audit_logs a LEFT JOIN employees e ON e.id = a.actor_id';
-        const visibilityClause = "e.role IS DISTINCT FROM 'admin'";
+        const visibilityClause = 'TRUE';
 
         const rows = await q(
             `SELECT a.id, a.action, a.entity_type, a.entity_id, a.details,

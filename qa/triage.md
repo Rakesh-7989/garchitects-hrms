@@ -11,9 +11,9 @@
 verify + commit · `QUEUED` planned · `DECISION-NEEDED` owner/product call · `DEFERRED` documented risk.
 
 Counts: 36 findings = **3 high** (schema F1, schema F2, contract F1) · 9 medium · 24 low.
-After the fix batch + owner decisions: **0 high open · 0 medium open · 1 low open**
-(security F12 — audit-log admin rows, owner decision pending; all other lows
-SHIPPED or explicitly DEFERRED-by-owner).
+After the fix batch + owner decisions: **0 high open · 0 medium open · 0 low open —
+all 36 findings SHIPPED, DEFERRED-by-owner, or QUEUED-Phase-2** (contract F4 =
+roadmap Phase 2; security F13/F15 = accepted/kept by owner; everything else SHIPPED).
 
 ---
 
@@ -63,7 +63,7 @@ SHIPPED or explicitly DEFERRED-by-owner).
 | security F9 | `blockAdminSelfService` gaps: daily-work-logs, tickets, documents/upload | audit-security.md F9 | Mount guard on the 3, or document deliberate exceptions in §6 | **SHIPPED** (owner DECIDED 2026-10-09: deliberate exceptions — documented in AGENTS.md §6; admins log own work, file tickets, upload own docs) |
 | security F10 | ~20 DB routes don't import `pgErrorResponse` (friendly-400 convention) | audit-security.md F10 | Centralise mapping in global error handler (index.js:109-116) so every route inherits | **SHIPPED** (central handler in index.js) |
 | security F11 | Role-model divergences stricter than §6: designations/departments manager-blocked, projects HR-blocked, documents download HR-blocked | audit-security.md F11 | Decide per row (align code ↔ §6); keep `applyRoleNav()` parity | **SHIPPED** (owner DECIDED 2026-10-09: projects reads widened to `isAdminOrHr` — contract F8 row; documents download already SHIPPED via contract F1; designations/departments stay manager-403 by design) |
-| security F12 | Audit-log UI hides every admin-actor row | audit-security.md F12 | Confirm intent; filter by event type instead of actor role if accidental | **DECISION-NEEDED** |
+| security F12 | Audit-log UI hides every admin-actor row | audit-security.md F12 | Confirm intent; filter by event type instead of actor role if accidental | **SHIPPED** (owner DECIDED 2026-10-09: show all rows — accountability, page is admin-only; `visibilityClause` `e.role IS DISTINCT FROM 'admin'` removed → `TRUE`; fix-sprint harness asserts an admin-actor row is visible in `GET /api/audit-logs`) |
 | security F13 | Rate limiting in-memory per serverless instance | audit-security.md F13 | Store counters in Postgres/Redis, or accept + document | **DEFERRED** (owner ACCEPTED 2026-10-09 + documented; D-F7 removed the worst-case oracle) |
 | security F14 | CORS falls back to `localhost:3000` when `ALLOWED_ORIGINS` unset (SUSPECTED) | audit-security.md F14 | Verify Vercel env has `ALLOWED_ORIGINS`; fail closed if unset | **SHIPPED** (verified live 2026-10-09: fallback allow-list active — `garchitects.in`/localhost get ACAO, all other origins fail-closed; deployed SPA is same-origin, unaffected. Optional hardening: set `ALLOWED_ORIGINS` explicitly on Vercel) |
 | security F15 | Login discloses account status (deliberate UX) | audit-security.md F15 | Optional: generic "Invalid credentials" post-auth statuses | **DEFERRED** (owner CONFIRMED 2026-10-09: intentional UX — kept) |
@@ -104,5 +104,5 @@ SHIPPED or explicitly DEFERRED-by-owner).
 2. **Fix batch (hermetic-verified, atomic commits):**
    - My Info agent findings (from `qa/audit-myinfo.md`) — priority. — ✅
    - C-F1 verify + commit; A2 (cloudinary); A3 (bare roots); schema F5/F7/F8/F9 layers; security F1–F4, F8–F10; contract F6/F9; D-F5 (admin-edit), D-F7 (forgot-password); schema F3/F4/F6 (leave/wfh/attendance wrapper+layers+dateOnly). — ✅
-3. **DECISION-NEEDED triage** → present to owner: contract F8/security F11 (projects+download parity), security F12 (audit-log), F13 (rate-limit), F15 (login statuses). — ✅ **RESOLVED 2026-10-09** (F8/F11 widen SHIPPED, F9 exceptions documented, F13/F15 accepted/kept, F14 verified live). Only **security F12** (audit-log UI hides admin rows) remains — owner follow-up pending.
+3. **DECISION-NEEDED triage** → present to owner: contract F8/security F11 (projects+download parity), security F12 (audit-log), F13 (rate-limit), F15 (login statuses). — ✅ **ALL RESOLVED 2026-10-09** (F8/F11 widen SHIPPED, F9 exceptions documented, F12 show-all-rows SHIPPED + harness-asserted, F13/F15 accepted/kept, F14 verified live).
 4. **Phase 2 (roadmap, deferred by earlier decision):** matrix auto-discovery, Playwright golden journeys, CI wiring, Work Assignments v2 Increment 2/3.

@@ -159,13 +159,14 @@ themself; do not expand the guard to them without an owner decision.
   (`regularize-review`, `wfh-apply`, `att-photo`); `sw.js` v14. The new harness
   caught 3 real bugs pre-ship (regularization `dateOnly` ReferenceError,
   forgot-password 502 oracle, reset-password token_version trap). See
-  `docs/FEATURE_MYINFO_FIXES.md` + `qa/triage.md` (all 36 findings now SHIPPED/
-  DEFERRED/DECISION-NEEDED — 0 high open). **Decision gate resolved 2026-10-09:**
-  contract F8 / security F11 (projects reads widened to `isAdminOrHr`, writes
-  admin-only, matrix row flipped + re-verified), security F9 (block-admin-self-service
-  exceptions documented in §6), F13 (rate-limit accepted), F14 (CORS verified live —
-  fallback fail-closed, same-origin SPA unaffected), F15 (login statuses kept).
-  **Only security F12 (audit-log UI hides admin-actor rows) awaits the owner.**
+  `docs/FEATURE_MYINFO_FIXES.md` + `qa/triage.md` (all 36 findings now SHIPPED,
+  DEFERRED-by-owner, or QUEUED-Phase-2 — **0 open**). **Decision gate resolved
+  2026-10-09:** contract F8 / security F11 (projects reads widened to
+  `isAdminOrHr`, writes admin-only, matrix row flipped + re-verified),
+  security F9 (block-admin-self-service exceptions documented in §6), F12
+  (audit-log now shows ALL rows incl. admin actors — harness-asserted), F13
+  (rate-limit accepted), F14 (CORS verified live — fallback fail-closed,
+  same-origin SPA unaffected), F15 (login statuses kept).
 
 - **Standing AI-agent team chartered (2026-10-09):** `docs/AGENT_TEAM.md` declares the
   G-Architects HRMS Product Crew — a versioned roster of 7 specialist agents, each trained by
