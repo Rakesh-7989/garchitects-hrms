@@ -8,7 +8,7 @@
  *   node scripts/qa-commander.cjs                # full hermetic self-check
  *   node scripts/qa-commander.cjs --target=live  # live smoke (+ role probes if QA_LIVE_ADMIN_* set)
  *
- * Stages (--only=discover|regression|rbac|db|all, default all):
+ * Stages (--only=discover|regression|rbac|invariants|db|all, default all):
  *   discover  – build qa/manifest.json (modules from server/index.js mounts,
  *               guards from middleware/auth.js, portals from public/pages).
  *   regression– run every scripts/qa-*.cjs harness, capture pass/fail counts;
@@ -60,7 +60,7 @@ const jsonOut = args.find(a => a.startsWith('--json=')) ? args.find(a => a.start
 const wantIssues = args.includes('--issues');
 const noTeardown = args.includes('--no-teardown');
 
-const stages = only === 'all' ? ['discover', 'regression', 'rbac', 'db'] : [only];
+const stages = only === 'all' ? ['discover', 'regression', 'rbac', 'invariants', 'db'] : [only];
 
 // ---------------- report ----------------
 const results = []; // { stage, id, ok, severity, detail }
@@ -107,9 +107,6 @@ async function isListening(port) {
         s.on('connect', () => { s.destroy(); resolve(true); });
         s.on('error', () => resolve(false));
     });
-}
-function stripSchema(sql) {
-    return sql.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
 }
 async function pgReady(timeoutMs = 20000) {
     const start = Date.now();
@@ -202,11 +199,14 @@ async function hermeticUp() {
         throw new Error('port 5433 is in use but DATABASE_URL is not a QA 5433 URL — stop that service or point DATABASE_URL at the hermetic QA DB.');
     }
     if (!srvBusy) {
+        // Load schema.sql VERBATIM with ON_ERROR_STOP so a syntax error in the
+        // canonical file fails the hermetic boot loudly (QA goes red) instead of
+        // being masked — a fresh install runs this file raw via `npm run db:init`,
+        // so the QA stack must validate exactly what db:init reads.
         const schema = fs.readFileSync(path.join(ROOT, 'server', 'schema.sql'), 'utf8');
-        const tmp = path.join(QA_CLUSTER, '..', 'qa-schema-stripped.sql');
-        fs.writeFileSync(tmp, stripSchema(schema));
-        const load = execFileSync(path.join(PG_BIN, 'psql.exe'), ['-h', '127.0.0.1', '-p', String(QA_PORT), '-U', 'postgres', '-d', 'garchitects_hrms', '-f', tmp], { stdio: 'pipe' });
-        void load;
+        const tmp = path.join(QA_CLUSTER, '..', 'qa-schema-raw.sql');
+        fs.writeFileSync(tmp, schema);
+        execFileSync(path.join(PG_BIN, 'psql.exe'), ['-h', '127.0.0.1', '-p', String(QA_PORT), '-U', 'postgres', '-d', 'garchitects_hrms', '-v', 'ON_ERROR_STOP=1', '-f', tmp], { stdio: 'pipe' });
         await startServer();
     }
     env.pool = makePool(dbUrl());
@@ -282,7 +282,7 @@ const HARNESSES = [
     ['scripts/qa-attendance-my-readpath.cjs', 'attendance my read-path'],
     ['scripts/qa-work-assignments-v2.cjs', 'work assignments v2'],
 ];
-async function runHarness(script, label) {
+async function runHarness(script, label, stage = 'regression') {
     const out = await new Promise((resolve) => {
         const p = spawn('node', [script], { cwd: ROOT, windowsHide: true });
         let buf = '';
@@ -298,10 +298,11 @@ async function runHarness(script, label) {
         ? `${passed} pass / ${failed} fail (exit ${out.code})`
         : `exit ${out.code}, no 'passed/failed' summary line in output`;
     if (!ok) {
-        const tail = out.buf.split('\n').filter(l => l.trim()).slice(-25).join('\n');
-        console.log(`  └─ harness tail:\n${tail.split('\n').map(l => '     ' + l).join('\n')}`);
+        // Full harness output on failure — a 25-line tail hid the cascade in the first run.
+        const full = out.buf.split('\n').filter(l => l.trim()).join('\n');
+        console.log(`  └─ harness output:\n${full.split('\n').map(l => '     ' + l).join('\n')}`);
     }
-    record('regression', label, ok, detail);
+    record(stage, label, ok, detail);
     return ok;
 }
 async function stageRegression() {
@@ -313,6 +314,15 @@ async function stageRegression() {
     }
 }
 
+// ---------------- stage: invariants (hermetic-only DB invariants) ----------------
+async function stageInvariants() {
+    if (target === 'live') {
+        record('invariants', 'db-invariants', true, 'skipped on live target (hermetic write-only suite)');
+        return;
+    }
+    await runHarness('scripts/qa-db-invariants.cjs', 'db invariants', 'invariants');
+    await startServer();
+}
 // ---------------- stage: rbac ----------------
 async function stageRbac() {
     if (target === 'live' && !(process.env.QA_LIVE_ADMIN_ID && process.env.QA_LIVE_ADMIN_PW)) {
@@ -535,6 +545,7 @@ async function main() {
         if (st === 'discover') await stageDiscover();
         else if (st === 'regression') { if (target === 'live') { console.log('[regression] skipped on live target'); } else await stageRegression(); }
         else if (st === 'rbac') await stageRbac();
+        else if (st === 'invariants') await stageInvariants();
         else if (st === 'db') await stageDb();
     }
 
