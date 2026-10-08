@@ -164,7 +164,25 @@ server guards (a hidden button must not be the only thing stopping a role).
   `auth.js` now calls `reg.update()` on `visibilitychange` (app regains focus) —
   `sw.js` is served `no-cache`, so a fresh deploy auto-applies on the next open;
   the sw cache name is bumped on every static-asset change per §8 (currently
-  `v12`). Reload is always the only step needed — never a reinstall.
+  `v13`). Reload is always the only step needed — never a reinstall.
+- **Attendance read-path cold-start fix shipped (2026-10-08):** the employee
+  dashboard could show "Could not load your attendance status." because
+  `GET /attendance/my` awaited the **company-wide** auto-checkout scan before
+  every read — on a cold Vercel instance (boot ≈1 s live + lazy Supabase pooler
+  connect + the scan) a request could breach `maxDuration: 30` → 504, and the
+  client had no timeout/retry, so one transient failure stranded the card until a
+  manual Retry. Fix: `/my` now checks (1 indexed `SELECT 1`) whether **this**
+  employee has an open row before running `runAutoCheckout()` — the common case
+  never pays for the scan, while an employee who missed check-out still
+  self-heals (full pass, half-day still closed on that read). Client:
+  `apiCall` gained optional `{ timeoutMs, silent }` (backward compatible) and
+  `loadAttendanceStatus` retries 3× with backoff (15/10/10 s) before the error
+  card; the error card remains guard-A-safe (never a Check-In button). `sw.js`
+  v12 → v13. No schema changes. **QA: `scripts/qa-attendance-my-readpath.cjs` →
+  15/15 green** (done/none reads skip the scan — other users' open rows stay
+  open; open-row employee still closes itself + everyone else at a forced 00:00
+  deadline) + break-finalize harness re-run **41/41 green**; see
+  `docs/FEATURE_ATTENDANCE_MY_READPATH_FIX.md`.
 - **Attendance reload + break-integrity fixes shipped (2026-10-08), four atomic
   commits (`2bc74d7`, `4c5d8b8`, `e119c16`, docs):**
   - **Reload false "Check In" fixed (A):** the dashboard's static HTML defaulted
@@ -209,7 +227,8 @@ server guards (a hidden button must not be the only thing stopping a role).
   assign/comments) remain.
 - Existing docs: `docs/FEATURE_UNITS_WORK_ASSIGN.md`,
   `docs/FEATURE_WORK_ASSIGNMENTS_REDESIGN.md`, `docs/FEATURE_OFFBOARDING.md`,
-  `docs/FEATURE_WORKFLOWS_GOVERNANCE.md`, `docs/FEATURE_ATTENDANCE_CHECKIN_STATUS_FIX.md`.
+  `docs/FEATURE_WORKFLOWS_GOVERNANCE.md`, `docs/FEATURE_ATTENDANCE_CHECKIN_STATUS_FIX.md`,
+  `docs/FEATURE_ATTENDANCE_BREAK_FINALIZE.md`, `docs/FEATURE_ATTENDANCE_MY_READPATH_FIX.md`.
 
 ---
 

@@ -444,7 +444,19 @@ router.get('/my', verifyToken, async (req, res) => {
     try {
         // Self-heal: auto-close any missed check-out past office_end + grace for
         // today before reading, so the employee immediately sees the half-day.
-        if (req.user.role !== 'admin') { await runAutoCheckout().catch(() => {}); }
+        // The company-wide scan is only needed when THIS employee still has an
+        // open row - the common case (already checked out / never checked in)
+        // must not pay for it: on a cold Vercel instance (heavy require chain +
+        // lazy Supabase pooler connect) the awaited scan could breach
+        // maxDuration: 30 and 504, which surfaced as the dashboard 'Could not
+        // load your attendance status.' card.
+        if (req.user.role !== 'admin') {
+            const openToday = await query(
+                'SELECT 1 FROM attendance WHERE employee_id = $1 AND date = $2 AND check_out IS NULL',
+                [req.user.id, istDateString()]
+            ).catch(() => ({ rows: [] }));
+            if (openToday.rows.length > 0) { await runAutoCheckout().catch(() => {}); }
+        }
         const { month, year } = req.query;
         let sqlQuery = `SELECT a.id, a.employee_id, a.date, a.check_in, a.check_out, a.status,
                 a.remarks, a.created_at, a.break_start, a.break_end, a.break_log,

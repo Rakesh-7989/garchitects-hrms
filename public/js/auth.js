@@ -150,7 +150,8 @@ function showToast(message, type = 'success') {
 }
 
 // API helper function
-async function apiCall(endpoint, method = 'GET', body = null) {
+async function apiCall(endpoint, method = 'GET', body = null, opts = null) {
+    const { timeoutMs, silent } = opts || {};
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     
@@ -161,6 +162,11 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     const options = { method, headers };
     if (body) {
         options.body = JSON.stringify(body);
+    }
+    if (timeoutMs) {
+        const ctrl = new AbortController();
+        setTimeout(() => ctrl.abort(), timeoutMs);
+        options.signal = ctrl.signal;
     }
     
     try {
@@ -194,8 +200,10 @@ async function apiCall(endpoint, method = 'GET', body = null) {
         
         return data;
     } catch (error) {
-        console.error('API Error:', error);
-        showToast('Network error. Please try again.', 'error');
+        if (!silent) {
+            console.error('API Error:', error);
+            showToast('Network error. Please try again.', 'error');
+        }
         return null;
     }
 }

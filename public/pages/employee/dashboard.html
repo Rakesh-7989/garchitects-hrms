@@ -476,7 +476,18 @@
             // First load (or after a handler reset) -> neutral "syncing" state
             // so the default Check-In button never flashes while fetching.
             if (!hadRender) setAttendanceLoading();
-            const data = await apiCall(`/attendance/my?month=${now.getMonth()+1}&year=${now.getFullYear()}`);
+            const url = `/attendance/my?month=${now.getMonth()+1}&year=${now.getFullYear()}`;
+            // /attendance/my self-heals missed check-outs before reading, and a
+            // cold Vercel instance + Supabase pooler connect can take seconds -
+            // a single slow/failed attempt must not strand the card. Retry with
+            // a per-attempt timeout and backoff; the error card is the final
+            // fallback only when every attempt fails.
+            let data = null;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                data = await apiCall(url, 'GET', null, { timeoutMs: attempt === 1 ? 15000 : 10000, silent: true });
+                if (data && data.success) break;
+                if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 1000));
+            }
             if (data && data.success) {
                 const today = getTodayIST();
                 todayAttendance = (data.attendance || []).find(a => {
