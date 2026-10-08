@@ -62,6 +62,7 @@ public/pages/{admin,manager,employee}/*.html   role portals (clean URLs via serv
 public/js/*.js            auth.js (shared client: token, formatDate, escapeHtml, role nav), dashboard.js, payroll-core.js, ...
 public/css, public/assets, public/sw.js, public/manifest.json   PWA
 docs/FEATURE_*.md         per-feature design + verification records
+agents/*.md, docs/AGENT_TEAM.md   the standing AI-agent team: 7 role files ("training") + charter + sprint log
 vercel.json               rewrites (/api/* -> function, static mounts), headers, crons
 .github/workflows/deploy.yml   push to master -> Vercel production deploy (REST API)
 ```
@@ -130,6 +131,18 @@ server guards (a hidden button must not be the only thing stopping a role).
 - Keep commits atomic and scoped to the task; do not fold unrelated refactors into a feature commit.
 
 ## 11. Current state (update this as work ships)
+
+- **Standing AI-agent team chartered (2026-10-09):** `docs/AGENT_TEAM.md` declares the
+  G-Architects HRMS Product Crew — a versioned roster of 7 specialist agents, each trained by
+  its role file in `agents/*.md` (schema-architect, api-engineer, ui-engineer, qa-engineer,
+  security-auditor, release-engineer, knowledge-keeper) + this operating manual. The
+  orchestrating agent acts as Program Manager: task → squad (parallel, non-overlapping) →
+  artifacts on disk → triage → fix → verify → ship. No human in the loop per line; humans
+  only at the decision gate (destructive ops, prod writes/rollback, scope changes).
+  **Sprint 1 (full-system audit)** ran a 4-agent squad (wiring/bootstrap, schema 3-layer,
+  API↔UI contract + QA coverage, security/error hygiene) → findings in `qa/audit-*.md`.
+  Baselines green: live smoke **12/12**, hermetic regression **50/50** (118 checks + 160 RBAC
+  probes, zero leftovers). Fixes from triage ship as their own atomic commits.
 
 - **HRMS QA Commander v1 shipped (2026-10-09):** one command (`npm run qa`)
   turns the repo's hermetic harnesses + a declared RBAC expectation matrix into a
