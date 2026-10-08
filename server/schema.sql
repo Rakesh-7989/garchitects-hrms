@@ -855,11 +855,11 @@ CREATE INDEX IF NOT EXISTS idx_project_leads_project ON project_leads(project_id
 -- 26. USER NOTIFICATIONS (in-app notification centre)
 -- ============================================================
 -- The HRMS had NO stored notification feed: the bell only DERIVED counts from
-// source tables (pending leave, tickets, ...) and only for manager/admin roles,
+-- source tables (pending leave, tickets, ...) and only for manager/admin roles,
 -- so an employee had no feed at all, and "your team posted a daily update" was
-// not expressible. Web push cannot carry this on its own either - it silently
-// no-ops unless VAPID is configured, and a push that needs the tab open is not
-// a record. This table is the durable, push-independent feed: one row per
+-- not expressible. Web push cannot carry this on its own either - it silently
+-- no-ops unless VAPID is configured, and a push that needs the tab open is not
+-- a record. This table is the durable, push-independent feed: one row per
 -- thing the user must know about, with read_at as the seen marker.
 CREATE TABLE IF NOT EXISTS user_notifications (
     id SERIAL PRIMARY KEY,
