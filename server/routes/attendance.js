@@ -289,12 +289,16 @@ router.post('/break-end', verifyToken, async (req, res) => {
         const now = istTimeString();
 
         const record = await query(
-            'SELECT * FROM attendance WHERE employee_id = $1 AND date = $2',
+            'SELECT break_start, break_log, break_end, check_out FROM attendance WHERE employee_id = $1 AND date = $2',
             [req.user.id, today]
         );
 
         if (record.rows.length === 0) {
             return res.status(400).json({ success: false, message: 'No check-in found today' });
+        }
+
+        if (record.rows[0].check_out) {
+            return res.status(400).json({ success: false, message: 'Already checked out today' });
         }
 
         if (!record.rows[0].break_start) {
@@ -305,16 +309,31 @@ router.post('/break-end', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Break already ended' });
         }
 
-        const existingLog = (() => {
-            try { return JSON.parse(record.rows[0].break_log || '[]'); } catch { return []; }
-        })();
-        existingLog.push({ start: record.rows[0].break_start, end: now });
-
+        // Atomic end: ONE guarded UPDATE appends the entry and clears the
+        // open-break columns. The WHERE guard means two concurrent break-end
+        // requests can never lose an entry to a read-modify-write race (the
+        // old code read the log, pushed, and blindly overwrote it) or record
+        // the same break twice - exactly one wins, the loser matches 0 rows.
+        const entry = JSON.stringify({ start: record.rows[0].break_start, end: now });
         const result = await query(
-            `UPDATE attendance SET break_log = $1, break_start = NULL, break_end = NULL
-            WHERE employee_id = $2 AND date = $3 RETURNING *`,
-            [JSON.stringify(existingLog), req.user.id, today]
+            `UPDATE attendance
+             SET break_log = CASE
+                   WHEN break_log IS NULL OR break_log = '' OR break_log = '[]' THEN '[' || $1 || ']'
+                   ELSE left(break_log, length(break_log) - 1) || ', ' || $1 || ']'
+                 END,
+                 break_start = NULL, break_end = NULL
+             WHERE employee_id = $2 AND date = $3
+               AND check_out IS NULL AND break_start IS NOT NULL AND break_end IS NULL
+             RETURNING *`,
+            [entry, req.user.id, today]
         );
+
+        if (result.rows.length === 0) {
+            // Lost the race to a concurrent break-end (or the day was closed
+            // by another request, e.g. auto-checkout). Conflict; the client
+            // refetches and reconciles to the server's current state.
+            return res.status(400).json({ success: false, message: 'Break already ended' });
+        }
 
         res.json({ success: true, attendance: result.rows[0] });
     } catch (error) {

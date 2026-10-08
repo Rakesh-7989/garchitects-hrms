@@ -715,6 +715,11 @@
                 await loadAttendanceStatus();
             } else {
                 showToast(data?.message || 'Failed to end break', 'error');
+                // Reconcile: the failure may be a lost race (a concurrent
+                // break-end already won, or the day was auto-closed). Refetch
+                // so the card never stays stuck on 'Running...'.
+                todayAttendance = null;
+                await loadAttendanceStatus();
             }
             btn.innerHTML = '<i class="fas fa-redo"></i> End Break';
             btn.disabled = false;

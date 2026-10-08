@@ -1,13 +1,14 @@
 /**
  * qa-attendance-break-finalize.cjs — live QA harness for the dangling-break
- * finalization changes (also extended later by the atomic break-end fix).
+ * finalization + atomic break-end changes.
  *
  * Story: an employee starts a break and never ends it, then the day closes —
  * either manually ("Check Out") or via auto-checkout at the grace deadline.
  * Pre-fix the server closed the day but left break_start set forever: the
  * break never landed in break_log, a COMPLETED day showed "Break End:
  * Running...", and "Hours Worked" silently inflated (open breaks were not
- * subtracted on that screen).
+ * subtracted on that screen). Break-end itself was a read-modify-write, so two
+ * concurrent break-ends could overwrite each other's entries.
  *
  * Fix under test:
  *   - POST /api/attendance/check-out finalizes a running break into break_log
@@ -15,6 +16,8 @@
  *     SAME atomic UPDATE (guarded so a concurrent break-end is never double
  *     recorded).
  *   - runAutoCheckout() does the same when it closes the day at the deadline.
+ *   - POST /api/attendance/break-end is a single guarded UPDATE: concurrent
+ *     requests yield exactly one winner, the loser 400s, and no entry is lost.
  *   - break_start/break_end/break_log are preserved on GET /attendance/my, so
  *     the employee dashboard can show the true total.
  *
@@ -238,6 +241,44 @@ async function main() {
     check('auto: break_log has exactly one entry', !!autoLog && autoLog.length === 1, autoLog);
     check('auto: entry start is the seeded 13:00:00', !!(autoLog && autoLog[0] && autoLog[0].start === '13:00:00'), autoLog && autoLog[0]);
     check('auto: entry end is the auto-check-out time 00:00:00', !!(autoLog && autoLog[0] && autoLog[0].end === '00:00:00'), autoLog && autoLog[0]);
+
+    // ---- 6. Atomic break-end: concurrent requests never lose an entry -------
+    // The auto section forced the deadline to 00:00; restore manual-safe
+    // settings so runAutoCheckout can't auto-close race's row mid-flow.
+    await setSetting('office_end_time', '23:59');
+    await setSetting('checkout_grace_minutes', '120');
+    // Two break-end requests fired concurrently must yield exactly ONE winner;
+    // the loser 400s, and BOTH entries survive (pre-fix, read-modify-write
+    // meant the second request overwrote the first with its own entry).
+    const rcIn = await api('POST', '/api/attendance/check-in', T.race, { location: LOC, photo: tinyPng });
+    check('race check-in -> 200', rcIn.status === 200 && !!(rcIn.json && rcIn.json.success), rcIn.json);
+    await api('POST', '/api/attendance/break-start', T.race, {});
+    const rcEnd1 = await api('POST', '/api/attendance/break-end', T.race, {});
+    check('race break #1 end -> 200', rcEnd1.status === 200 && !!(rcEnd1.json && rcEnd1.json.success), rcEnd1.json);
+    const rcLog1 = parseLog(rcEnd1.json && rcEnd1.json.attendance);
+    check('race break #1 -> break_log length 1', !!rcLog1 && rcLog1.length === 1, rcLog1);
+    await api('POST', '/api/attendance/break-start', T.race, {});
+    const [rcA, rcB] = await Promise.all([
+        api('POST', '/api/attendance/break-end', T.race, {}),
+        api('POST', '/api/attendance/break-end', T.race, {})
+    ]);
+    const winners = [rcA, rcB].filter(r => r.status === 200 && !!(r.json && r.json.success)).length;
+    const losers = [rcA, rcB].filter(r => r.status !== 200).length;
+    check('race concurrent break-end: exactly one winner (200)', winners === 1, { winners, statuses: [rcA.status, rcB.status] });
+    check('race concurrent break-end: loser answered a conflict (400)', losers === 1 && [rcA, rcB].some(r => r.status === 400), { statuses: [rcA.status, rcB.status] });
+    const rcMy = await api('GET', `/api/attendance/my?month=${month}&year=${year}`, T.race);
+    const rcRow = ((rcMy.json && rcMy.json.attendance) || []).find(a => dd(a.date) === today);
+    const rcLogFinal = parseLog(rcRow);
+    check('race: no break entry lost (break_log length 2)', !!rcLogFinal && rcLogFinal.length === 2, rcLogFinal);
+    check('race: break_start cleared after the race', !!rcRow && !rcRow.break_start, rcRow);
+    check('race: both entries have real start/end times',
+        !!(rcLogFinal && rcLogFinal.every(b => b.start && b.end && String(b.start).includes(':') && String(b.end).includes(':'))),
+        rcLogFinal);
+    const rcCo = await api('POST', '/api/attendance/check-out', T.race, { location: LOC, photo: tinyPng });
+    check('race check-out after race -> 200', rcCo.status === 200 && !!(rcCo.json && rcCo.json.success), rcCo.json);
+    check('race final break_log still 2 (no duplicate at check-out)',
+        parseLog(rcCo.json && rcCo.json.attendance) && parseLog(rcCo.json && rcCo.json.attendance).length === 2,
+        parseLog(rcCo.json && rcCo.json.attendance));
 
     // ---- Summary ------------------------------------------------------------
     console.log('\n[QA] results:');
