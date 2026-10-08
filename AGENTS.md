@@ -145,8 +145,10 @@ server guards (a hidden button must not be the only thing stopping a role).
   **Deadlock recovery (same day):** a dashboard that missed today's row showed only "Check In",
   which 400'd ("Already checked in today") with no Check-Out path — `POST /attendance/check-in`
   now answers **409** + `alreadyCheckedIn` + the existing row, and the dashboard renders it
-  immediately (`renderTodayAttendance`) so Check-Out is always reachable; `sw.js` cache v9.
-  No schema changes. **QA: `scripts/qa-attendance-checkin-status.cjs` → 19/19 green**
+  immediately (`renderTodayAttendance`) so Check-Out is always reachable; check-in success
+  payload `date` normalized too; `sw.js` cache v9. No schema changes.
+  **QA: `scripts/qa-attendance-checkin-status.cjs` → 23/23 green** (incl. the fresh
+  check-in path: success payload date plain + refetch finds the row, no re-check-in prompt)
   against a hermetic local Postgres on IST local time (see
   `docs/FEATURE_ATTENDANCE_CHECKIN_STATUS_FIX.md`).
 - **Work Assignments v2 — Increment 1 shipped (2026-10-07):** `blocked` status + reason,

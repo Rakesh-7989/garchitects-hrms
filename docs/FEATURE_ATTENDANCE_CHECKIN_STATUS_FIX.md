@@ -86,6 +86,12 @@ Fix (server + client + PWA):
   which now reuses the `getTodayIST()` helper) and toasts *"You are already checked
   in today - you can check out now."* → the **Check-Out** button appears instantly.
 - `public/sw.js` — cache name bumped `v8 → v9` (dashboard.html changed).
+- `server/routes/attendance.js` (check-in **success** path) — the returned row's
+  `attendance.date` is now normalized with `dateOnly()` too. It was the last
+  instance of the same landmine in this route family: the dashboard never read it
+  (it refetches `/attendance/my` after a check-in), but any consumer of the
+  check-in response would have hit the exact same day-shift. Now the whole
+  check-in → status round-trip ships plain `YYYY-MM-DD` everywhere.
 
 No schema/migration; the only audit-relevant change is behavioral (no new mutating
 path, so no new `logAudit` call — check-in itself has never audited).
@@ -118,8 +124,8 @@ had no recovery signal and no Check-Out path.
 
 ### Green evidence (post-fix)
 `scripts/qa-attendance-checkin-status.cjs` (hermetic `DATABASE_URL`, throwaway
-admin + 2 employees, today's `attendance` rows seeded directly so "admin sees it"
-is the premise, 3 logins, full API drive, then rollback) — **19/19 green**:
+admin + 3 employees, today's `attendance` rows seeded directly so "admin sees it"
+is the premise, 4 logins, full API drive, then rollback) — **23/23 green**:
 
 - logins (admin / open-day employee / completed-day employee) succeed;
 - `GET /api/attendance/my` → every `date` is plain `YYYY-MM-DD`; a row exists with
@@ -131,6 +137,11 @@ is the premise, 3 logins, full API drive, then rollback) — **19/19 green**:
   the existing row with a plain date (check_in / location / status preserved);
 - **check-out succeeds after the recovery row** (the employee is never stranded)
   and `/attendance/my` then shows `check_out` on today's row;
+- **fresh check-in path (the exact reported flow)**: a brand-new employee checks
+  in via the API → `200` success with a **plain `YYYY-MM-DD`** `attendance.date`
+  in the payload, and the dashboard's post-check-in refetch finds the row
+  immediately — a successful check-in can never leave the UI prompting
+  "Check In" again;
 - `GET /api/attendance/all` (admin register) ships plain dates throughout;
 - cleanup verified — DB left pristine (`0` QA employees remain).
 
@@ -141,7 +152,8 @@ server before a rerun to reset it).
 ## 5. Blast radius
 - Changed: response `date` shape on `/api/attendance/my` + `/api/attendance/all`;
   `POST /api/attendance/check-in` duplicate answer `400 → 409` (same message,
-  `alreadyCheckedIn` + row added — additive); employee dashboard check-in
+  `alreadyCheckedIn` + row added — additive) plus its success payload
+  `attendance.date` now plain `YYYY-MM-DD`; employee dashboard check-in
   handler + shared `renderTodayAttendance`; `sw.js` cache `v8 → v9`.
 - Consumers (verified compatible): employee dashboard (`loadAttendanceStatus`,
   month stats, recent attendance), employee `attendance.html` (calendar, summary,

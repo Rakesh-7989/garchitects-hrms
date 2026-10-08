@@ -111,6 +111,15 @@ router.post('/check-in', verifyToken, async (req, res) => {
         }
 
         const attendance = result.rows[0];
+        // Same DATE-serialization landmine as the read routes: `date` is a DATE
+        // column (JS Date on the wire). Normalize before responding so no
+        // consumer of the success payload (dashboard refetch, future code)
+        // can hit the "previous UTC day" shift. The dashboard today refetches
+        // /attendance/my after a check-in, so this is defensive - but it closes
+        // the last instance of the bug in this route family.
+        if (attendance && attendance.date !== undefined && attendance.date !== null) {
+            attendance.date = dateOnly(attendance.date);
+        }
         let has_photo = false;
 
         if (req.body.photo) {

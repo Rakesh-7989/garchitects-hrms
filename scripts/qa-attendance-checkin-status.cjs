@@ -27,13 +27,20 @@
  * 'Already checked in today' -> no check-out button"). The harness proves the
  * full recovery: duplicate check-in -> 409 -> check-out succeeds.
  *
+ * Also under test (fresh check-in path - the exact reported flow): a brand-new
+ * employee checks in via the API; the SUCCESS payload must carry a plain
+ * YYYY-MM-DD `date` (the same DATE-serialization landmine was latent in the
+ * check-in response) and the dashboard's post-check-in refetch must find the
+ * row immediately - i.e. a successful check-in can never leave the UI on
+ * "Check In".
+ *
  * Run:
  *   1. Start the server (this machine's TZ is Asia/Kolkata, so the shift is
  *      real here; for determinism you may also `$env:TZ='Asia/Kolkata'` first).
  *   2. node scripts/qa-attendance-checkin-status.cjs
  *
  * The login route rate-limits to 10 attempts per 15 min per IP and this
- * harness does 3 logins per run - restart the server before a rerun to reset
+ * harness does 4 logins per run - restart the server before a rerun to reset
  * the in-memory limiter.
  */
 require('dotenv').config();
@@ -106,7 +113,7 @@ async function main() {
 
     // ---- 1. Throwaway world -------------------------------------------------
     const hashes = {};
-    const roles = { adm: 'admin', emp: 'employee', cmp: 'employee' };
+    const roles = { adm: 'admin', emp: 'employee', cmp: 'employee', fsh: 'employee' };
     for (const tag of Object.keys(roles)) hashes[tag] = await bcrypt.hash('Qa!' + ts + tag, 6);
 
     const mk = async (tag, role) => {
@@ -122,6 +129,7 @@ async function main() {
     world.admin = await mk('adm', 'admin');
     world.open = await mk('emp', 'employee');   // live check-in, still open
     world.done = await mk('cmp', 'employee');   // full day, checked out
+    world.fresh = await mk('fsh', 'employee');  // checks in for the first time via the API
 
     // The DB already holds today's rows - the exact "admin sees it" premise.
     await pool.query(
@@ -147,10 +155,12 @@ async function main() {
         admin: await login('admin', 'admin'),
         open: await login('open', 'employee'),
         done: await login('done', 'employee'),
+        fresh: await login('fresh', 'employee'),
     };
     check('login: admin', !!T.admin);
     check('login: employee (open day)', !!T.open);
     check('login: employee (completed day)', !!T.done);
+    check('login: employee (fresh check-in)', !!T.fresh);
 
     // ---- 3. The reported bug: "today" must be findable from /attendance/my --
     const myOpen = await api('GET', `/api/attendance/my?month=${month}&year=${year}`, T.open);
@@ -190,6 +200,23 @@ async function main() {
     const myAfter = await api('GET', `/api/attendance/my?month=${month}&year=${year}`, T.open);
     const afterRow = ((myAfter.json && myAfter.json.attendance) || []).find(a => dd(a.date) === today);
     check(`after check-out, /attendance/my shows check_out on today's row`, !!(afterRow && afterRow.check_out), afterRow);
+
+    // ---- 3c. Fresh check-in path - the exact reported flow ------------------
+    // A brand-new employee (no row at all) checks in via the API like the
+    // dashboard does. The success payload must ship a plain YYYY-MM-DD date
+    // (the same DATE landmine was latent in the check-in response), and the
+    // dashboard's post-check-in refetch must find the row immediately - so a
+    // successful check-in can never leave the UI prompting "Check In" again.
+    const freshIn = await api('POST', '/api/attendance/check-in', T.fresh, { location: '17.4255,78.4378', photo: tinyPng });
+    check('fresh check-in -> 200 with success', freshIn.status === 200 && !!(freshIn.json && freshIn.json.success), freshIn.json);
+    check('fresh check-in payload carries plain YYYY-MM-DD date', !!(
+        freshIn.json && freshIn.json.attendance && freshIn.json.attendance.date === today
+    ), freshIn.json && freshIn.json.attendance);
+    const myFresh = await api('GET', `/api/attendance/my?month=${month}&year=${year}`, T.fresh);
+    const freshRow = ((myFresh.json && myFresh.json.attendance) || []).find(a => dd(a.date) === today);
+    check('post-check-in "today" lookup finds the fresh row (no re-check-in prompt)', !!(
+        freshRow && String(freshRow.check_in).includes(':') && !freshRow.check_out
+    ), freshRow);
 
     const myDone = await api('GET', `/api/attendance/my?month=${month}&year=${year}`, T.done);
     const rowsDone = (myDone.json && myDone.json.attendance) || [];
