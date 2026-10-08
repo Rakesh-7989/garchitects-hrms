@@ -65,7 +65,7 @@ DECISION-NEEDED/DEFERRED/Phase-2 except security F14 verify).
 | security F11 | Role-model divergences stricter than §6: designations/departments manager-blocked, projects HR-blocked, documents download HR-blocked | audit-security.md F11 | Decide per row (align code ↔ §6); keep `applyRoleNav()` parity | **DECISION-NEEDED** (overlaps contract F8; documents row now SHIPPED via contract F1) |
 | security F12 | Audit-log UI hides every admin-actor row | audit-security.md F12 | Confirm intent; filter by event type instead of actor role if accidental | **DECISION-NEEDED** |
 | security F13 | Rate limiting in-memory per serverless instance | audit-security.md F13 | Store counters in Postgres/Redis, or accept + document | **DEFERRED** (documented accepted risk; F7 fix reduces the worst case) |
-| security F14 | CORS falls back to `localhost:3000` when `ALLOWED_ORIGINS` unset (SUSPECTED) | audit-security.md F14 | Verify Vercel env has `ALLOWED_ORIGINS`; fail closed if unset | **QUEUED** (verify step on next live pass) |
+| security F14 | CORS falls back to `localhost:3000` when `ALLOWED_ORIGINS` unset (SUSPECTED) | audit-security.md F14 | Verify Vercel env has `ALLOWED_ORIGINS`; fail closed if unset | **SHIPPED** (verified live 2026-10-09: fallback allow-list active — `garchitects.in`/localhost get ACAO, all other origins fail-closed; deployed SPA is same-origin, unaffected. Optional hardening: set `ALLOWED_ORIGINS` explicitly on Vercel) |
 | security F15 | Login discloses account status (deliberate UX) | audit-security.md F15 | Optional: generic "Invalid credentials" post-auth statuses | **DEFERRED** (intentional) |
 
 ---
