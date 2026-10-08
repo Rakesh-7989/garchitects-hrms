@@ -73,6 +73,11 @@
                 <h1 style="font-size:1.75rem;font-weight:700;">My Projects</h1>
                 <p style="color:var(--text-secondary);">Projects and work assigned to you</p>
                 <div id="assignSummary" style="display:none;margin-top:8px;padding:10px 14px;background:var(--bg-light);border:1px solid var(--border-light);border-radius:8px;font-size:0.9rem;font-weight:600;"></div>
+                <!-- Load-error state (MI-2): management status notes failing to load is shown explicitly with Retry, never rendered as "no notes" -->
+                <div id="psuErrorBanner" style="display:none;margin-top:8px;padding:10px 14px;border:1px solid var(--danger);background:rgba(239,68,68,0.06);border-radius:8px;font-size:0.88rem;color:var(--danger);align-items:center;gap:9px;flex-wrap:wrap;">
+                    <i class="fas fa-triangle-exclamation"></i><span id="psuErrorMsg">Management status notes could not be loaded.</span>
+                    <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;margin-left:auto;" onclick="loadMyProjectsData()"><i class="fas fa-sync-alt"></i> Retry</button>
+                </div>
             </div>
 
             <!-- Loading State -->
@@ -221,7 +226,17 @@
 
             document.getElementById('loadingState').style.display = 'none';
 
-            if (!data || !data.success || !data.projects || data.projects.length === 0) {
+            // Three-way (MI-2): null = network/timeout failure, success ===
+            // false = server error - an ERROR card with Retry, never the
+            // false "No projects assigned". Only a real success with zero
+            // projects shows the genuine empty state.
+            if (!data || data.success === false) {
+                const list = document.getElementById('projectsList');
+                showLoadError(list, (data && data.message) || 'Could not load your projects.', 'loadMyProjectsData');
+                list.style.display = 'block';
+                return;
+            }
+            if (!data.projects || data.projects.length === 0) {
                 document.getElementById('emptyState').style.display = 'block';
                 return;
             }
@@ -232,7 +247,20 @@
             // per-project list renders on each card. Employees never author.
             let su = null;
             try { su = await apiCall('/project-status-updates?limit=200'); } catch (_) {}
-            window.latestUpdates = (su && su.success && su.updates) || [];
+            const psuBanner = document.getElementById('psuErrorBanner');
+            if (!su || su.success === false) {
+                // Three-way (MI-2): a failed fetch shows the explicit banner
+                // with Retry - never silently "no notes on any card".
+                window.latestUpdates = [];
+                if (psuBanner) {
+                    const psuMsg = document.getElementById('psuErrorMsg');
+                    if (psuMsg) psuMsg.textContent = ((su && su.message) ? su.message + ' - ' : '') + 'Management status notes could not be loaded.';
+                    psuBanner.style.display = 'flex';
+                }
+            } else {
+                window.latestUpdates = su.updates || [];
+                if (psuBanner) psuBanner.style.display = 'none';
+            }
 
             // Unit map: project id → [{ id, name, code }] for the unit dropdown.
             window.projectUnitMap = {};
@@ -394,7 +422,15 @@
             const card = document.getElementById('myUpdatesCard');
             const feed = document.getElementById('myUpdatesFeed');
             const data = await apiCall('/project-updates?limit=50');
-            if (!data || !data.success || !data.updates || data.updates.length === 0) {
+            // Three-way (MI-2): failure keeps the card VISIBLE with an error
+            // + Retry (hiding it silently was a false fact); only a genuine
+            // empty list keeps the existing hide-the-card behavior.
+            if (!data || data.success === false) {
+                card.style.display = 'block';
+                showLoadError(feed, (data && data.message) || 'Could not load your daily updates.', 'loadMyUpdates');
+                return;
+            }
+            if (!data.updates || data.updates.length === 0) {
                 card.style.display = 'none';
                 return;
             }
@@ -501,7 +537,19 @@
             const box = document.getElementById('dailyReportStatus');
             if (!box) return;
             const data = await apiCall('/team-updates/me');
-            if (!data || !data.success) return;
+            // Three-way (MI-2): never silently skip the banner - a failed
+            // fetch renders an explicit error + Retry here so the reported/
+            // not-reported state stays truthful.
+            if (!data || data.success === false) {
+                box.style.display = 'flex';
+                box.style.background = 'rgba(239,68,68,0.08)';
+                box.style.color = 'var(--danger, #DC2626)';
+                box.innerHTML = '<i class="fas fa-triangle-exclamation"></i>' +
+                    '<span>Could not check today\'s daily-report status' +
+                    (data && data.message ? ' - ' + escapeHtml(data.message) : '') + '.</span>' +
+                    '<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;margin-left:auto;" onclick="loadDailyReportStatus()"><i class="fas fa-sync-alt"></i> Retry</button>';
+                return;
+            }
             box.style.display = 'flex';
 
             if (data.non_working_day) {
@@ -554,7 +602,16 @@
                 apiCall('/project-access/requests'),
                 apiCall('/project-access/grants/my')
             ]);
-            paMyRequests = (reqData && reqData.success) ? (reqData.requests || []) : [];
+            // Three-way (MI-2) for the requests list: failure is an error
+            // card with Retry, never the false "No access requests yet"
+            // (only a real success with zero rows may say that).
+            if (!reqData || reqData.success === false) {
+                paMyRequests = [];
+                showLoadError(document.getElementById('paRequestsList'), (reqData && reqData.message) || 'Could not load your access requests.', 'loadAccessPanel');
+            } else {
+                paMyRequests = reqData.requests || [];
+                renderPaRequests();
+            }
             const granted = new Set(
                 ((grantData && grantData.success) ? (grantData.grants || []) : []).map(g => String(g.project_id))
             );
@@ -562,7 +619,6 @@
             const sel = document.getElementById('paProject');
             sel.innerHTML = '<option value="">-- Select project --</option>' +
                 paCatalog.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
-            renderPaRequests();
             renderPaGrants(grantData);
         }
 
@@ -595,7 +651,14 @@
         function renderPaGrants(grantData) {
             const el = document.getElementById('paGrantsList');
             const wrap = document.getElementById('paGrants');
-            const grants = (grantData && grantData.success) ? (grantData.grants || []) : [];
+            // Three-way (MI-2): a failed grants fetch is an error card with
+            // Retry; a genuine empty list still hides the grants section.
+            if (!grantData || grantData.success === false) {
+                wrap.style.display = 'block';
+                showLoadError(el, (grantData && grantData.message) || 'Could not load your grants.', 'loadAccessPanel');
+                return;
+            }
+            const grants = grantData.grants || [];
             if (!grants.length) { wrap.style.display = 'none'; return; }
             wrap.style.display = 'block';
             el.innerHTML = grants.map(g => {
@@ -624,7 +687,10 @@
             if (!pid) { showToast('Select a project first', 'error'); return; }
             if (scope === 'extended' && !requestedRole) { showToast('Pick the requested access level', 'error'); return; }
             if (expiresAt) {
-                const today = new Date().toISOString().substring(0, 10);
+                // IST "today" - never toISOString() (that is UTC and is off
+                // by one day between 00:00-05:30 IST; getTodayIST's own
+                // doc-comment forbids it - MI-6).
+                const today = getTodayIST();
                 if (expiresAt <= today) { showToast('Expiry date must be in the future', 'error'); return; }
             }
             const body = { project_id: pid, reason, scope };

@@ -84,6 +84,10 @@
             <div id="rmWarning" style="display:none;border:1px solid var(--warning);background:var(--warning-light,#FEF3C7);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;font-size:0.9rem;line-height:1.5;color:#92400E;">
                 <i class="fas fa-exclamation-triangle" style="margin-right:8px;"></i><strong>Reporting To not assigned.</strong> You cannot apply for leave until an admin assigns your reporting person. Please contact your administrator.
             </div>
+            <div id="holidayWarn" style="display:none;border:1px solid var(--warning);background:var(--warning-light,#FEF3C7);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;font-size:0.9rem;line-height:1.5;color:#92400E;">
+                <i class="fas fa-exclamation-triangle" style="margin-right:8px;"></i><strong>Holidays could not be loaded.</strong> <span id="holidayWarnText">The declared-holiday list is unavailable, so the sandwich-leave warning cannot count holidays - the deduction shown may be too low.</span>
+                <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.75rem;margin-left:8px;" onclick="loadHolidays()"><i class="fas fa-sync-alt"></i> Retry</button>
+            </div>
             <div class="card mb-3 slide-up stagger-1">
                 <div class="card-header">
                     <h3 style="font-weight:600;"><i class="fas fa-calendar-check" style="color:var(--secondary);margin-right:8px;"></i>Leave Balance</h3>
@@ -161,10 +165,51 @@
             loadTypes();
             loadHistory();
             // Declared holidays feed the sandwich-leave warning.
-            apiCall('/holidays').then(d => {
-                window.HOLIDAY_DATES = (d && d.success ? (d.holidays || []) : []).map(h => String(h.date).substring(0, 10));
-            }).catch(() => { window.HOLIDAY_DATES = []; });
+            loadHolidays();
         });
+
+        // Three-way (MI-2): a failed /holidays fetch must never be rendered
+        // as "no holidays" - that silently drops the sandwich-leave warning
+        // and makes the employee under-estimate the deduction. Flag the
+        // failure so the banner shows AND the date preview says the holiday
+        // count is incomplete.
+        let holidaysLoadFailed = false;
+
+        async function loadHolidays() {
+            const warn = document.getElementById('holidayWarn');
+            let d = null;
+            try { d = await apiCall('/holidays'); } catch (e) { d = null; }
+            if (!d || d.success === false) {
+                holidaysLoadFailed = true;
+                window.HOLIDAY_DATES = [];
+                if (warn) {
+                    warn.style.display = 'block';
+                    const txt = document.getElementById('holidayWarnText');
+                    if (txt) txt.textContent = ((d && d.message) ? d.message + ' - ' : '') + 'The declared-holiday list is unavailable, so the sandwich-leave warning cannot count holidays - the deduction shown may be too low.';
+                }
+                return;
+            }
+            holidaysLoadFailed = false;
+            window.HOLIDAY_DATES = (d.holidays || []).map(h => String(h.date).substring(0, 10));
+            if (warn) warn.style.display = 'none';
+        }
+
+        // Parse a YYYY-MM-DD value (e.g. an <input type="date"> value) into a
+        // LOCAL calendar date. new Date('YYYY-MM-DD') parses at UTC midnight,
+        // so getDay()/isWeekOff() would return the PREVIOUS day's weekday in
+        // browsers west of UTC (MI-5). Non-conforming values keep new Date()
+        // semantics (instants are parsed in their own timezone as before).
+        function parseDateOnly(v) {
+            const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!m) return new Date(v);
+            return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        }
+
+        // Local YYYY-MM-DD key for a Date. Never toISOString().substring(0,10)
+        // - that is the UTC day and shifts the key in non-UTC browsers.
+        function dateKey(d) {
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
 
         let reportingManagerName = null;
         let needsRM = false;
@@ -190,7 +235,15 @@
         async function loadBalance() {
             const data = await apiCall('/leave/balance');
             const container = document.getElementById('leaveBalance');
-            if (data && data.success && data.balances && data.balances.length > 0) {
+            // Three-way (MI-2): null = network failure, success === false =
+            // server error - an error card with the server message, never
+            // the false "No leave types configured" (that stays the genuine
+            // empty state below).
+            if (!data || data.success === false) {
+                showLoadError(container, (data && data.message) || 'Could not load your leave balance.', 'loadBalance');
+                return;
+            }
+            if (data.balances && data.balances.length > 0) {
                 container.innerHTML = data.balances.map(b => {
                     const used = b.days_per_year - b.remaining_days;
                     const pct = b.days_per_year > 0 ? (used / b.days_per_year * 100) : 0;
@@ -225,29 +278,32 @@
         async function loadHistory() {
             const data = await apiCall('/leave/my');
             const container = document.getElementById('historyContainer');
-            if (data && data.success) {
-                if (!data.leaves || data.leaves.length === 0) {
-                    showEmptyState(container, 'fa-calendar-times', 'No Leave History', 'You haven\'t applied for any leaves yet');
-                    return;
-                }
-                let html = '<div class="table-container"><table><thead><tr><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Approved By</th><th>Applied</th></tr></thead><tbody>';
-                data.leaves.forEach(l => {
-                    html += '<tr>';
-                    html += '<td style="font-weight:500;">' + escapeHtml(l.leave_type_name || '-') + '</td>';
-                    html += '<td>' + formatDate(l.start_date) + '</td>';
-                    html += '<td>' + formatDate(l.end_date) + '</td>';
-                    html += '<td style="font-weight:600;">' + l.total_days + '</td>';
-                    html += '<td>' + escapeHtml(l.reason || '-') + '</td>';
-                    html += '<td><span class="badge badge-' + getStatusBadge(l.status) + '">' + escapeHtml(l.status) + '</span></td>';
-                    html += '<td>' + (l.approved_by_name ? escapeHtml(l.approved_by_name) : '<span style="color:var(--text-secondary);">-</span>') + '</td>';
-                    html += '<td>' + formatDate(l.applied_date || l.created_at) + '</td>';
-                    html += '</tr>';
-                });
-                html += '</tbody></table></div>';
-                container.innerHTML = html;
-            } else {
-                showEmptyState(container, 'fa-exclamation-triangle', 'Error', 'Failed to load leave history');
+            // Three-way (MI-2): null / success === false -> explicit error
+            // card with the server message (when present); only a real
+            // success may render the table or the genuine empty state.
+            if (!data || data.success === false) {
+                showLoadError(container, (data && data.message) || 'Failed to load leave history.', 'loadHistory');
+                return;
             }
+            if (!data.leaves || data.leaves.length === 0) {
+                showEmptyState(container, 'fa-calendar-times', 'No Leave History', 'You haven\'t applied for any leaves yet');
+                return;
+            }
+            let html = '<div class="table-container"><table><thead><tr><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Approved By</th><th>Applied</th></tr></thead><tbody>';
+            data.leaves.forEach(l => {
+                html += '<tr>';
+                html += '<td style="font-weight:500;">' + escapeHtml(l.leave_type_name || '-') + '</td>';
+                html += '<td>' + formatDate(l.start_date) + '</td>';
+                html += '<td>' + formatDate(l.end_date) + '</td>';
+                html += '<td style="font-weight:600;">' + l.total_days + '</td>';
+                html += '<td>' + escapeHtml(l.reason || '-') + '</td>';
+                html += '<td><span class="badge badge-' + getStatusBadge(l.status) + '">' + escapeHtml(l.status) + '</span></td>';
+                html += '<td>' + (l.approved_by_name ? escapeHtml(l.approved_by_name) : '<span style="color:var(--text-secondary);">-</span>') + '</td>';
+                html += '<td>' + formatDate(l.applied_date || l.created_at) + '</td>';
+                html += '</tr>';
+            });
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
         }
 
         function calcBusinessDays() {
@@ -258,8 +314,12 @@
 
             if (!startVal || !endVal) { infoBox.style.display = 'none'; return; }
 
-            const start = new Date(startVal);
-            const end = new Date(endVal);
+            // Date-only values are calendar days with NO timezone: build them
+            // as LOCAL dates so every getDay()/isWeekOff() below reads the
+            // date's true weekday in any browser TZ (new Date('YYYY-MM-DD')
+            // parses at UTC midnight - wrong weekday west of UTC, MI-5).
+            const start = parseDateOnly(startVal);
+            const end = parseDateOnly(endVal);
 
             if (end < start) {
                 infoBox.style.display = 'flex';
@@ -282,7 +342,7 @@
 
             // Sandwich leave detection: a weekend / declared holiday strictly
             // INSIDE the selected date range gets deducted as leave too.
-            const isHol = (d) => (window.HOLIDAY_DATES || []).includes(d.toISOString().substring(0, 10));
+            const isHol = (d) => (window.HOLIDAY_DATES || []).includes(dateKey(d));
             let sandwichCount = 0;
             const cur = new Date(start);
             cur.setDate(cur.getDate() + 1);
@@ -291,7 +351,10 @@
                 cur.setDate(cur.getDate() + 1);
             }
 
-            const totalDays = Math.ceil((end - start) / (1000*60*60*24)) + 1;
+            // round (not ceil): local dates a DST transition apart are +/-1h
+            // off a whole day; date-only keys in IST/UTC browsers are exact
+            // multiples of 24h, so their result is unchanged.
+            const totalDays = Math.round((end - start) / (1000*60*60*24)) + 1;
             infoBox.style.display = 'flex';
             // Compose the weekend warning into the summary instead of setting it
             // first and overwriting it below (the warning was never visible).
@@ -299,6 +362,12 @@
                 totalDays + ' calendar day' + (totalDays > 1 ? 's' : '') + ' (' + businessDays + ' business day' + (businessDays > 1 ? 's' : '') + ', excluding the weekly off day)';
             if (sandwichCount > 0) {
                 msg += ' | SANDWICH RULE: ' + sandwichCount + ' week off/holiday day' + (sandwichCount > 1 ? 's' : '') + ' inside this range will also be deducted as leave.';
+            }
+            if (holidaysLoadFailed) {
+                // Explicit, not silent: without the holiday list the counts
+                // above may be too low (MI-2 - a failed fetch must not read
+                // as "there are no holidays").
+                msg += ' | WARNING: The holiday list could not be loaded, so holidays inside this range are not counted - the totals above may be too low.';
             }
             infoText.textContent = msg;
             infoBox.style.background = (weekendStart || sandwichCount > 0) ? 'var(--accent-light)' : 'var(--primary-50)';

@@ -304,6 +304,10 @@
     <script src="../../js/dashboard.js"></script>
     <script>
         if (!requireAdmin()) throw new Error('Not authenticated');
+        const currentUser = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+        if (currentUser && currentUser.role === 'hr') {
+            window.location.replace('/admin/dashboard');
+        }
 
         document.addEventListener('DOMContentLoaded', () => { loadSettings(); loadAdminProfile(); });
 

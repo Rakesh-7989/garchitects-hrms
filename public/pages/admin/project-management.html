@@ -1744,6 +1744,14 @@
         let psuCache = {};
         let psuEdit = {};
 
+        document.addEventListener('DOMContentLoaded', () => {
+            const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+            if (user && user.role === 'hr') {
+                window.location.replace('/admin/dashboard');
+                return;
+            }
+        }, { once: true });
+
         function psuCategoryLabel(cat) {
             const m = { progress: 'Progress', site_status: 'Site Status', coordination: 'Coordination', risk: 'Risk', milestone: 'Milestone', approval: 'Approval', other: 'Other' };
             return m[cat] || String(cat || 'other').replace(/_/g, ' ');

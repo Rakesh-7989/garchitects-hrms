@@ -210,6 +210,7 @@
                 location.href = '/employee/dashboard';
                 return;
             }
+            window._myTeamUser = user;
             loadToday();
             loadLeaves();
             loadWfh();
@@ -459,8 +460,7 @@
                             '<span class="badge badge-warning">Pending</span></div>' +
                             (r.reason ? '<div class="req-sub"><strong>Reason:</strong> ' + escapeHtml(r.reason) + '</div>' : '') +
                             '<div class="req-actions">' +
-                                '<button class="btn btn-sm btn-success" onclick="openRegDecision(' + r.id + ', \'approved\')"><i class="fas fa-check"></i> Approve</button>' +
-                                '<button class="btn btn-sm btn-danger" onclick="openRegDecision(' + r.id + ', \'rejected\')"><i class="fas fa-times"></i> Reject</button>' +
+                                ((window._myTeamUser && window._myTeamUser.role === 'admin') ? '<button class="btn btn-sm btn-success" onclick="openRegDecision(' + r.id + ', \'approved\')"><i class="fas fa-check"></i> Approve</button>' + '<button class="btn btn-sm btn-danger" onclick="openRegDecision(' + r.id + ', \'rejected\')"><i class="fas fa-times"></i> Reject</button>' : '') +
                             '</div>' +
                         '</div>'
                     ).join('');

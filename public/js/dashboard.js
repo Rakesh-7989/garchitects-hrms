@@ -529,7 +529,7 @@ async function loadNotifBadge() {
             // and the server already computes org-wide counts for role 'hr'.
             const data = await apiCall('/notifications/counts');
             if (data && data.success) {
-                count = data.counts.pendingLeaves + data.counts.pendingWfh + data.counts.pendingProfileUpdates + data.counts.announcementsUnread + data.counts.pendingTickets + (parseInt(data.counts.openWorkAssignments) || 0) + (parseInt(data.counts.openLeadProjects) || 0) + (parseInt(data.counts.pendingTransfers) || 0) + (parseInt(data.counts.pendingAccessRequests) || 0) + (parseInt(data.counts.activeHandovers) || 0) + (parseInt(data.counts.unreadNotifications) || 0);
+                count = data.counts.pendingLeaves + data.counts.pendingWfh + data.counts.pendingProfileUpdates + data.counts.announcementsUnread + data.counts.pendingTickets + (parseInt(data.counts.pendingRegularizations) || 0) + (parseInt(data.counts.openWorkAssignments) || 0) + (parseInt(data.counts.openLeadProjects) || 0) + (parseInt(data.counts.pendingTransfers) || 0) + (parseInt(data.counts.pendingAccessRequests) || 0) + (parseInt(data.counts.activeHandovers) || 0) + (parseInt(data.counts.unreadNotifications) || 0);
                 loadSidebarCounts(data.counts);
             }
         } else if (user.role === 'manager' || user.role === 'team_lead') {
@@ -568,7 +568,7 @@ function loadSidebarCounts(counts, mode) {
     if (!counts) return;
     const map = mode === 'manager'
         ? {
-            '/manager/my-team': counts.pendingLeaves + counts.pendingWfh + counts.pendingTickets + (parseInt(counts.pendingTransfers) || 0) + (parseInt(counts.activeHandovers) || 0),
+            '/manager/my-team': counts.pendingLeaves + counts.pendingWfh + counts.pendingTickets + (parseInt(counts.pendingTransfers) || 0) + (parseInt(counts.activeHandovers) || 0) + (parseInt(counts.pendingRegularizations) || 0),
             '/manager/team-work': parseInt(counts.openWorkAssignments) || 0,
             '/manager/led-projects': parseInt(counts.openLeadProjects) || 0,
             '/manager/team-projects': (parseInt(counts.pendingAccessRequests) || 0) + (parseInt(counts.activeHandovers) || 0)
@@ -581,7 +581,7 @@ function loadSidebarCounts(counts, mode) {
             '/manager/team-work': parseInt(counts.openWorkAssignments) || 0,
             '/manager/led-projects': parseInt(counts.openLeadProjects) || 0,
             '/manager/team-projects': (parseInt(counts.pendingAccessRequests) || 0) + (parseInt(counts.activeHandovers) || 0),
-            '/manager/my-team': (parseInt(counts.pendingTransfers) || 0) + (parseInt(counts.activeHandovers) || 0)
+            '/manager/my-team': (parseInt(counts.pendingTransfers) || 0) + (parseInt(counts.activeHandovers) || 0) + (parseInt(counts.pendingRegularizations) || 0)
         };
     Object.keys(map).forEach(href => {
         const item = document.querySelector('.sidebar-nav a.nav-item[href="' + href + '"]');
@@ -687,6 +687,25 @@ function showEmptyState(container, icon, title, message) {
             <i class="fas ${escapeHtml(icon)}"></i>
             <h3>${escapeHtml(title)}</h3>
             <p>${escapeHtml(message)}</p>
+        </div>
+    `;
+}
+
+// Show an explicit load-error card WITH a Retry button (MI-2: a failed
+// fetch must never be rendered as an empty state or a stale section -
+// transient failure must be distinguishable from permanent truth).
+// `retryFn` is the name of the page's global reload function, rendered as
+// onclick="<retryFn>()" - same pattern as the dashboard attendance card.
+function showLoadError(container, message, retryFn) {
+    if (!container) return;
+    const btn = retryFn
+        ? '<br><button class="btn btn-secondary" style="margin-top:10px;" onclick="' + escapeHtml(retryFn) + '()"><i class="fas fa-sync-alt"></i> Retry</button>'
+        : '';
+    container.innerHTML = `
+        <div class="empty-state" style="color:var(--danger);">
+            <i class="fas fa-triangle-exclamation"></i>
+            <h3>Could not load</h3>
+            <p>${escapeHtml(message || 'Please try again.')}</p>${btn}
         </div>
     `;
 }

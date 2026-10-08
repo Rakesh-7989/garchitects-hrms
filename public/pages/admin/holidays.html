@@ -129,6 +129,8 @@
     <script src="../../js/dashboard.js"></script>
     <script>
         if (!requireAdmin()) throw new Error('Not authenticated');
+        const currentUser = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+        const isAdmin = currentUser && currentUser.role === 'admin';
         let allHolidays = [];
         const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
         const currentYear = new Date().getFullYear();
@@ -138,6 +140,8 @@
             for (let y = currentYear + 1; y >= currentYear - 2; y--) {
                 yearSelect.innerHTML += `<option value="${y}"${y===currentYear?' selected':''}>${y}</option>`;
             }
+            const addBtn = document.querySelector('header .header-right button.btn.btn-primary');
+            if (addBtn && !isAdmin) addBtn.style.display = 'none';
             load();
         });
 
@@ -162,11 +166,11 @@
                             <td style="font-weight:500;">${escapeHtml(h.name)}</td>
                             <td style="color:var(--text-secondary);">${escapeHtml(h.description || '-')}</td>
                             <td><span class="badge badge-${isPast ? 'secondary' : 'success'}">${isPast ? 'Past' : 'Upcoming'}</span></td>
-                            <td>
+                            <td>${isAdmin ? `
                                 <div style="display:flex;gap:4px;">
                                     <button class="btn btn-sm btn-secondary" onclick="edit(${h.id})" title="Edit ${escapeHtml(h.name)}"><i class="fas fa-edit"></i></button>
                                     <button class="btn btn-sm btn-danger" onclick="del(${h.id})" title="Delete ${escapeHtml(h.name)}"><i class="fas fa-trash"></i></button>
-                                </div>
+                                </div>` : ''}
                             </td>
                         </tr>
                     `;

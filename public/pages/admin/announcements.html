@@ -143,10 +143,16 @@
     <script src="../../js/dashboard.js"></script>
     <script>
         if (!requireAdmin()) throw new Error('Not authenticated');
+        const currentUser = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+        const isAdmin = currentUser && currentUser.role === 'admin';
         let allAnnouncements = [];
         let currentFilter = 'all';
 
-        document.addEventListener('DOMContentLoaded', () => { loadAnnouncements(); setInterval(loadAnnouncements, 15000); });
+        document.addEventListener('DOMContentLoaded', () => {
+            const addBtn = document.querySelector('header .header-right button.btn.btn-primary');
+            if (addBtn && !isAdmin) addBtn.style.display = 'none';
+            loadAnnouncements(); setInterval(loadAnnouncements, 15000);
+        });
 
         function setActivePriorityFilter(filter) {
             currentFilter = filter;
@@ -196,10 +202,11 @@
                                 <p style="color:var(--text-secondary);margin-bottom:12px;line-height:1.6;">${escapeHtml(a.content)}</p>
                                 <small style="color:var(--text-tertiary);"><i class="fas fa-user"></i> Posted by ${escapeHtml(a.posted_by_name || 'Admin')} &middot; <i class="fas fa-calendar"></i> ${formatDate(a.created_at)}${a.expires_at ? ` &middot; <i class="fas fa-clock"></i> Expires ${formatDate(a.expires_at)}` : ''}</small>
                             </div>
+                            ${isAdmin ? `
                             <div style="display:flex;gap:4px;flex-shrink:0;">
                                 <button class="btn btn-sm btn-secondary" onclick="editAnnouncement(${a.id})" title="Edit"><i class="fas fa-edit"></i></button>
                                 <button class="btn btn-sm btn-danger" onclick="deleteAnnouncement(${a.id})" title="Delete"><i class="fas fa-trash"></i></button>
-                            </div>
+                            </div>` : ''}
                         </div>
                     </div>
                 `).join('')}

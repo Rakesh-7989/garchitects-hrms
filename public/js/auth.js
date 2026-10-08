@@ -163,12 +163,16 @@ async function apiCall(endpoint, method = 'GET', body = null, opts = null) {
     if (body) {
         options.body = JSON.stringify(body);
     }
-    if (timeoutMs) {
-        const ctrl = new AbortController();
-        setTimeout(() => ctrl.abort(), timeoutMs);
-        options.signal = ctrl.signal;
-    }
-    
+    // Default timeout (MI-7): every apiCall aborts after 20s unless the
+    // caller passes an explicit opts.timeoutMs, so a hung socket (e.g. a
+    // cold Vercel instance) falls into the catch/error path below instead
+    // of leaving the caller's loader spinning forever. JSON endpoints only
+    // go through here - downloads/PDFs use downloadWithAuth/fetch.
+    const effectiveTimeoutMs = (typeof timeoutMs === 'number' && timeoutMs > 0) ? timeoutMs : 20000;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), effectiveTimeoutMs);
+    options.signal = ctrl.signal;
+
     try {
         const response = await fetch(`${API_URL}${endpoint}`, options);
         
@@ -205,6 +209,8 @@ async function apiCall(endpoint, method = 'GET', body = null, opts = null) {
             showToast('Network error. Please try again.', 'error');
         }
         return null;
+    } finally {
+        clearTimeout(timer);
     }
 }
 
@@ -317,7 +323,20 @@ function formatCurrency(amount) {
 // Format date
 function formatDate(dateString, options = {}) {
     if (!dateString) return '';
-    const d = new Date(dateString);
+    const raw = String(dateString);
+    const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    let d;
+    if (dateOnly) {
+        // Date-only keys carry no timezone: new Date('YYYY-MM-DD') parses
+        // them at UTC midnight, so toLocaleDateString renders the PREVIOUS
+        // day in browsers west of UTC. Build the calendar day locally at
+        // noon instead - the rendered day is then the key's day in every
+        // browser timezone (MI-5). Output format is unchanged.
+        d = new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]), 12, 0, 0);
+        if (d.getFullYear() !== Number(dateOnly[1]) || d.getMonth() !== Number(dateOnly[2]) - 1 || d.getDate() !== Number(dateOnly[3])) return '';
+    } else {
+        d = new Date(raw);
+    }
     if (isNaN(d.getTime())) return '';
     const defaults = { year: 'numeric', month: 'short', day: 'numeric' };
     return d.toLocaleDateString('en-IN', { ...defaults, ...options });

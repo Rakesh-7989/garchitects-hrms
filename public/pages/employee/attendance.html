@@ -233,7 +233,19 @@
                 apiCall('/holidays?year=' + year),
                 apiCall('/leave/my')
             ]);
-            const records = (attRes && attRes.success) ? (attRes.attendance || []) : [];
+            // Three-way branch (MI-2): null = network/timeout failure,
+            // success === false = server error - either is an ERROR card
+            // with Retry, never "No attendance records for this period".
+            // Only a real success with zero rows is the genuine empty state.
+            if (!attRes || attRes.success === false) {
+                const errMsg = (attRes && attRes.message) || 'Could not load your attendance records.';
+                showLoadError(container, errMsg, 'loadData');
+                showLoadError(document.getElementById('monthlyContainer'), errMsg, 'loadData');
+                document.getElementById('summaryBar').innerHTML = '';
+                document.getElementById('attStatsBar').innerHTML = '';
+                return;
+            }
+            const records = attRes.attendance || [];
             lastRecords = records;
             lastHolidays = (holRes && holRes.success) ? (holRes.holidays || []) : [];
             lastLeaveDays = new Set();
@@ -317,7 +329,13 @@
             const todayStr = getTodayIST();
                     let html = '<div class="table-container"><table><thead><tr><th>Date</th><th>Day</th><th>Check In</th><th>Check Out</th><th>Location</th><th>Hours Worked</th><th>Status</th></tr></thead><tbody>';
                     records.forEach(a => {
-                        const d = new Date(a.date);
+                        // a.date is a plain YYYY-MM-DD (server-normalized):
+                        // parse it at UTC midnight and read the weekday with
+                        // getUTCDay() so the Day column is the date's true
+                        // weekday in every browser timezone - new Date(date)
+                        // + getDay() would be browser-TZ-dependent (MI-5).
+                        const dm = String(a.date || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+                        const d = dm ? new Date(Date.UTC(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3]))) : new Date(a.date);
                         const adate = a.date ? a.date.split('T')[0] : '';
                         const isToday = adate === todayStr;
                         const isLate = a.status === 'late';
@@ -361,7 +379,7 @@
 
                         html += '<tr style="' + rowStyle + '">';
                         html += '<td>' + formatDate(a.date) + (isToday ? ' <span class="badge badge-primary" style="font-size:0.6rem;">Today</span>' : '') + '</td>';
-                        html += '<td>' + dayNames[d.getDay()] + '</td>';
+                        html += '<td>' + dayNames[d.getUTCDay()] + '</td>';
                         html += '<td>' + escapeHtml(a.check_in || '-') + '</td>';
                         html += '<td>' + escapeHtml(a.check_out || '-') + '</td>';
                         html += '<td style="text-align:center;">' + locHtml + '</td>';

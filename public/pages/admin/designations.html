@@ -121,9 +121,15 @@
     <script src="../../js/dashboard.js"></script>
     <script>
         if (!requireAdmin()) throw new Error('Not authenticated');
+        const currentUser = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+        const isAdmin = currentUser && currentUser.role === 'admin';
         let allDesignations = [];
 
-        document.addEventListener('DOMContentLoaded', () => { load(); loadDepts(); loadTeamLeads(); });
+        document.addEventListener('DOMContentLoaded', () => {
+            const addBtn = document.querySelector('header .header-right button.btn.btn-primary');
+            if (addBtn && !isAdmin) addBtn.style.display = 'none';
+            load(); loadDepts(); loadTeamLeads();
+        });
 
         async function load() {
             const d = await apiCall('/designations');
@@ -142,11 +148,11 @@
                         <td>${escapeHtml(x.department_name || '-')}</td>
                         <td>${x.team_lead_id ? `<span class="badge badge-primary">${escapeHtml(x.team_lead_name || '')}</span>` : '<span class="text-muted">Not set</span>'}</td>
                         <td>${escapeHtml(String(x.employee_count || 0))}</td>
-                        <td>
+                        <td>${isAdmin ? `
                             <div style="display:flex;gap:4px;">
                                 <button class="btn btn-sm btn-secondary" onclick="edit(${x.id})" title="Edit"><i class="fas fa-edit"></i></button>
                                 <button class="btn btn-sm btn-danger" onclick="del(${x.id})" title="Delete"><i class="fas fa-trash"></i></button>
-                            </div>
+                            </div>` : ''}
                         </td>
                     </tr>
                 `).join('');

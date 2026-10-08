@@ -146,6 +146,10 @@
     <script src="../../js/dashboard.js"></script>
     <script>
         if (!requireAdmin()) throw new Error('Not authenticated');
+        const currentUser = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+        if (currentUser && currentUser.role === 'hr') {
+            window.location.replace('/admin/dashboard');
+        }
 
         const PAGE_SIZE = 50;
         let currentOffset = 0;
