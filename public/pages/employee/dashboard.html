@@ -381,6 +381,32 @@
         // "not checked in yet" state when row is falsy). Shared by the status
         // poll and by the "already checked in" recovery path so a stale view
         // can never strand an employee without a Check-Out button.
+        // Three-state status card: the static HTML defaults to the Check-In
+        // button visible, so between DOM ready and the first status fetch the
+        // dashboard would show a misleading "Check In" (and if that fetch fails
+        // it would stay there forever - inviting a duplicate 409 check-in on
+        // every reload). Never show the Check-In action until the server
+        // actually confirms there is no row for today.
+        function setAttendanceLoading() {
+            document.getElementById('checkInBtn').style.display = 'none';
+            document.getElementById('checkOutBtn').style.display = 'none';
+            document.getElementById('breakStartBtn').style.display = 'none';
+            document.getElementById('breakEndBtn').style.display = 'none';
+            document.getElementById('breakDuration').style.display = 'none';
+            document.getElementById('workDuration').style.display = 'none';
+            document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--text-secondary);"><i class="fas fa-spinner fa-spin"></i> Syncing attendance status...</p>';
+        }
+
+        function setAttendanceError() {
+            document.getElementById('checkInBtn').style.display = 'none';
+            document.getElementById('checkOutBtn').style.display = 'none';
+            document.getElementById('breakStartBtn').style.display = 'none';
+            document.getElementById('breakEndBtn').style.display = 'none';
+            document.getElementById('breakDuration').style.display = 'none';
+            document.getElementById('workDuration').style.display = 'none';
+            document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--danger);">Could not load your attendance status.<br><button class="btn btn-secondary" style="margin-top:10px;" onclick="loadAttendanceStatus()"><i class="fas fa-sync-alt"></i> Retry</button></p>';
+        }
+
         function renderTodayAttendance(row) {
             if (!row) {
                 document.getElementById('checkInBtn').style.display = 'inline-flex';
@@ -438,6 +464,10 @@
 
         async function loadAttendanceStatus() {
             const now = new Date();
+            const hadRender = !!todayAttendance;
+            // First load (or after a handler reset) -> neutral "syncing" state
+            // so the default Check-In button never flashes while fetching.
+            if (!hadRender) setAttendanceLoading();
             const data = await apiCall(`/attendance/my?month=${now.getMonth()+1}&year=${now.getFullYear()}`);
             if (data && data.success) {
                 const today = getTodayIST();
@@ -446,7 +476,14 @@
                     return adate === today;
                 }) || null;
                 renderTodayAttendance(todayAttendance);
+            } else if (!hadRender) {
+                // Fetch failed and nothing was rendered yet: show an error with
+                // Retry, NEVER a Check-In button (a reload must not invite a
+                // duplicate check-in while the server still has today's row).
+                setAttendanceError();
             }
+            // If a row was already rendered and this refetch failed, keep the
+            // current render (do not degrade to "Check In").
         }
 
         let cameraStream = null;
