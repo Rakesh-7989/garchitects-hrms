@@ -595,8 +595,15 @@
             const data = await apiCall('/attendance/check-in', 'POST', { location: location || '', photo });
             if (data && data.success) {
                 showToast('Checked in successfully!' + (data.has_photo ? ' Selfie verified.' : ''), 'success');
-                todayAttendance = null;
-                await loadAttendanceStatus();
+                // User story: the FIRST check-in must immediately show as
+                // checked in on the dashboard - never a re-check-in prompt.
+                // Render the server-confirmed row right away (its date is plain
+                // YYYY-MM-DD and it already carries check_in/status/location),
+                // then reconcile in the background so month stats / photo flags
+                // stay current even if the follow-up fetch is slow or fails.
+                todayAttendance = data.attendance || null;
+                renderTodayAttendance(todayAttendance);
+                loadAttendanceStatus();
             } else if (data && data.alreadyCheckedIn) {
                 // The server already has today's check-in but the current view
                 // missed it - recover immediately so Check-Out is reachable

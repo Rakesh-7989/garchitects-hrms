@@ -34,6 +34,12 @@
  * row immediately - i.e. a successful check-in can never leave the UI on
  * "Check In".
  *
+ * User story covered here: "When I check in the first time, the employee
+ * dashboard must immediately show me as checked in - it must not ask me to
+ * check in again." The dashboard now renders the check-in SUCCESS payload
+ * directly (no refetch required), so the payload must be fully renderable:
+ * check_in + status + check_in_location present, no check_out, plain date.
+ *
  * Run:
  *   1. Start the server (this machine's TZ is Asia/Kolkata, so the shift is
  *      real here; for determinism you may also `$env:TZ='Asia/Kolkata'` first).
@@ -211,6 +217,18 @@ async function main() {
     check('fresh check-in -> 200 with success', freshIn.status === 200 && !!(freshIn.json && freshIn.json.success), freshIn.json);
     check('fresh check-in payload carries plain YYYY-MM-DD date', !!(
         freshIn.json && freshIn.json.attendance && freshIn.json.attendance.date === today
+    ), freshIn.json && freshIn.json.attendance);
+    // User story: the FIRST check-in must render as "checked in" on the
+    // dashboard immediately - never a re-check-in prompt. The client renders
+    // from the success payload itself (no refetch required), so the payload
+    // must carry every field renderTodayAttendance() needs: check_in + status +
+    // location, no check_out, plain date.
+    check('success payload is directly renderable (check_in/status/location, no check_out)', !!(
+        freshIn.json && freshIn.json.attendance &&
+        /^\d{2}:\d{2}/.test(String(freshIn.json.attendance.check_in)) &&
+        ['present', 'late', 'half-day'].includes(freshIn.json.attendance.status) &&
+        String(freshIn.json.attendance.check_in_location || '').startsWith('17.') &&
+        !freshIn.json.attendance.check_out
     ), freshIn.json && freshIn.json.attendance);
     const myFresh = await api('GET', `/api/attendance/my?month=${month}&year=${year}`, T.fresh);
     const freshRow = ((myFresh.json && myFresh.json.attendance) || []).find(a => dd(a.date) === today);

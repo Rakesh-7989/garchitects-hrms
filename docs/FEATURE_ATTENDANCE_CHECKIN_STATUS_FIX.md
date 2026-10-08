@@ -85,6 +85,11 @@ Fix (server + client + PWA):
   new shared `renderTodayAttendance(row)` (extracted from `loadAttendanceStatus`,
   which now reuses the `getTodayIST()` helper) and toasts *"You are already checked
   in today - you can check out now."* → the **Check-Out** button appears instantly.
+  **User story (2026-10-08):** the FIRST check-in also renders the server-confirmed
+  row **directly from the check-in success payload** — no refetch required — so the
+  dashboard shows "Checked in" the moment the check-in returns and never prompts
+  "check in again"; the follow-up `/attendance/my` refetch still runs in the
+  background to keep month stats / photo flags current even if it is slow or fails.
 - `public/sw.js` — cache name bumped `v8 → v9` (dashboard.html changed).
 - `server/routes/attendance.js` (check-in **success** path) — the returned row's
   `attendance.date` is now normalized with `dateOnly()` too. It was the last
@@ -125,7 +130,7 @@ had no recovery signal and no Check-Out path.
 ### Green evidence (post-fix)
 `scripts/qa-attendance-checkin-status.cjs` (hermetic `DATABASE_URL`, throwaway
 admin + 3 employees, today's `attendance` rows seeded directly so "admin sees it"
-is the premise, 4 logins, full API drive, then rollback) — **23/23 green**:
+is the premise, 4 logins, full API drive, then rollback) — **24/24 green**:
 
 - logins (admin / open-day employee / completed-day employee) succeed;
 - `GET /api/attendance/my` → every `date` is plain `YYYY-MM-DD`; a row exists with
@@ -137,16 +142,18 @@ is the premise, 4 logins, full API drive, then rollback) — **23/23 green**:
   the existing row with a plain date (check_in / location / status preserved);
 - **check-out succeeds after the recovery row** (the employee is never stranded)
   and `/attendance/my` then shows `check_out` on today's row;
-- **fresh check-in path (the exact reported flow)**: a brand-new employee checks
-  in via the API → `200` success with a **plain `YYYY-MM-DD`** `attendance.date`
-  in the payload, and the dashboard's post-check-in refetch finds the row
-  immediately — a successful check-in can never leave the UI prompting
-  "Check In" again;
+- **fresh check-in path (the exact reported flow / user story)**: a brand-new
+  employee checks in via the API → `200` success with a **plain `YYYY-MM-DD`**
+  `attendance.date` in the payload, the payload is **directly renderable**
+  (`check_in` + `status` + `check_in_location` present, no `check_out` — so the
+  dashboard can show "Checked in" instantly without a refetch), and the
+  post-check-in refetch finds the row immediately — a successful check-in can
+  never leave the UI prompting "Check In" again;
 - `GET /api/attendance/all` (admin register) ships plain dates throughout;
 - cleanup verified — DB left pristine (`0` QA employees remain).
 
 Run: `node scripts/qa-attendance-checkin-status.cjs` (start `npm start` first; the
-login limiter allows 10 attempts/15 min per IP and the harness uses 3 — restart the
+login limiter allows 10 attempts/15 min per IP and the harness uses 4 — restart the
 server before a rerun to reset it).
 
 ## 5. Blast radius
@@ -154,7 +161,8 @@ server before a rerun to reset it).
   `POST /api/attendance/check-in` duplicate answer `400 → 409` (same message,
   `alreadyCheckedIn` + row added — additive) plus its success payload
   `attendance.date` now plain `YYYY-MM-DD`; employee dashboard check-in
-  handler + shared `renderTodayAttendance`; `sw.js` cache `v8 → v9`.
+  handler + shared `renderTodayAttendance` (first check-in renders from the success
+  payload immediately); `sw.js` cache `v8 → v9 → v11`.
 - Consumers (verified compatible): employee dashboard (`loadAttendanceStatus`,
   month stats, recent attendance), employee `attendance.html` (calendar, summary,
   table), admin `attendance.html` (recent logs via `formatDate`).

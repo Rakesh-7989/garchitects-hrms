@@ -146,10 +146,13 @@ server guards (a hidden button must not be the only thing stopping a role).
   which 400'd ("Already checked in today") with no Check-Out path — `POST /attendance/check-in`
   now answers **409** + `alreadyCheckedIn` + the existing row, and the dashboard renders it
   immediately (`renderTodayAttendance`) so Check-Out is always reachable; check-in success
-  payload `date` normalized too; `sw.js` cache v9. No schema changes.
-  **QA: `scripts/qa-attendance-checkin-status.cjs` → 23/23 green** (incl. the fresh
-  check-in path: success payload date plain + refetch finds the row, no re-check-in prompt)
-  against a hermetic local Postgres on IST local time (see
+  payload `date` normalized too. **User story fix (same day):** the FIRST check-in now renders
+  the server-confirmed row **directly from the check-in success payload** (no refetch needed),
+  so the dashboard shows "Checked in" instantly and never prompts "check in again". `sw.js`
+  cache v11. No schema changes.
+  **QA: `scripts/qa-attendance-checkin-status.cjs` → 24/24 green** (incl. the fresh
+  check-in path: success payload date plain + directly renderable + refetch finds the row,
+  no re-check-in prompt) — against a hermetic local Postgres on IST local time (see
   `docs/FEATURE_ATTENDANCE_CHECKIN_STATUS_FIX.md`).
 - **Duplicate check-ins are impossible (same day):** `attendance` has
   `UNIQUE(employee_id, date)`, the check-in INSERT is `ON CONFLICT (employee_id, date)
@@ -160,8 +163,8 @@ server guards (a hidden button must not be the only thing stopping a role).
   and a reload appeared to "not apply changes" (leading users to reinstall).
   `auth.js` now calls `reg.update()` on `visibilitychange` (app regains focus) —
   `sw.js` is served `no-cache`, so a fresh deploy auto-applies on the next open;
-  sw cache bumped to `v10` (static asset change per §8). Reload is always the only
-  step needed — never a reinstall.
+  the sw cache name is bumped on every static-asset change per §8 (currently
+  `v11`). Reload is always the only step needed — never a reinstall.
 - **Work Assignments v2 — Increment 1 shipped (2026-10-07):** `blocked` status + reason,
   assignee cannot hard-cancel, cancel/block require a reason, actual timestamps
   (`started_at`/`cancelled_at`/`assigned_at` + `start_date`), counterpart notifications
