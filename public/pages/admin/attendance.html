@@ -29,6 +29,7 @@
         .cell-upcoming { background: transparent; color: var(--text-tertiary); }
         .cell-onleave { background: #EDE9FE; color: #6D28D9; }
         .cell-holiday { background: #FDF4FF; color: #A21CAF; }
+        .cell-wfh { background: #E0F2FE; color: #075985; }
         .dark-mode .cell-present { background: #064E3B; color: #34D399; }
         .dark-mode .cell-late { background: #78350F; color: #FBBF24; }
         .dark-mode .cell-half-day { background: #7C2D12; color: #FDBA74; }
@@ -37,6 +38,7 @@
         .dark-mode .cell-upcoming { background: transparent; color: #4B5563; }
         .dark-mode .cell-onleave { background: #4C1D95; color: #C4B5FD; }
         .dark-mode .cell-holiday { background: #701A75; color: #F0ABFC; }
+        .dark-mode .cell-wfh { background: #0C4A6E; color: #7DD3FC; }
         .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.8rem; }
         .legend-item { display: flex; align-items: center; gap: 6px; }
         .legend-dot { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--border); }
@@ -123,6 +125,7 @@
                         <select id="filterDesignation" class="form-control" style="width:170px;" onchange="renderMatrix(matrixData)"><option value="">All Designations</option></select>
                         <button class="btn btn-success" onclick="openMarkPresentModal()"><i class="fas fa-user-check"></i> Mark Present</button>
                         <button class="btn btn-danger" onclick="openMarkAbsentModal()"><i class="fas fa-user-times"></i> Mark Absent</button>
+                        <button class="btn btn-primary" onclick="openEditAttendanceModal()"><i class="fas fa-pen-to-square"></i> Edit Attendance</button>
                     </div>
                     <button class="btn btn-success" onclick="downloadExcel()"><i class="fas fa-file-excel"></i> Download Excel</button>
                 </div>
@@ -136,6 +139,7 @@
                 <div class="stat-item"><div class="num" id="statAbsent" style="color:var(--danger);">0</div><div class="lbl">Absent (LOP)</div></div>
                 <div class="stat-item"><div class="num" id="statWeekoff" style="color:var(--text-tertiary);">0</div><div class="lbl">Weekoff</div></div>
                 <div class="stat-item"><div class="num" id="statHoliday" style="color:#A21CAF;">0</div><div class="lbl">Holidays</div></div>
+                <div class="stat-item"><div class="num" id="statWfh" style="color:#0EA5E9;">0</div><div class="lbl">WFH</div></div>
             </div>
 
             <p style="font-size:0.8rem;color:var(--text-secondary);margin:-4px 0 8px;"><i class="fas fa-info-circle"></i> Present count includes late logins.</p>
@@ -150,6 +154,7 @@
                 <span class="legend-item"><span class="legend-dot cell-late"></span> Late Login</span>
                 <span class="legend-item"><span class="legend-dot cell-half-day"></span> Half Day</span>
                 <span class="legend-item"><span class="legend-dot cell-onleave"></span> On Leave</span>
+                <span class="legend-item"><span class="legend-dot cell-wfh"></span> WFH</span>
                 <span class="legend-item"><span class="legend-dot cell-holiday"></span> Holiday</span>
                 <span class="legend-item"><span class="legend-dot cell-absent"></span> Absent (LOP)</span>
                 <span class="legend-item"><span class="legend-dot cell-weekoff"></span> Week Off</span>
@@ -250,6 +255,59 @@
         </div>
     </div>
 
+    <!-- Edit Attendance Modal (admin/HR/manager rich per-day editor) -->
+    <div class="modal" id="editAttendanceModal" onclick="if(event.target===this)closeEditAttendanceModal()">
+        <div class="modal-content" style="max-width:480px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-pen-to-square" style="color:var(--primary);margin-right:8px;"></i>Edit Attendance</h2>
+                <button class="modal-close" onclick="closeEditAttendanceModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Employee</label>
+                    <select id="editEmployee" class="form-control" onchange="loadEditRecord()"><option value="">Select Employee</option></select>
+                </div>
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="editDate" class="form-control" onchange="loadEditRecord()">
+                </div>
+                <div class="form-group">
+                    <label>Day type</label>
+                    <div id="editDayContext" style="font-size:0.82rem;color:var(--text-secondary);padding:4px 0;">Select an employee and date.</div>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="editStatus" class="form-control" onchange="onEditStatusChange()">
+                        <option value="present">Present</option>
+                        <option value="late">Late Login</option>
+                        <option value="half-day">Half Day</option>
+                        <option value="absent">Absent (LOP)</option>
+                        <option value="wfh">Work From Home</option>
+                    </select>
+                </div>
+                <div id="editTimeFields" style="display:flex;gap:12px;">
+                    <div class="form-group" style="flex:1;">
+                        <label>Check In</label>
+                        <input type="time" id="editCheckIn" class="form-control">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>Check Out</label>
+                        <input type="time" id="editCheckOut" class="form-control">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Remarks (optional)</label>
+                    <textarea id="editRemarks" class="form-control" rows="2" maxlength="500" placeholder="Reason / note for this change"></textarea>
+                </div>
+                <p style="font-size:0.75rem;color:var(--text-secondary);"><i class="fas fa-info-circle"></i> Saving a check-out clears the automatic auto-checkout mark for that day.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeEditAttendanceModal()">Cancel</button>
+                <button class="btn btn-primary" id="editAttendanceBtn" onclick="saveAttendanceEdit()"><i class="fas fa-save"></i> Save</button>
+            </div>
+        </div>
+    </div>
+
     <script src="../../js/auth.js"></script>
     <script src="../../js/dashboard.js"></script>
     <script src="../../js/workWeek.js"></script>
@@ -258,7 +316,7 @@
 
         let matrixData = null;
         const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        const statusLabels = { present:'Present', late:'Late Login', 'half-day':'Half Day', absent:'Absent (LOP)', weekoff:'Week Off', upcoming:'--', onleave:'On Leave', holiday:'Holiday' };
+        const statusLabels = { present:'Present', late:'Late Login', 'half-day':'Half Day', absent:'Absent (LOP)', weekoff:'Week Off', upcoming:'--', onleave:'On Leave', holiday:'Holiday', wfh:'Work From Home' };
 
         document.addEventListener('DOMContentLoaded', () => {
             const now = new Date();
@@ -315,7 +373,7 @@
         }
 
         function getStatusForDisplay(status) {
-            const map = { present: 'P', late: 'L', 'half-day': 'HD', absent: 'A', weekoff: '-', upcoming: '', onleave: 'Lv', holiday: 'H' };
+            const map = { present: 'P', late: 'L', 'half-day': 'HD', absent: 'A', weekoff: '-', upcoming: '', onleave: 'Lv', holiday: 'H', wfh: 'WFH' };
             return map[status] || '?';
         }
 
@@ -358,9 +416,9 @@
                 const isFuture = date > today;
                 html += '<th style="' + (isWeekend || isFuture ? 'color:var(--text-tertiary);' : '') + '" title="' + dayName + ' ' + d + '">' + d + '<br><span style="font-size:0.55rem;font-weight:400;">' + dayName + '</span></th>';
             }
-            html += '<th style="font-size:0.65rem;">P* / L / HD / A / Lv</th><th style="font-size:0.65rem;">Total Days</th></tr></thead><tbody>';
+            html += '<th style="font-size:0.65rem;">P* / L / HD / A / Lv / WFH</th><th style="font-size:0.65rem;">Total Days</th></tr></thead><tbody>';
 
-            let grandPresent = 0, grandLate = 0, grandHalf = 0, grandAbsent = 0, grandWeekoff = 0, grandLeave = 0, grandHoliday = 0;
+            let grandPresent = 0, grandLate = 0, grandHalf = 0, grandAbsent = 0, grandWeekoff = 0, grandLeave = 0, grandHoliday = 0, grandWfh = 0;
             // Filter by designation if selected
             const selDes = document.getElementById('filterDesignation') ? document.getElementById('filterDesignation').value : '';
             let filteredEmployees = selDes ? employees.filter(e => (e.designation_name || '') === selDes) : employees.slice();
@@ -384,7 +442,7 @@
                 const emp = item.emp;
                 html += '<tr>';
                 html += '<td class="emp-name">' + escapeHtml(emp.first_name + ' ' + (emp.last_name || '')) + '<br><span style="font-size:0.62rem;color:var(--text-secondary);">' + escapeHtml(emp.employee_id || '') + ' · ' + escapeHtml(emp.designation_name || '-') + '</span></td>';
-                let p = 0, l = 0, h = 0, a = 0, w = 0, u = 0, lv = 0, hv = 0;
+                let p = 0, l = 0, h = 0, a = 0, w = 0, u = 0, lv = 0, hv = 0, wf = 0;
                 for (let d = 1; d <= days; d++) {
                     const cell = matrix[emp.id] && matrix[emp.id][d] ? matrix[emp.id][d] : { status: 'absent', check_in: null, check_out: null };
                     // A leave day backfilled as 'absent' carries leave:true so it
@@ -397,6 +455,7 @@
                     else if (cell.status === 'half-day') h++;
                     else if (cell.status === 'onleave') lv++;
                     else if (cell.status === 'holiday') hv++;
+                    else if (cell.status === 'wfh') wf++;
                     else if (cell.status === 'absent') a++;
                     else if (cell.status === 'weekoff') w++;
                     else if (cell.status === 'upcoming') u++;
@@ -405,11 +464,11 @@
                         : escapeHtml(getStatusForDisplay(isLopLeave ? 'absent' : cell.status));
                     html += '<td class="' + cls + '" data-emp="' + emp.id + '" data-day="' + d + '" data-status="' + escapeHtml((isLopLeave ? 'absent' : cell.status) || '') + '" data-in="' + escapeHtml(cell.check_in || '') + '" data-out="' + escapeHtml(cell.check_out || '') + '" data-loc="' + escapeHtml(cell.check_in_location || '') + '" data-name="' + escapeHtml(emp.first_name + ' ' + (emp.last_name || '')) + '">' + label + '</td>';
                 }
-                grandPresent += p; grandLate += l; grandHalf += h; grandAbsent += a; grandWeekoff += w; grandLeave += lv; grandHoliday += hv;
-                // Week offs, paid leave and holidays are included in
-                // Total Days.
-                const totalDays = p + l + (h * 0.5) + lv + w + hv;
-                html += '<td style="font-weight:600;font-size:0.7rem;text-align:center;white-space:nowrap;">' + (p + l) + ' / ' + l + ' / ' + h + ' / ' + a + ' / ' + lv + '</td>';
+                grandPresent += p; grandLate += l; grandHalf += h; grandAbsent += a; grandWeekoff += w; grandLeave += lv; grandHoliday += hv; grandWfh += wf;
+                // Week offs, paid leave, holidays and WFH are included in
+                // Total Days (WFH is a working day).
+                const totalDays = p + l + (h * 0.5) + lv + w + hv + wf;
+                html += '<td style="font-weight:600;font-size:0.7rem;text-align:center;white-space:nowrap;">' + (p + l) + ' / ' + l + ' / ' + h + ' / ' + a + ' / ' + lv + ' / ' + wf + '</td>';
                 html += '<td style="font-weight:700;font-size:0.75rem;text-align:center;white-space:nowrap;color:var(--primary);">' + formatHalfDays(totalDays) + '</td>';
                 html += '</tr>';
             }
@@ -431,6 +490,7 @@
             document.getElementById('statAbsent').textContent = grandAbsent;
             document.getElementById('statWeekoff').textContent = grandWeekoff;
             document.getElementById('statHoliday').textContent = grandHoliday;
+            document.getElementById('statWfh').textContent = grandWfh;
         }
 
         function matrixCellMouseOver(e) {
@@ -555,7 +615,7 @@
             if (data && data.success && data.attendance.length > 0) {
                 const records = data.attendance.slice(0, 20);
                 photoTokenMap = [];
-                let html = '<div class="table-container"><table><thead><tr><th>Employee</th><th>Date</th><th>Check In</th><th>Check Out</th><th>Check In Location</th><th>Check Out Location</th><th>Photo</th><th>Status</th></tr></thead><tbody>';
+                let html = '<div class="table-container"><table><thead><tr><th>Employee</th><th>Date</th><th>Check In</th><th>Check Out</th><th>Check In Location</th><th>Check Out Location</th><th>Photo</th><th>Status</th><th>Edit</th></tr></thead><tbody>';
                 records.forEach(a => {
                     const empName = escapeHtml(a.first_name + ' ' + (a.last_name || ''));
                     let ciLocHtml = '-';
@@ -599,6 +659,7 @@
                     html += '<td style="text-align:center;">' + coLocHtml + '</td>';
                     html += '<td style="text-align:center;">' + photoHtml + '</td>';
                     html += '<td><span class="badge badge-' + getStatusBadge(a.status) + '">' + escapeHtml(getStatusText(a.status)) + '</span></td>';
+                    html += '<td style="text-align:center;"><button class="btn btn-sm btn-secondary" title="Edit this day" onclick="openEditAttendanceModal(' + a.employee_id + ', \'' + String(a.date || '') + '\')"><i class="fas fa-pen-to-square"></i></button></td>';
                     html += '</tr>';
                 });
                 html += '</tbody></table></div>';
@@ -655,9 +716,11 @@
             const d = await apiCall('/employees?limit=1000');
             const absentSel = document.getElementById('absentEmployee');
             const presentSel = document.getElementById('presentEmployee');
+            const editSel = document.getElementById('editEmployee');
             const opts = '<option value="">Select Employee</option>' + (d && d.success ? d.employees.map(x => `<option value="${x.id}">${escapeHtml(x.first_name+' '+x.last_name)} (${escapeHtml(x.employee_id)})</option>`).join('') : '');
             if (absentSel) absentSel.innerHTML = opts;
             if (presentSel) presentSel.innerHTML = opts;
+            if (editSel) editSel.innerHTML = opts;
         }
 
         function openMarkPresentModal() {
@@ -725,6 +788,93 @@
                 showToast(data?.message || 'Failed to mark absent', 'error');
             }
             btn.innerHTML = '<i class="fas fa-user-times"></i> Mark Absent';
+            btn.disabled = false;
+        }
+
+        // ── Rich per-day editor (admin/HR company-wide; manager own tree) ──
+        async function openEditAttendanceModal(empId, dateStr) {
+            await loadAllEmployees();
+            const empSel = document.getElementById('editEmployee');
+            const dateInput = document.getElementById('editDate');
+            if (empId) empSel.value = String(empId);
+            if (dateStr) dateInput.value = String(dateStr).split('T')[0];
+            else if (!dateInput.value) dateInput.value = getTodayIST();
+            document.getElementById('editRemarks').value = '';
+            document.getElementById('editDayContext').textContent = 'Select an employee and date.';
+            document.getElementById('editAttendanceModal').classList.add('active');
+            onEditStatusChange();
+            if (empSel.value && dateInput.value) loadEditRecord();
+        }
+
+        function closeEditAttendanceModal() {
+            document.getElementById('editAttendanceModal').classList.remove('active');
+        }
+
+        function onEditStatusChange() {
+            const st = document.getElementById('editStatus').value;
+            const working = ['present', 'late', 'half-day'].includes(st);
+            document.getElementById('editTimeFields').style.display = working ? 'flex' : 'none';
+        }
+
+        async function loadEditRecord() {
+            const empId = document.getElementById('editEmployee').value;
+            const date = document.getElementById('editDate').value;
+            const ctx = document.getElementById('editDayContext');
+            if (!empId || !date) { ctx.textContent = 'Select an employee and date.'; return; }
+            ctx.innerHTML = '<div class="spinner" style="margin:0 auto;width:16px;height:16px;"></div>';
+            const d = await apiCall('/attendance/record?employee_id=' + encodeURIComponent(empId) + '&date=' + encodeURIComponent(date));
+            if (!d || !d.success) {
+                ctx.innerHTML = '<span style="color:var(--danger);">' + escapeHtml((d && d.message) || 'Could not load this day') + '</span>';
+                return;
+            }
+            const day = d.day || {};
+            const tags = [];
+            if (day.holiday) tags.push('Holiday: ' + escapeHtml(day.holiday));
+            if (day.weekoff) tags.push('Weekly off');
+            if (day.leave) tags.push('Approved leave');
+            if (day.wfh) tags.push('Approved WFH');
+            if (day.future) tags.push('Future date');
+            if (day.today) tags.push('Today');
+            ctx.innerHTML = tags.length
+                ? tags.map(t => '<span class="badge badge-info" style="margin-right:6px;">' + t + '</span>').join('')
+                : '<span>Regular working day</span>';
+            const rec = d.record || {};
+            const st = ['present', 'late', 'half-day', 'absent', 'wfh'].includes(rec.status) ? rec.status : 'present';
+            document.getElementById('editStatus').value = st;
+            document.getElementById('editCheckIn').value = (rec.check_in || '').substring(0, 5);
+            document.getElementById('editCheckOut').value = (rec.check_out || '').substring(0, 5);
+            document.getElementById('editRemarks').value = rec.remarks || '';
+            onEditStatusChange();
+        }
+
+        async function saveAttendanceEdit() {
+            const employee_id = parseInt(document.getElementById('editEmployee').value, 10);
+            const date = document.getElementById('editDate').value;
+            const status = document.getElementById('editStatus').value;
+            if (!employee_id || !date) { showToast('Please select employee and date', 'error'); return; }
+            const working = ['present', 'late', 'half-day'].includes(status);
+            const check_in = working ? document.getElementById('editCheckIn').value : '';
+            const check_out = working ? document.getElementById('editCheckOut').value : '';
+            if (working && !check_in) { showToast('Check-in is required for this status', 'error'); return; }
+            const remarks = document.getElementById('editRemarks').value;
+            const btn = document.getElementById('editAttendanceBtn');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            btn.disabled = true;
+            const data = await apiCall('/attendance/edit', 'POST', {
+                employee_id, date, status,
+                check_in: check_in || null,
+                check_out: check_out || null,
+                remarks
+            });
+            if (data && data.success) {
+                showToast(data.message || 'Attendance updated', 'success');
+                closeEditAttendanceModal();
+                loadMatrix();
+                loadRecentLogs();
+            } else {
+                showToast((data && data.message) || 'Failed to update attendance', 'error');
+            }
+            btn.innerHTML = '<i class="fas fa-save"></i> Save';
             btn.disabled = false;
         }
     </script>

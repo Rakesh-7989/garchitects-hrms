@@ -196,6 +196,45 @@
         </div>
     </div>
 
+    <!-- Edit Attendance (manager tree / HR / admin) -->
+    <div class="modal" id="teamAttEditModal">
+        <div class="modal-content" style="max-width:460px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-pen-to-square" style="color:var(--primary);margin-right:8px;"></i>Edit Attendance</h2>
+                <button onclick="closeTeamAttEdit()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="font-size:0.9rem;margin-bottom:10px;font-weight:600;" id="teamAttEditWho"></div>
+                <div class="form-group">
+                    <label>Day type</label>
+                    <div id="teamAttEditContext" style="font-size:0.82rem;color:var(--text-secondary);padding:4px 0;">Loading...</div>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select class="form-control" id="teamAttEditStatus" onchange="onTeamAttEditStatusChange()">
+                        <option value="present">Present</option>
+                        <option value="late">Late Login</option>
+                        <option value="half-day">Half Day</option>
+                        <option value="absent">Absent (LOP)</option>
+                        <option value="wfh">Work From Home</option>
+                    </select>
+                </div>
+                <div id="teamAttEditTimeFields" style="display:flex;gap:12px;">
+                    <div class="form-group" style="flex:1;"><label>Check In</label><input type="time" id="teamAttEditCheckIn" class="form-control"></div>
+                    <div class="form-group" style="flex:1;"><label>Check Out</label><input type="time" id="teamAttEditCheckOut" class="form-control"></div>
+                </div>
+                <div class="form-group">
+                    <label>Remarks (optional)</label>
+                    <textarea class="form-control" id="teamAttEditRemarks" rows="2" maxlength="500"></textarea>
+                </div>
+                <div class="modal-footer" style="padding:0;margin-top:12px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeTeamAttEdit()">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="teamAttEditSaveBtn" onclick="saveTeamAttEdit()"><i class="fas fa-save"></i> Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="../../js/auth.js"></script>
     <script src="../../js/dashboard.js"></script>
     <script src="../../js/tickets.js"></script>
@@ -563,7 +602,7 @@
             const month = parseInt(document.getElementById('attMonth').value, 10);
             const year = parseInt(document.getElementById('attYear').value, 10);
             const daysInMonth = new Date(year, month, 0).getDate();
-            const todayKey = new Date().toISOString().split('T')[0];
+            const todayKey = getTodayIST();
             const fullMonthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
             let gP = 0, gL = 0, gH = 0, gLv = 0, gA = 0, gW = 0, gHd = 0;
@@ -594,6 +633,12 @@
                         const rec = attByEmp[k2];
                         let cell = '-', bg = '';
                         const isFuture = key > todayKey;
+                        // Manager-tree members get a click-to-edit affordance on
+                        // past/today days (admin/HR get it across the company;
+                        // team_lead rows are not rich-editable).
+                        const canEdit = !!m.editable && !isFuture;
+                        const cellAttr = canEdit ? (' onclick="openTeamAttEdit(' + m.id + ', \'' + key + '\')"') : '';
+                        const cursorCss = canEdit ? 'cursor:pointer;' : '';
                         if (isFuture) {
                             html += '<td style="text-align:center;background:var(--bg-light);color:var(--text-tertiary);">' + cell + '</td>';
                             continue;
@@ -622,7 +667,7 @@
                             if (window.workWeek ? window.workWeek.isWeekOff(new Date(year, month - 1, d)) : (dow === 0 || dow === 6)) { cell = 'WO'; bg = 'background:var(--bg-light);'; w++; }
                             else { cell = 'A'; bg = 'background:#FEE2E2;color:#991B1B;'; a++; }
                         }
-                        html += '<td style="text-align:center;' + bg + '">' + cell + '</td>';
+                        html += '<td style="text-align:center;' + cursorCss + bg + '"' + cellAttr + '>' + cell + '</td>';
                     }
                     const totalDays = p + l + hd + lv + w + h;
                     html += '<td style="text-align:center;font-size:0.68rem;white-space:nowrap;">' + p + '/' + l + '/' + hd + '/' + lv + '</td>';
@@ -631,7 +676,7 @@
                 });
             }
             html += '</tbody></table></div>';
-            html += '<div style="margin-top:10px;font-size:0.72rem;color:var(--text-secondary);">P=Present, L=Late, HD=Half Day, Lv=On Leave (Paid), A=Absent, H=Holiday, WO=Week Off</div>';
+            html += '<div style="margin-top:10px;font-size:0.72rem;color:var(--text-secondary);">P=Present (incl. WFH), L=Late, HD=Half Day, Lv=On Leave (Paid), A=Absent, H=Holiday, WO=Week Off &nbsp;·&nbsp; Click a day cell to edit it (your reporting team).</div>';
             const grandPresent = gP + gL + gHd + gLv;
             const stat = (val, label, color, bg) => '<div class="stat-card" style="padding:8px 10px;border-left:4px solid ' + color + ';background:' + bg + ';"><div class="stat-info" style="text-align:center;"><h3 style="color:' + color + ';font-size:1rem;">' + val + '</h3><p style="font-size:0.68rem;margin:0;">' + label + '</p></div></div>';
             let statsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px;">';
@@ -645,6 +690,82 @@
             statsHtml += '</div>';
             statsHtml += '<div style="margin-bottom:12px;font-size:0.85rem;color:var(--text-secondary);"><b style="color:var(--primary);">Total Present Days</b> (incl. late, half day &amp; paid leaves): <b>' + grandPresent + '</b> / ' + daysInMonth + ' total days in ' + fullMonthNames[month - 1] + ' ' + year + '</div>';
             container.innerHTML = statsHtml + html;
+        }
+
+        // ── Per-day attendance editor (manager tree / HR / admin) ──
+        let teamAttEditTarget = { empId: null, date: null };
+
+        async function openTeamAttEdit(empId, date) {
+            teamAttEditTarget = { empId: empId, date: date };
+            const member = (attDataCache && attDataCache.team || []).find(m => m.id === empId);
+            document.getElementById('teamAttEditWho').textContent =
+                (member ? (member.first_name + ' ' + (member.last_name || '')) + ' · ' + (member.employee_id || '') + ' · ' : '') + date;
+            document.getElementById('teamAttEditContext').textContent = 'Loading...';
+            document.getElementById('teamAttEditRemarks').value = '';
+            document.getElementById('teamAttEditModal').classList.add('active');
+
+            const d = await apiCall('/attendance/record?employee_id=' + encodeURIComponent(empId) + '&date=' + encodeURIComponent(date));
+            if (!d || !d.success) {
+                document.getElementById('teamAttEditContext').innerHTML = '<span style="color:var(--danger);">' + escapeHtml((d && d.message) || 'Could not load this day') + '</span>';
+                return;
+            }
+            const day = d.day || {};
+            const tags = [];
+            if (day.holiday) tags.push('Holiday: ' + escapeHtml(day.holiday));
+            if (day.weekoff) tags.push('Weekly off');
+            if (day.leave) tags.push('Approved leave');
+            if (day.wfh) tags.push('Approved WFH');
+            if (day.today) tags.push('Today');
+            document.getElementById('teamAttEditContext').innerHTML = tags.length
+                ? tags.map(t => '<span class="badge badge-info" style="margin-right:6px;">' + t + '</span>').join('')
+                : '<span>Regular working day</span>';
+            const rec = d.record || {};
+            const st = ['present', 'late', 'half-day', 'absent', 'wfh'].includes(rec.status) ? rec.status : 'present';
+            document.getElementById('teamAttEditStatus').value = st;
+            document.getElementById('teamAttEditCheckIn').value = (rec.check_in || '').substring(0, 5);
+            document.getElementById('teamAttEditCheckOut').value = (rec.check_out || '').substring(0, 5);
+            document.getElementById('teamAttEditRemarks').value = rec.remarks || '';
+            onTeamAttEditStatusChange();
+        }
+
+        function closeTeamAttEdit() {
+            document.getElementById('teamAttEditModal').classList.remove('active');
+        }
+
+        function onTeamAttEditStatusChange() {
+            const st = document.getElementById('teamAttEditStatus').value;
+            const working = ['present', 'late', 'half-day'].includes(st);
+            document.getElementById('teamAttEditTimeFields').style.display = working ? 'flex' : 'none';
+        }
+
+        async function saveTeamAttEdit() {
+            const empId = teamAttEditTarget.empId;
+            const date = teamAttEditTarget.date;
+            const status = document.getElementById('teamAttEditStatus').value;
+            if (!empId || !date) { showToast('Nothing selected', 'error'); return; }
+            const working = ['present', 'late', 'half-day'].includes(status);
+            const check_in = working ? document.getElementById('teamAttEditCheckIn').value : '';
+            const check_out = working ? document.getElementById('teamAttEditCheckOut').value : '';
+            if (working && !check_in) { showToast('Check-in is required for this status', 'error'); return; }
+            const remarks = document.getElementById('teamAttEditRemarks').value;
+            const btn = document.getElementById('teamAttEditSaveBtn');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            btn.disabled = true;
+            const data = await apiCall('/attendance/edit', 'POST', {
+                employee_id: empId, date, status,
+                check_in: check_in || null,
+                check_out: check_out || null,
+                remarks
+            });
+            if (data && data.success) {
+                showToast(data.message || 'Attendance updated', 'success');
+                closeTeamAttEdit();
+                loadTeamAttendance();
+            } else {
+                showToast((data && data.message) || 'Failed to update attendance', 'error');
+            }
+            btn.innerHTML = '<i class="fas fa-save"></i> Save';
+            btn.disabled = false;
         }
 
         function renderCounts() {

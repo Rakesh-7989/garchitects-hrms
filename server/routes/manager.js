@@ -7,6 +7,7 @@ const { sendToUser } = require('../services/push');
 const { getWorkWeekConfig } = require('../utils/workWeek');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
+const { myTreeIds } = require('./project-leads');
 
 // @route   GET /api/manager/team
 // @desc    Get current user's direct reports (TL) or all employees (HR/Manager)
@@ -511,6 +512,14 @@ router.get('/attendance', verifyToken, isManager, async (req, res) => {
         const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
         const userRole = req.user.role;
+        // Rich per-day attendance editing is limited to admin/hr (company-wide)
+        // and manager (own reporting tree). team_lead keeps its existing
+        // mark-present/absent power only, so it gets no editable flag here.
+        const canRichEdit = ['admin', 'hr', 'manager'].includes(userRole);
+        let editTree = null;
+        if (userRole === 'manager') {
+            try { editTree = await myTreeIds(req.user.id); } catch (e) { editTree = new Set(); }
+        }
         let teamRes;
         if (userRole === 'hr' || userRole === 'manager') {
             teamRes = await query(
@@ -531,6 +540,10 @@ router.get('/attendance', verifyToken, isManager, async (req, res) => {
             );
         }
         const teamIds = teamRes.rows.map(r => r.id);
+        const team = teamRes.rows.map(r => ({
+            ...r,
+            editable: canRichEdit && (!editTree || editTree.has(r.id))
+        }));
         if (teamIds.length === 0) return res.json({ success: true, team: [], attendance: [], holidays: [] });
 
         const attRes = await query(
@@ -551,7 +564,7 @@ router.get('/attendance', verifyToken, isManager, async (req, res) => {
              ORDER BY la.start_date`,
             [teamIds, month, year]
         );
-        res.json({ success: true, team: teamRes.rows, attendance: attRes.rows, holidays: holRes.rows, leaves: lvRes.rows });
+        res.json({ success: true, team: team, attendance: attRes.rows, holidays: holRes.rows, leaves: lvRes.rows });
     } catch (error) {
         console.error('Manager attendance error:', error);
         res.status(500).json({ success: false, message: 'Server error' });

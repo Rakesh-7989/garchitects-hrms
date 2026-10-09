@@ -139,6 +139,30 @@ themself; do not expand the guard to them without an owner decision.
 
 ## 11. Current state (update this as work ships)
 
+- **Attendance day-detail, WFH rendering & staff day editor shipped (2026-10-09):**
+  three attendance-workflow gaps closed in one pass. **A** employee attendance
+  history/calendar day-detail popup (`openDayDetail` — status, check-in/out,
+  hours, break, map location, auto-checkout + miss reason, regularized flag; days
+  with no record resolve Holiday / On Leave / WFH / Week Off / Upcoming / "Not
+  checked in yet"). **B** `wfh` rendered as a working day everywhere: employee
+  calendar (`cal-wfh`) + counts + stat card, admin matrix (`cell-wfh`, WFH stat,
+  Total Days formula), and the shared `getStatusBadge`/`getStatusText` helpers
+  (`wfh → info` / "Work From Home"). **C** staff per-day editor: new
+  `GET /api/attendance/record` (one day + day context) and
+  `POST /api/attendance/edit` (admin/HR company-wide; manager scoped to their
+  recursive reporting tree via `myTreeIds`; team_lead excluded — keeps
+  mark-only; employees refused). Allowed statuses present/late/half-day/absent/
+  wfh; absent & wfh clear times/breaks/locations; a manual check-out clears the
+  `auto_checkout` marker + miss reason; `attendance.edit` audited with
+  before/after. `GET /manager/attendance` now ships per-row `editable`;
+  `sw.js` v15→v16. **QA:** new `scripts/qa-attendance-edit.cjs` → **33/33 green**
+  (role gates, manager scope, validation, semantics, audit), plus 2 new RBAC
+  matrix rows `att-record`/`att-edit` (matrix probe gained per-row `body` +
+  `{qaEmpId}`/`{permEmpId}` body substitution) → **RBAC 50/50 green, 183 cell
+  probes, zero leftovers**; regression 6/7 green (the 2 fails are the pre-existing
+  late-night auto-checkout flake in `qa-attendance-checkin-status.cjs`, not this
+  change). See `docs/FEATURE_ATTENDANCE_EDITOR_AND_WFH.md`.
+
 - **Sprint-1 fix batch shipped (2026-10-09):** the full-system + My Info audit
   fixes all landed in one hermetic-verified push. Closes **MI-1…MI-7** (raw
   Postgres `DATE` normalization across 9 read surfaces, 3-way loaders,

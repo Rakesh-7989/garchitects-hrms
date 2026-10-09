@@ -118,18 +118,28 @@
         .cal-cell.today { outline: 2px solid var(--primary); outline-offset: -1px; }
         .cal-cell.weekoff { background: var(--bg-light); }
         .cal-cell.future { background: transparent; color: var(--text-tertiary); }
+        .cal-cell.clickable { cursor: pointer; }
+        .cal-cell.clickable:hover { filter: brightness(0.96); }
         .cal-cell.cal-present { background: #D1FAE5; color: #065F46; }
         .cal-cell.cal-late { background: #FEF3C7; color: #92400E; }
         .cal-cell.cal-half-day { background: #FED7AA; color: #9A3412; }
         .cal-cell.cal-leave { background: #EDE9FE; color: #5B21B6; }
         .cal-cell.cal-absent { background: #FEE2E2; color: #991B1B; }
         .cal-cell.cal-holiday { background: #E0E7FF; color: #3730A3; }
+        .cal-cell.cal-wfh { background: #E0F2FE; color: #075985; }
         .dark-mode .cal-cell.cal-present { background: #064E3B; color: #34D399; }
         .dark-mode .cal-cell.cal-late { background: #78350F; color: #FBBF24; }
         .dark-mode .cal-cell.cal-half-day { background: #7C2D12; color: #FDBA74; }
         .dark-mode .cal-cell.cal-leave { background: #4C1D95; color: #C4B5FD; }
         .dark-mode .cal-cell.cal-absent { background: #7F1D1D; color: #F87171; }
         .dark-mode .cal-cell.cal-holiday { background: #312E81; color: #A5B4FC; }
+        .dark-mode .cal-cell.cal-wfh { background: #0C4A6E; color: #7DD3FC; }
+
+        /* Day-detail popup rows */
+        .day-detail-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border-light); font-size: 0.9rem; }
+        .day-detail-row:last-child { border-bottom: none; }
+        .day-detail-row .lbl { color: var(--text-secondary); }
+        .day-detail-row .val { font-weight: 600; text-align: right; word-break: break-word; }
         .cal-legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 14px 0; font-size: 0.78rem; }
         .cal-legend .legend-item { display: flex; align-items: center; gap: 6px; }
         .legend-dot { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
@@ -149,6 +159,20 @@
             .cal-weekday { font-size: 0.58rem; padding: 5px 0; }
         }
     </style>
+
+    <!-- Day detail popup: click any calendar cell / history row to see that day -->
+    <div class="modal" id="dayDetailModal" onclick="if(event.target===this)closeDayDetail()">
+        <div class="modal-content" style="max-width:440px;">
+            <div class="modal-header">
+                <h2 id="dayDetailTitle"><i class="fas fa-calendar-day" style="color:var(--primary);margin-right:8px;"></i>Day Details</h2>
+                <button class="modal-close" onclick="closeDayDetail()">&times;</button>
+            </div>
+            <div class="modal-body" id="dayDetailBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDayDetail()">Close</button>
+            </div>
+        </div>
+    </div>
 
     <script src="../../js/auth.js"></script>
     <script src="../../js/dashboard.js"></script>
@@ -282,7 +306,7 @@
             // Policy (matches payroll): the first `monthly_leave_quota` approved
             // leave days each month are PAID; anything beyond that is LOP and
             // lands under Absent.
-            const counts = { present: 0, late: 0, 'half-day': 0, absent: 0, weekoff: 0, holiday: 0, leave: 0 };
+            const counts = { present: 0, late: 0, 'half-day': 0, absent: 0, weekoff: 0, holiday: 0, leave: 0, wfh: 0 };
             const holidayMap = {};
             (lastHolidays || []).forEach(h => { const k = (h.date || '').split('T')[0]; if (k) holidayMap[k] = h.name; });
             const dateKey = (v) => {
@@ -331,6 +355,9 @@
                 if (st === 'present') { counts.present++; continue; }
                 if (st === 'late') { counts.late++; continue; }
                 if (st === 'half-day') { counts['half-day']++; continue; }
+                // Work From Home is a WORKING day (approved WFH writes a 'wfh'
+                // row). It must never fall through to the absent tally.
+                if (st === 'wfh') { counts.wfh++; continue; }
                 if (holidayMap[key]) { counts.holiday++; continue; }
                 const dow = new Date(year, month - 1, dd).getDay();
                 if (window.workWeek ? window.workWeek.isWeekOff(new Date(year, month - 1, dd)) : (dow === 0 || dow === 6)) { counts.weekoff++; continue; }
@@ -344,9 +371,9 @@
             }
             lastMonthCounts = counts;
 
-            const totalPresent = counts.present + counts.late + counts['half-day'] + counts.leave;
+            const totalPresent = counts.present + counts.late + counts['half-day'] + counts.leave + counts.wfh;
             document.getElementById('attStatsBar').innerHTML = buildStatsCardsHtml(counts);
-            summaryEl.innerHTML = '<span style="font-weight:500;">Total Present Days (incl. late logins, half days &amp; paid leaves): <strong>' + totalPresent + '</strong> / ' + daysInMonth + ' total days in ' + fullMonthNames[month - 1] + ' ' + year + '</span>';
+            summaryEl.innerHTML = '<span style="font-weight:500;">Total Present Days (incl. late logins, half days, WFH &amp; paid leaves): <strong>' + totalPresent + '</strong> / ' + daysInMonth + ' total days in ' + fullMonthNames[month - 1] + ' ' + year + '</span>';
 
             if (records.length === 0) {
                 showEmptyState(container, 'fa-clock', 'No Records', 'No attendance records for this period');
@@ -411,7 +438,7 @@
                             locHtml = '<span style="font-size:0.75rem;">' + escapeHtml(loc) + '</span>';
                         }
 
-                        html += '<tr style="' + rowStyle + '">';
+                        html += '<tr style="cursor:pointer;' + rowStyle + '" onclick="openDayDetail(\'' + adate + '\')">';
                         html += '<td>' + formatDate(a.date) + (isToday ? ' <span class="badge badge-primary" style="font-size:0.6rem;">Today</span>' : '') + '</td>';
                         html += '<td>' + dayNames[d.getUTCDay()] + '</td>';
                         html += '<td>' + escapeHtml(a.check_in || '-') + '</td>';
@@ -498,7 +525,7 @@
                 html += '<div class="cal-cell weekoff" style="min-height:0;border-style:dashed;opacity:0.4;"><div class="cal-day">' + pad.getDate() + '</div></div>';
             }
 
-            const counts = { present: 0, late: 0, 'half-day': 0, absent: 0, weekoff: 0, holiday: 0, leave: 0 };
+            const counts = { present: 0, late: 0, 'half-day': 0, absent: 0, weekoff: 0, holiday: 0, leave: 0, wfh: 0 };
             for (let d = 1; d <= lastDay; d++) {
                 const date = new Date(year, month - 1, d);
                 const dayOfWeek = date.getDay();
@@ -511,7 +538,7 @@
                 // Future month: no counting, just grey cells
                 if (isFutureMonthCal) {
                     cls = 'future';
-                    html += '<div class="cal-cell ' + cls + (isToday ? ' today' : '') + '"><div class="cal-day">' + d + '</div></div>';
+                    html += '<div class="cal-cell clickable ' + cls + (isToday ? ' today' : '') + '" onclick="openDayDetail(\'' + dateStr + '\')"><div class="cal-day">' + d + '</div></div>';
                     continue;
                 }
                 // A declared holiday always wins over a stale auto-absent row.
@@ -520,6 +547,7 @@
                     if (status === 'present') { cls = 'cal-present'; tag = 'Present'; counts.present++; }
                     else if (status === 'late') { cls = 'cal-late'; tag = 'Late'; counts.late++; }
                     else if (status === 'half-day') { cls = 'cal-half-day'; tag = 'Half Day'; counts['half-day']++; }
+                    else if (status === 'wfh') { cls = 'cal-wfh'; tag = 'Work From Home'; counts.wfh++; }
                     else if (status === 'absent' && leaveClass[dateStr]) {
                         // Approved leave: paid within monthly quota, LOP beyond.
                         if (leaveClass[dateStr] === 'paid') { cls = 'cal-leave'; tag = 'On Leave (Paid)'; counts.leave++; }
@@ -549,7 +577,7 @@
                     cls = 'cal-absent'; tag = 'Absent'; counts.absent++;
                 }
 
-                html += '<div class="cal-cell ' + cls + (isToday ? ' today' : '') + '" title="' + (rec && rec.check_in ? 'Check In: ' + rec.check_in + (rec.check_out ? ' | Check Out: ' + rec.check_out : '') : (holidayDates[dateStr] || '')) + '">';
+                html += '<div class="cal-cell clickable ' + cls + (isToday ? ' today' : '') + '" onclick="openDayDetail(\'' + dateStr + '\')" title="' + (rec && rec.check_in ? 'Check In: ' + rec.check_in + (rec.check_out ? ' | Check Out: ' + rec.check_out : '') : (holidayDates[dateStr] || '')) + '">';
                 html += '<div class="cal-day">' + d + (isToday ? ' <span style="font-size:0.55rem;font-weight:700;color:var(--primary);">TODAY</span>' : '') + '</div>';
                 if (tag) html += '<div class="cal-tag">' + escapeHtml(tag) + '</div>';
                 if (checkIn || checkOut) {
@@ -567,6 +595,122 @@
             container.innerHTML = html;
         }
 
+        // ---- Day detail popup ----------------------------------------------
+        // Clicking any calendar cell or history row opens this: exactly that
+        // day's check-in / check-out / status / hours / break / location, plus
+        // the day kind (leave, WFH, holiday, week off) and flags (auto
+        // check-out + miss reason, regularized).
+        function normDate(v) {
+            if (!v) return '';
+            const s = String(v).trim();
+            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (m) return m[1] + '-' + m[2] + '-' + m[3];
+            if (s.includes('T')) return s.split('T')[0];
+            return s.slice(0, 10);
+        }
+
+        function ddFmtTime(t) {
+            const m = String(t || '').match(/(\d{1,2}:\d{2})/);
+            return m ? m[1] : (t || '');
+        }
+
+        function dayHoursWorked(a) {
+            if (!a || !a.check_in) return null;
+            const isToday = normDate(a.date) === getTodayIST();
+            if (!a.check_out && !isToday) return null;
+            const nowD = new Date();
+            const ci = String(a.check_in).split(':').map(Number);
+            const co = a.check_out ? String(a.check_out).split(':').map(Number) : [nowD.getHours(), nowD.getMinutes()];
+            let diffMin = (co[0] * 60 + co[1]) - (ci[0] * 60 + ci[1]);
+            let breakMin = 0;
+            const breakLog = (() => { try { return JSON.parse(a.break_log || '[]'); } catch { return []; } })();
+            breakLog.forEach(b => {
+                if (b.start && b.end) {
+                    const bs = String(b.start).split(':').map(Number);
+                    const be = String(b.end).split(':').map(Number);
+                    breakMin += Math.max(0, ((be[0] * 60 + be[1]) - (bs[0] * 60 + bs[1])));
+                }
+            });
+            if (a.break_start && !a.break_end) {
+                const bs = String(a.break_start).split(':').map(Number);
+                const refEnd = a.check_out ? co : [nowD.getHours(), nowD.getMinutes()];
+                breakMin += Math.max(0, ((refEnd[0] * 60 + refEnd[1]) - (bs[0] * 60 + bs[1])));
+            }
+            diffMin -= breakMin;
+            if (diffMin < 0) diffMin = 0;
+            return { workMin: diffMin, breakMin: breakMin, live: !a.check_out };
+        }
+
+        function openDayDetail(dateStr) {
+            if (!dateStr) return;
+            const rec = (lastRecords || []).find(r => normDate(r.date) === dateStr) || null;
+            const holName = ((lastHolidays || []).find(h => normDate(h.date) === dateStr) || {}).name || null;
+            const leave = leaveClass[dateStr] || null;
+            const dm = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+            const dow = dm ? new Date(Date.UTC(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3]))).getUTCDay() : new Date(dateStr).getDay();
+            const isToday = dateStr === getTodayIST();
+            const isFuture = dateStr > getTodayIST();
+            const isWeekOff = window.workWeek ? window.workWeek.isWeekOff(new Date(dateStr + 'T00:00:00')) : (dow === 0);
+
+            document.getElementById('dayDetailTitle').innerHTML = '<i class="fas fa-calendar-day" style="color:var(--primary);margin-right:8px;"></i>'
+                + dayNames[dow] + ', ' + formatDate(dateStr) + (isToday ? ' (Today)' : '');
+
+            const row = (lbl, val) => '<div class="day-detail-row"><span class="lbl">' + lbl + '</span><span class="val">' + val + '</span></div>';
+            let rows = '';
+
+            let statusBadge;
+            if (rec) {
+                if (rec.status === 'absent' && leave) {
+                    statusBadge = leave === 'lop'
+                        ? '<span class="badge badge-danger">Absent (LOP)</span>'
+                        : '<span class="badge badge-info">On Leave (Paid)</span>';
+                } else {
+                    statusBadge = '<span class="badge badge-' + getStatusBadge(rec.status) + '">' + escapeHtml(getStatusText(rec.status)) + '</span>';
+                }
+            } else if (holName) statusBadge = '<span class="badge badge-info">Holiday</span>';
+            else if (leave) statusBadge = '<span class="badge badge-' + (leave === 'lop' ? 'danger' : 'info') + '">' + (leave === 'lop' ? 'Absent (LOP)' : 'On Leave (Paid)') + '</span>';
+            else if (isWeekOff) statusBadge = '<span class="badge badge-secondary">Week Off</span>';
+            else if (isFuture) statusBadge = '<span class="badge badge-secondary">Upcoming</span>';
+            else if (isToday) statusBadge = '<span class="badge badge-secondary">Not checked in yet</span>';
+            else statusBadge = '<span class="badge badge-danger">Absent</span>';
+
+            rows += row('Status', statusBadge);
+
+            if (rec) {
+                rows += row('Check In', rec.check_in ? '<span style="color:var(--success);">' + escapeHtml(ddFmtTime(rec.check_in)) + '</span>' : '-');
+                rows += row('Check Out', rec.check_out ? '<span style="color:var(--danger);">' + escapeHtml(ddFmtTime(rec.check_out)) + '</span>' : '<span style="color:var(--text-secondary);">Not yet</span>');
+                const hw = dayHoursWorked(rec);
+                rows += row('Hours Worked', hw ? (hw.live ? '~' : '') + (hw.workMin / 60).toFixed(1) + 'h' : '-');
+                if (hw && hw.breakMin > 0) rows += row('Break', (hw.breakMin / 60).toFixed(1) + 'h');
+                if (rec.check_in_location) {
+                    const loc = String(rec.check_in_location);
+                    let locVal = escapeHtml(loc);
+                    if (loc.includes(',')) {
+                        const [lat, lon] = loc.split(',');
+                        locVal = '<a href="https://www.google.com/maps?q=' + encodeURIComponent(lat.trim() + ',' + lon.trim()) + '" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:none;"><i class="fas fa-map-marker-alt"></i> View on Map</a>';
+                    }
+                    rows += row('Location', locVal);
+                }
+                if (rec.auto_checkout) {
+                    rows += row('Auto check-out', '<span class="badge badge-warning">Yes</span>');
+                    if (rec.checkout_miss_reason) rows += row('Miss reason', escapeHtml(rec.checkout_miss_reason));
+                }
+                if (rec.remarks && String(rec.remarks).includes('[regularized]')) rows += row('Note', '<span class="badge badge-info">Regularized</span>');
+            } else if (holName) rows += row('Holiday', escapeHtml(holName));
+            else if (leave) rows += row('Leave', leave === 'lop' ? 'Loss of Pay' : 'Paid');
+            else if (isWeekOff) rows += row('Day type', 'Weekly Off');
+            else if (isFuture) rows += row('Day type', 'Upcoming');
+            else if (isToday) rows += row('Day type', 'Not checked in yet');
+            else rows += row('Record', 'No attendance recorded');
+
+            document.getElementById('dayDetailBody').innerHTML = rows;
+            document.getElementById('dayDetailModal').classList.add('active');
+        }
+
+        function closeDayDetail() {
+            document.getElementById('dayDetailModal').classList.remove('active');
+        }
+
         // Shared colored summary cards (list + monthly views).
         function buildStatsCardsHtml(counts) {
             const cardColors = {
@@ -576,14 +720,16 @@
                 leave: ['#8B5CF6', '#F5F3FF'],
                 absent: ['#EF4444', '#FEF2F2'],
                 weekoff: ['#3B82F6', '#EFF6FF'],
-                holiday: ['#D946EF', '#FDF4FF']
+                holiday: ['#D946EF', '#FDF4FF'],
+                wfh: ['#0EA5E9', '#F0F9FF']
             };
             const statCard = (val, label, c) => '<div class="stat-card" style="margin:0;border-left:4px solid ' + c[0] + ';background:' + c[1] + ';"><div class="stat-info" style="text-align:center;"><h3 style="color:' + c[0] + ';">' + val + '</h3><p>' + label + '</p></div></div>';
-            const presentTotal = counts.present + counts.late + counts['half-day'] + counts.leave;
+            const presentTotal = counts.present + counts.late + counts['half-day'] + counts.leave + (counts.wfh || 0);
             let html = '<div class="att-stats-grid">';
             html += statCard(presentTotal, 'Total Present Days', cardColors.present);
             html += statCard(counts.late, 'Late Logins', cardColors.late);
             html += statCard(counts['half-day'], 'Half Days', cardColors.half);
+            html += statCard(counts.wfh || 0, 'Work From Home', cardColors.wfh);
             html += statCard(counts.leave, 'On Leave (Paid)', cardColors.leave);
             html += statCard(counts.absent, 'Absent Days', cardColors.absent);
             html += statCard(counts.weekoff, 'Week Offs', cardColors.weekoff);

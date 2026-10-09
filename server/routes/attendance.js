@@ -9,6 +9,72 @@ const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
 const { logAudit } = require('../utils/audit');
 const { getWorkWeekConfig, isWeekOff } = require('../utils/workWeek');
 const { runAutoCheckout } = require('../services/attendanceAutoCheckout');
+const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
+
+// Self-healing query wrapper (creates missing tables/columns on cold instances).
+const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
+
+// Staff roles allowed to EDIT an attendance day (rich editor). team_lead is
+// deliberately excluded - it keeps its existing mark-present/absent power only.
+const ATTENDANCE_EDIT_ROLES = ['admin', 'hr', 'manager'];
+const ATTENDANCE_EDIT_STATUSES = ['present', 'late', 'half-day', 'absent', 'wfh'];
+
+// Normalize a TIME input to 'HH:MM' (accepts 'HH:MM' / 'HH:MM:SS'), or null.
+function normalizeTime(v) {
+    if (v === null || v === undefined) return null;
+    const s = String(v).trim();
+    if (!s) return null;
+    const m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!m) return null;
+    const hh = parseInt(m[1], 10), mm = parseInt(m[2], 10);
+    if (hh > 23 || mm > 59) return null;
+    return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+}
+
+const isValidDateStr = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+
+// Access check shared by /record + /edit: allowed staff role, and for a
+// manager the target employee must be inside their own reporting tree.
+async function assertAttendanceEditAccess(req, res, employeeId) {
+    if (!ATTENDANCE_EDIT_ROLES.includes(req.user.role)) {
+        res.status(403).json({ success: false, message: 'Access denied. Admin, HR or Manager role required.' });
+        return false;
+    }
+    if (req.user.role === 'manager') {
+        const { myTreeIds } = require('./project-leads');
+        const tree = await myTreeIds(req.user.id);
+        if (!tree.has(employeeId)) {
+            res.status(403).json({ success: false, message: 'You can only manage attendance for your own reporting team.' });
+            return false;
+        }
+    }
+    return true;
+}
+
+// What kind of day is this for the employee: declared holiday, weekly off,
+// approved leave, approved WFH, future, today. Shipped to the edit modal so a
+// staff member sees the context before overriding anything.
+async function attendanceDayContext(employeeId, date) {
+    const ctx = { date, holiday: null, weekoff: false, leave: false, wfh: false, future: false, today: false };
+    try {
+        const today = istDateString();
+        ctx.today = date === today;
+        ctx.future = date > today;
+        const wcfg = await getWorkWeekConfig().catch(() => ({ weekoffDay: 0 }));
+        ctx.weekoff = isWeekOff(date, wcfg.weekoffDay);
+        const [hRes, lRes, wRes] = await Promise.all([
+            q('SELECT name FROM holidays WHERE is_active = 1 AND date = $1 LIMIT 1', [date]).catch(() => ({ rows: [] })),
+            q("SELECT 1 FROM leave_applications WHERE employee_id = $1 AND status = 'approved' AND start_date <= $2 AND end_date >= $2 LIMIT 1", [employeeId, date]).catch(() => ({ rows: [] })),
+            q("SELECT 1 FROM wfh_requests WHERE employee_id = $1 AND status = 'approved' AND start_date <= $2 AND end_date >= $2 LIMIT 1", [employeeId, date]).catch(() => ({ rows: [] }))
+        ]);
+        ctx.holiday = hRes.rows.length ? hRes.rows[0].name : null;
+        ctx.leave = lRes.rows.length > 0;
+        ctx.wfh = wRes.rows.length > 0;
+    } catch (e) {
+        // Best-effort context only; never fail a read because of it.
+    }
+    return ctx;
+}
 
 router.post('/check-in', verifyToken, async (req, res) => {
     try {
@@ -459,6 +525,187 @@ router.post('/mark-absent', verifyToken, isManager, async (req, res) => {
         }
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// @route   GET /api/attendance/record
+// @desc    One employee's attendance for a single day + that day's context
+//          (holiday/weekoff/leave/WFH/future) for the staff edit modal.
+// @access  Private (Admin/HR company-wide; Manager scoped to own tree)
+router.get('/record', verifyToken, async (req, res) => {
+    try {
+        const employeeId = parseInt(req.query.employee_id, 10);
+        const date = String(req.query.date || '').trim();
+        if (!employeeId || !isValidDateStr(date)) {
+            return res.status(400).json({ success: false, message: 'employee_id and date (YYYY-MM-DD) are required' });
+        }
+        if (!(await assertAttendanceEditAccess(req, res, employeeId))) return;
+
+        const empRes = await q(
+            `SELECT id, first_name, last_name, employee_id AS emp_code, role FROM employees WHERE id = $1`,
+            [employeeId]
+        );
+        if (empRes.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
+        const employee = empRes.rows[0];
+        if (employee.role === 'admin') {
+            return res.status(400).json({ success: false, message: 'Attendance is not tracked for admin accounts' });
+        }
+
+        const recRes = await q(
+            `SELECT id, date, check_in, check_out, status, remarks,
+                    check_in_location, check_out_location, auto_checkout, checkout_miss_reason
+             FROM attendance WHERE employee_id = $1 AND date = $2`,
+            [employeeId, date]
+        );
+        const record = recRes.rows[0] || null;
+        if (record && record.date != null) record.date = dateOnly(record.date);
+
+        const day = await attendanceDayContext(employeeId, date);
+        res.json({ success: true, employee, record, day });
+    } catch (error) {
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
+    }
+});
+
+// @route   POST /api/attendance/edit
+// @desc    Staff editor: set an employee's single-day status and times.
+//          Allowed statuses: present / late / half-day / absent / wfh.
+//          absent & wfh clear times; present-like statuses need a check-in.
+// @access  Private (Admin/HR company-wide; Manager scoped to own tree)
+router.post('/edit', verifyToken, async (req, res) => {
+    try {
+        const employeeId = parseInt(req.body.employee_id, 10);
+        const date = String(req.body.date || '').trim();
+        const status = String(req.body.status || '').trim();
+        const remarks = (req.body.remarks == null ? '' : String(req.body.remarks)).trim();
+
+        if (!employeeId || !isValidDateStr(date)) {
+            return res.status(400).json({ success: false, message: 'employee_id and date (YYYY-MM-DD) are required' });
+        }
+        if (!ATTENDANCE_EDIT_STATUSES.includes(status)) {
+            return res.status(400).json({ success: false, message: 'Status must be one of: present, late, half-day, absent, wfh' });
+        }
+        if (remarks.length > 500) {
+            return res.status(400).json({ success: false, message: 'Remarks are too long (max 500 characters).' });
+        }
+        if (date > istDateString()) {
+            return res.status(400).json({ success: false, message: 'Cannot edit a future date' });
+        }
+        if (!(await assertAttendanceEditAccess(req, res, employeeId))) return;
+
+        // Normalize the raw time inputs. An empty string clears the time.
+        const rawIn = req.body.check_in == null ? '' : String(req.body.check_in).trim();
+        const rawOut = req.body.check_out == null ? '' : String(req.body.check_out).trim();
+        let checkIn = null, checkOut = null;
+        if (rawIn) {
+            checkIn = normalizeTime(rawIn);
+            if (!checkIn) return res.status(400).json({ success: false, message: 'Check-in must be a valid time (HH:MM).' });
+        }
+        if (rawOut) {
+            checkOut = normalizeTime(rawOut);
+            if (!checkOut) return res.status(400).json({ success: false, message: 'Check-out must be a valid time (HH:MM).' });
+        }
+
+        const workingStatus = ['present', 'late', 'half-day'].includes(status);
+        if (workingStatus && !checkIn) {
+            return res.status(400).json({ success: false, message: 'A check-in time is required for present, late or half-day.' });
+        }
+        if (workingStatus && checkIn && checkOut && checkOut <= checkIn) {
+            return res.status(400).json({ success: false, message: 'Check-out must be later than check-in.' });
+        }
+
+        const empRes = await q(
+            `SELECT id, first_name, last_name, employee_id AS emp_code, role FROM employees WHERE id = $1`,
+            [employeeId]
+        );
+        if (empRes.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
+        if (empRes.rows[0].role === 'admin') {
+            return res.status(400).json({ success: false, message: 'Attendance is not tracked for admin accounts' });
+        }
+
+        const beforeRes = await q(
+            `SELECT id, status, check_in, check_out, remarks, auto_checkout
+             FROM attendance WHERE employee_id = $1 AND date = $2`,
+            [employeeId, date]
+        );
+        const before = beforeRes.rows[0] || null;
+
+        // A manual, human-verified close clears the machine's auto-clock-out
+        // marker (and the "why no checkout" prompt) so the day is no longer
+        // treated as an unverified auto-close. Left intact when no checkout is
+        // set, so merely changing a status never erases the employee's reason.
+        const clearedAuto = Boolean(checkOut);
+
+        let result;
+        if (before) {
+            if (workingStatus) {
+                result = await q(
+                    `UPDATE attendance SET
+                        status = $1, check_in = $2, check_out = $3,
+                        break_start = NULL, break_end = NULL, break_log = NULL,
+                        remarks = $4,
+                        auto_checkout = CASE WHEN $5 THEN FALSE ELSE auto_checkout END,
+                        auto_checkout_at = CASE WHEN $5 THEN NULL ELSE auto_checkout_at END,
+                        checkout_miss_reason = CASE WHEN $5 THEN NULL ELSE checkout_miss_reason END,
+                        checkout_miss_reason_at = CASE WHEN $5 THEN NULL ELSE checkout_miss_reason_at END
+                     WHERE id = $6 RETURNING *`,
+                    [status, checkIn, checkOut, remarks || null, clearedAuto, before.id]
+                );
+            } else {
+                // absent / wfh: no worked times, no break, no location.
+                result = await q(
+                    `UPDATE attendance SET
+                        status = $1, check_in = NULL, check_out = NULL,
+                        break_start = NULL, break_end = NULL, break_log = NULL,
+                        check_in_location = NULL, check_out_location = NULL,
+                        auto_checkout = FALSE, auto_checkout_at = NULL,
+                        checkout_miss_reason = NULL, checkout_miss_reason_at = NULL,
+                        remarks = $2
+                     WHERE id = $3 RETURNING *`,
+                    [status, remarks || null, before.id]
+                );
+            }
+        } else if (workingStatus) {
+            result = await q(
+                `INSERT INTO attendance (employee_id, date, check_in, check_out, status, remarks)
+                 VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+                [employeeId, date, checkIn, checkOut, status, remarks || null]
+            );
+        } else {
+            result = await q(
+                `INSERT INTO attendance (employee_id, date, status, remarks)
+                 VALUES ($1, $2, $3, $4) RETURNING *`,
+                [employeeId, date, status, remarks || null]
+            );
+        }
+
+        const attendance = result.rows[0];
+        if (attendance && attendance.date != null) attendance.date = dateOnly(attendance.date);
+
+        logAudit({
+            actorId: req.user.id,
+            action: 'attendance.edit',
+            entityType: 'attendance',
+            entityId: attendance.id,
+            details: {
+                employee_id: employeeId,
+                date,
+                scope: before ? 'update' : 'create',
+                before: before ? { status: before.status, check_in: before.check_in, check_out: before.check_out, remarks: before.remarks } : null,
+                after: { status: attendance.status, check_in: attendance.check_in, check_out: attendance.check_out, remarks: attendance.remarks }
+            },
+            ip: req.ip
+        });
+
+        res.json({ success: true, attendance, message: 'Attendance updated' });
+    } catch (error) {
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 

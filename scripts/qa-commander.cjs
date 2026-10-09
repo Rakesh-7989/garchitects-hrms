@@ -281,6 +281,7 @@ const HARNESSES = [
     ['scripts/qa-attendance-break-finalize.cjs', 'attendance break finalize'],
     ['scripts/qa-attendance-my-readpath.cjs', 'attendance my read-path'],
     ['scripts/qa-attendance-card.cjs', 'attendance card + today context'],
+    ['scripts/qa-attendance-edit.cjs', 'attendance staff editor'],
     ['scripts/qa-work-assignments-v2.cjs', 'work assignments v2'],
     ['scripts/qa-fix-sprint.cjs', 'fix-sprint audit batch'],
 ];
@@ -419,11 +420,22 @@ async function stageRbac() {
     let probed = 0, failedRow = false;
     for (const row of matrix.rows) {
         const rowFails = [];
+        const targetId = String(world.targetEmp ? world.targetEmp.id : (world.employee ? world.employee.id : world.team_lead.id));
+        const permId = String(world.permEmp.id);
         for (const role of ROLES) {
             if (!(role in row.expect)) continue; // cell not asserted (scope-dependent)
             const want = row.expect[role];
-            const p = row.path.replace('{qaEmpId}', String(world.targetEmp ? world.targetEmp.id : (world.employee ? world.employee.id : world.team_lead.id))).replace('{permEmpId}', String(world.permEmp.id));
-            const r = await apiCall(base, row.method, p, tokens[role], row.method !== 'GET' ? {} : undefined);
+            const p = row.path.replace('{qaEmpId}', targetId).replace('{permEmpId}', permId);
+            // Non-GET rows may declare a `body` so the probe carries valid input
+            // and reaches the guard instead of tripping a validation 400. Both
+            // {qaEmpId}/{permEmpId} placeholders are substituted in the body too.
+            let reqBody;
+            if (row.method !== 'GET') {
+                reqBody = row.body
+                    ? JSON.parse(JSON.stringify(row.body).replace(/\{qaEmpId\}/g, targetId).replace(/\{permEmpId\}/g, permId))
+                    : {};
+            }
+            const r = await apiCall(base, row.method, p, tokens[role], reqBody);
             probed++;
             const got = r.status;
             let cellOk;
