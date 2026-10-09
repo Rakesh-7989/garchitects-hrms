@@ -138,7 +138,7 @@ router.post('/check-in', verifyToken, async (req, res) => {
                 const buf = Buffer.from(m[2], 'base64');
                 if (buf.length <= 2 * 1024 * 1024) {
                     const token = crypto.randomBytes(32).toString('hex');
-                    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+                    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
                     await query(
                         `INSERT INTO attendance_photos (attendance_id, employee_id, photo, token, expires_at, type)
                         VALUES ($1, $2, $3, $4, $5, 'check_in')`,
@@ -240,7 +240,7 @@ router.post('/check-out', verifyToken, async (req, res) => {
                 const buf = Buffer.from(m[2], 'base64');
                 if (buf.length <= 2 * 1024 * 1024) {
                     const token = crypto.randomBytes(32).toString('hex');
-                    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+                    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
                     await query(
                         `INSERT INTO attendance_photos (attendance_id, employee_id, photo, token, expires_at, type)
                         VALUES ($1, $2, $3, $4, $5, 'check_out')`,
@@ -744,8 +744,13 @@ router.get('/monthly', verifyToken, isManager, async (req, res) => {
             let c = new Date(s + 'T00:00:00Z');
             const cEnd = new Date(e + 'T00:00:00Z');
             while (c <= cEnd) {
-                const ds = c.toISOString().substring(0, 10);
-                (leaveByEmp[l.employee_id] = leaveByEmp[l.employee_id] || new Set()).add(ds);
+                const ds = fmtD(new Date(c.getUTCFullYear(), c.getUTCMonth(), c.getUTCDate()));
+                if (!ds) {
+                    const tmp = c.getUTCFullYear() + '-' + String(c.getUTCMonth()+1).padStart(2,'0') + '-' + String(c.getUTCDate()).padStart(2,'0');
+                    (leaveByEmp[l.employee_id] = leaveByEmp[l.employee_id] || new Set()).add(tmp);
+                } else {
+                    (leaveByEmp[l.employee_id] = leaveByEmp[l.employee_id] || new Set()).add(ds);
+                }
                 c.setUTCDate(c.getUTCDate() + 1);
             }
         });
@@ -768,6 +773,7 @@ router.get('/monthly', verifyToken, isManager, async (req, res) => {
         const matrix = {};
         const today = new Date();
         today.setHours(0,0,0,0);
+        const keyLocal = (y,m,d) => fmtDateStr(y,m,d); // better for local comparison? but we have key; safer use date-fmt
         employees.rows.forEach(emp => {
             matrix[emp.id] = {};
             const empAtt = attMap[emp.id] || {};

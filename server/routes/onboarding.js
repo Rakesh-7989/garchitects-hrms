@@ -567,7 +567,9 @@ router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
             ip: req.ip
         });
 
-        await sendWorkbook(res, wb, label + '_Tracker_' + new Date().toISOString().split('T')[0] + '.xlsx');
+        const d = new Date();
+        const fn = label + '_Tracker_' + d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + '.xlsx';
+        await sendWorkbook(res, wb, fn);
     } catch (error) {
         const ctype = validType(req.query && req.query.type);
         console.error((ctype === 'offboarding' ? 'Offboarding' : 'Onboarding') + ' export error:', error);

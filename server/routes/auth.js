@@ -13,6 +13,7 @@ const { uploadBuffer } = require('../services/storage');
 const { EDITABLE_FIELDS } = require('./profileUpdates');
 const { rateLimit, clientIp } = require('../utils/rateLimit');
 const { dateOnly } = require('../utils/date');
+const { pgErrorResponse } = require('../utils/schemaRepair');
 
 const uploadProfile = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1 * 1024 * 1024 }, fileFilter: (req, file, cb) => { const allowed = /jpeg|jpg|png|gif/; const ext = allowed.test(path.extname(file.originalname).toLowerCase()); const mime = allowed.test(file.mimetype); cb(null, ext && mime); } });
 
@@ -127,7 +128,8 @@ router.post('/forgot-password', forgotLimiter, async (req, res) => {
         res.json({ success: true, message: GENERIC_RESET_MESSAGE });
     } catch (error) {
         console.error('Forgot password error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -174,7 +176,8 @@ router.post('/verify-reset-otp', otpResetLimiter, async (req, res) => {
         res.json({ success: true, message: 'Code verified! Now set your new password.' });
     } catch (error) {
         console.error('Verify reset OTP error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -239,7 +242,8 @@ router.post('/reset-password', otpResetLimiter, async (req, res) => {
         res.json({ success: true, message: 'Password reset successful. Please sign in with your new password.' });
     } catch (error) {
         console.error('Reset password error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -369,9 +373,10 @@ router.post('/login', loginLimiter, validateLogin, async (req, res) => {
         
     } catch (error) {
         console.error('Login error:', error);
-        res.status(500).json({ 
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ 
             success: false, 
-            message: 'Server error during login' 
+            message: mapped.message === 'Server error' ? 'Server error during login' : mapped.message 
         });
     }
 });
@@ -416,9 +421,10 @@ router.get('/me', verifyToken, async (req, res) => {
         
     } catch (error) {
         console.error('Get profile error:', error);
-        res.status(500).json({ 
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ 
             success: false, 
-            message: 'Server error' 
+            message: mapped.message 
         });
     }
 });
@@ -592,7 +598,8 @@ router.put('/profile', verifyToken, async (req, res) => {
         });
     } catch (error) {
         console.error('Profile update error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -664,9 +671,10 @@ router.put('/change-password', verifyToken, passwordLimiter, async (req, res) =>
         
     } catch (error) {
         console.error('Change password error:', error);
-        res.status(500).json({ 
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ 
             success: false, 
-            message: 'Server error' 
+            message: mapped.message 
         });
     }
 });
@@ -708,7 +716,8 @@ router.post('/set-password', verifyToken, passwordLimiter, async (req, res) => {
         res.json({ success: true, message: 'Password set successfully', token: rotated ? rotated.token : undefined });
     } catch (error) {
         console.error('Set password error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -780,8 +789,7 @@ router.post('/profile-request', verifyToken, blockAdminSelfService, async (req, 
             const nextValue = newValue != null ? String(newValue) : '';
 
             if (field === 'date_of_birth' && oldValue) {
-                const d = new Date(current[field]);
-                if (!isNaN(d.getTime())) oldValue = d.toISOString().split('T')[0];
+                oldValue = dateOnly(current[field]);
             }
 
             if (oldValue === nextValue) continue;
@@ -815,7 +823,8 @@ router.post('/profile-request', verifyToken, blockAdminSelfService, async (req, 
         });
     } catch (error) {
         console.error('Profile request error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -835,7 +844,8 @@ router.get('/profile-requests', verifyToken, async (req, res) => {
         res.json({ success: true, requests: result.rows });
     } catch (error) {
         console.error('Get profile requests error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -870,7 +880,8 @@ router.post('/profile-request/:id/cancel', verifyToken, async (req, res) => {
         res.json({ success: true, message: 'Request cancelled', request: result.rows[0] });
     } catch (error) {
         console.error('Cancel profile request error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 

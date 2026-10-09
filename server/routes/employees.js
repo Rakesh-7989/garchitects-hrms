@@ -415,7 +415,9 @@ router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
             ip: req.ip
         });
 
-        await sendWorkbook(res, wb, 'Employees_' + new Date().toISOString().split('T')[0] + '.xlsx');
+        const d = new Date();
+        const fn = 'Employees_' + d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + '.xlsx';
+        await sendWorkbook(res, wb, fn);
     } catch (error) {
         console.error('Employee export error:', error);
         res.status(500).json({ success: false, message: 'Server error' });

@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../config/database');
 const { verifyToken, isManager } = require('../middleware/auth');
-const { runWithSchemaRepair } = require('../utils/schemaRepair');
+const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { dateOnly } = require('../utils/date');
 
 // A failing feed source must never break the whole bell feed.
@@ -405,7 +405,8 @@ router.get('/feed', verifyToken, async (req, res) => {
         });
     } catch (error) {
         console.error('Notification feed error:', error.message);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -423,7 +424,8 @@ router.get('/unread-count', verifyToken, async (req, res) => {
         res.json({ success: true, count: parseInt((r.rows[0] || {}).count || 0, 10) || 0 });
     } catch (error) {
         console.error('Notification unread-count error:', error.message);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -448,7 +450,8 @@ router.post('/:id/read', verifyToken, async (req, res) => {
         res.json({ success: true, updated: (r.rows || []).length });
     } catch (error) {
         console.error('Notification mark-read error:', error.message);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
@@ -475,7 +478,8 @@ router.post('/read-all', verifyToken, async (req, res) => {
         res.json({ success: true, updated: (r.rows || []).length });
     } catch (error) {
         console.error('Notification read-all error:', error.message);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 

@@ -446,7 +446,13 @@ async function computeAttendanceSummary(employeeId, month, year) {
                 let c = new Date(fmtD(p.start_date) + 'T00:00:00Z');
                 const cE = new Date(fmtD(p.end_date) + 'T00:00:00Z');
                 while (c <= cE) {
-                    const ds = c.toISOString().substring(0, 10);
+                    let ds;
+                    try {
+                        ds = fmtD(new Date(Date.UTC(c.getUTCFullYear(), c.getUTCMonth(), c.getUTCDate())));
+                    } catch (e) {
+                        ds = fmtD(c);
+                    }
+                    if (!ds) ds = c.getUTCFullYear()+'-'+String(c.getUTCMonth()+1).padStart(2,'0')+'-'+String(c.getUTCDate()).padStart(2,'0');
                     if (ds >= effStart && ds <= end && ds <= todayStr && !seen.has(ds)) {
                         const dw = c.getUTCDay();
                         if (dw !== wcfg.weekoffDay && !holidaySet.has(ds)) { n++; seen.add(ds); }

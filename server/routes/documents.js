@@ -7,6 +7,7 @@ const { query } = require('../config/database');
 const { verifyToken, isAdmin, isAdminOrHr } = require('../middleware/auth');
 const { uploadBuffer, deleteFile, getStorageClient } = require('../services/storage');
 const { logAudit } = require('../utils/audit');
+const { pgErrorResponse } = require('../utils/schemaRepair');
 
 const ALLOWED_MIME = new Set([
     'application/pdf',
@@ -100,7 +101,8 @@ router.post('/upload', verifyToken, (req, res, next) => {
         res.status(201).json({ success: true, document: result.rows[0] });
     } catch (error) {
         console.error('Document upload error:', error.message);
-        res.status(500).json({ success: false, message: 'Server error' });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 

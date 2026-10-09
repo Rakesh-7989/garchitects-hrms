@@ -38,7 +38,11 @@ async function validateHoliday({ name, date }, excludeId = null) {
 
     // Calendar-date round-trip (rejects e.g. 2026-02-30).
     const parsed = new Date(dateStr + 'T00:00:00Z');
-    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().substring(0, 10) !== dateStr) {
+    if (Number.isNaN(parsed.getTime())) {
+        return { ok: false, message: 'Date is not a valid calendar date' };
+    }
+    const check = parsed.getUTCFullYear() + '-' + String(parsed.getUTCMonth()+1).padStart(2,'0') + '-' + String(parsed.getUTCDate()).padStart(2,'0');
+    if (check !== dateStr) {
         return { ok: false, message: 'Date is not a valid calendar date' };
     }
 

@@ -76,7 +76,7 @@ const from = (process.env.SMTP_FROM || '').trim() || cfg.user;
         const info = await transporter.sendMail({
             from: `"G-Architects HRMS" <${from}>`,
             to,
-            subject: `G-Architects HRMS - SMTP test ${new Date().toISOString()}`,
+            subject: `G-Architects HRMS - SMTP test ${(new Date()).getFullYear()}-${String((new Date()).getMonth()+1).padStart(2,'0')}-${String((new Date()).getDate()).padStart(2,'0')}T${String((new Date()).getHours()).padStart(2,'0')}:${String((new Date()).getMinutes()).padStart(2,'0')}:${String((new Date()).getSeconds()).padStart(2,'0')}.000Z`,
             text: 'This is a test email from the G-Architects HRMS SMTP verification script.\n\nIf you received this, the mail pipeline is working.\n\n- G-Architects HRMS',
             html: '<p>This is a test email from the <strong>G-Architects HRMS</strong> SMTP verification script.</p><p>If you received this, the mail pipeline is working.</p>'
         });
