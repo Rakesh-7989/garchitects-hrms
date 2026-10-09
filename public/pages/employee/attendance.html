@@ -237,7 +237,20 @@
             // success === false = server error - either is an ERROR card
             // with Retry, never "No attendance records for this period".
             // Only a real success with zero rows is the genuine empty state.
+            // Soft fallback: if nothing was ever rendered (no cache) and the
+            // fetch fails, show a neutral empty state + toast instead of
+            // blocking the UI with a hard error (cold-start resilience).
             if (!attRes || attRes.success === false) {
+                const hadCache = cached && Array.isArray(cached.records);
+                if (!hadCache) {
+                    lastRecords = [];
+                    lastHolidays = [];
+                    lastLeaveDays = new Set();
+                    applyAttendanceData(month, year);
+                    const errMsg = (attRes && attRes.message) || 'Could not load your attendance records.';
+                    showToast(errMsg + ' — showing empty view. Tap Retry if needed.', 'info');
+                    return;
+                }
                 const errMsg = (attRes && attRes.message) || 'Could not load your attendance records.';
                 showLoadError(container, errMsg, 'loadData');
                 showLoadError(document.getElementById('monthlyContainer'), errMsg, 'loadData');
