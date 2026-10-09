@@ -541,7 +541,10 @@
                 const today = getTodayIST();
                 todayContext = data.today || null;
                 todayAttendance = (data.attendance || []).find(a => {
-                    const adate = a.date ? String(a.date).split('T')[0] : '';
+                    if (!a || !a.date) return false;
+                    const s = String(a.date);
+                    const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+                    const adate = m ? m[1] : (s.includes('T') ? s.split('T')[0] : s);
                     return adate === today;
                 }) || null;
                 renderTodayAttendance(todayAttendance);
