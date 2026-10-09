@@ -344,9 +344,13 @@
                         else if (isLate) rowStyle = 'background:rgba(239,68,68,0.04);';
 
                         let hoursWorked = '-';
-                        if (a.check_in && a.check_out) {
+                        // Today's live row (checked in, not yet out) gets a
+                        // running count too - an employee mid-day wants their
+                        // current hours, not a bare '-'. Completed days keep the
+                        // exact calc below; live ones are prefixed '~'.
+                        if (a.check_in && (a.check_out || isToday)) {
                             const ci = a.check_in.split(':').map(Number);
-                            const co = a.check_out.split(':').map(Number);
+                            const co = a.check_out ? a.check_out.split(':').map(Number) : [nowD.getHours(), nowD.getMinutes()];
                             let diffMin = (co[0]*60+co[1]) - (ci[0]*60+ci[1]);
                             const breakLog = (() => { try { return JSON.parse(a.break_log || '[]'); } catch { return []; } })();
                             breakLog.forEach(b => {
@@ -359,13 +363,15 @@
                             // Legacy rows can still carry an open break on a
                             // completed day (started but never ended before
                             // check-out/auto-checkout). Count it up to check-out
-                            // so Hours Worked is honest.
+                            // (or to now, for today's live break) so Hours Worked
+                            // is honest.
                             if (a.break_start && !a.break_end) {
                                 const bs = String(a.break_start).split(':').map(Number);
-                                diffMin -= ((co[0]*60+co[1]) - (bs[0]*60+bs[1]));
+                                const refEnd = a.check_out ? co : [nowD.getHours(), nowD.getMinutes()];
+                                diffMin -= ((refEnd[0]*60+refEnd[1]) - (bs[0]*60+bs[1]));
                             }
                             if (diffMin < 0) diffMin = 0;
-                            if (diffMin > 0) hoursWorked = (diffMin/60).toFixed(1) + 'h';
+                            if (diffMin > 0) hoursWorked = (a.check_out ? '' : '~') + (diffMin/60).toFixed(1) + 'h';
                         }
 
                         let locHtml = '-';

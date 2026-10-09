@@ -7,7 +7,7 @@ const { myTreeIds } = require('./project-leads');
 const { istDateString, istTimeString, istMonth, istYear, dateOnly } = require('../utils/date');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
 const { logAudit } = require('../utils/audit');
-const { getWorkWeekConfig } = require('../utils/workWeek');
+const { getWorkWeekConfig, isWeekOff } = require('../utils/workWeek');
 const { runAutoCheckout } = require('../services/attendanceAutoCheckout');
 
 router.post('/check-in', verifyToken, async (req, res) => {
@@ -49,6 +49,15 @@ router.post('/check-in', verifyToken, async (req, res) => {
                 attendance: row,
                 message: 'Already checked in today'
             });
+        }
+
+        if (existing.rows.length > 0 && existing.rows[0].check_out) {
+            // Defense-in-depth: a closed day must never be re-opened. This can
+            // only happen on a legacy impossible row (closed WITHOUT a
+            // check-in, produced by old code that let check-out run on an
+            // absent row) - check_out IS set while check_in IS NULL. Falling
+            // through would write a check_in AFTER the check_out.
+            return res.status(400).json({ success: false, message: 'Already checked out today' });
         }
         
         // Check if late based on company settings
@@ -169,7 +178,11 @@ router.post('/check-out', verifyToken, async (req, res) => {
         }
 
         const checkIn = await query(
-            'SELECT check_in, status, break_start, break_end FROM attendance WHERE employee_id = $1 AND date = $2 AND check_out IS NULL',
+            // check_in IS NOT NULL: a pre-marked absent / on-leave row for today
+            // (manager mark-absent has no date guard) has no check-in yet, so it
+            // must never be "closed" - that would create an impossible
+            // check_out-without-check_in day.
+            'SELECT check_in, status, break_start, break_end FROM attendance WHERE employee_id = $1 AND date = $2 AND check_out IS NULL AND check_in IS NOT NULL',
             [req.user.id, today]
         );
         
@@ -255,7 +268,9 @@ router.post('/break-start', verifyToken, async (req, res) => {
         const now = istTimeString();
 
         const record = await query(
-            'SELECT * FROM attendance WHERE employee_id = $1 AND date = $2',
+            // Same guard as check-out: a no-check-in row (pre-marked
+            // absent / on-leave) is not actionable for breaks.
+            'SELECT * FROM attendance WHERE employee_id = $1 AND date = $2 AND check_in IS NOT NULL',
             [req.user.id, today]
         );
 
@@ -289,7 +304,9 @@ router.post('/break-end', verifyToken, async (req, res) => {
         const now = istTimeString();
 
         const record = await query(
-            'SELECT break_start, break_log, break_end, check_out FROM attendance WHERE employee_id = $1 AND date = $2',
+            // Same guard as check-out / break-start: only a real checked-in day
+            // can end a break - a pre-marked absent row has no break to end.
+            'SELECT break_start, break_log, break_end, check_out FROM attendance WHERE employee_id = $1 AND date = $2 AND check_in IS NOT NULL',
             [req.user.id, today]
         );
 
@@ -489,7 +506,31 @@ router.get('/my', verifyToken, async (req, res) => {
         // row - showing "Not checked in yet" while the record exists. Ship a
         // plain YYYY-MM-DD built from local components (TZ-independent).
         result.rows.forEach(r => { r.date = dateOnly(r.date); });
-        res.json({ success: true, attendance: result.rows });
+        // Today's context for the dashboard card: with NO row for today the card
+        // would otherwise show a bare 'Not checked in yet' check-in invitation
+        // even on a declared holiday / weekly off / approved-leave day. Ship
+        // what kind of day today is so the client renders a status-aware (still
+        // actionable) state instead of confusing the employee into checking in
+        // on a day they don't need to.
+        const today = istDateString();
+        const wcfg = await getWorkWeekConfig();
+        const [hRes, lRes] = await Promise.all([
+            query('SELECT name FROM holidays WHERE is_active = 1 AND date = $1 LIMIT 1', [today]).catch(() => ({ rows: [] })),
+            query(
+                "SELECT 1 FROM leave_applications WHERE employee_id = $1 AND status = 'approved' AND start_date <= $2 AND end_date >= $2 LIMIT 1",
+                [req.user.id, today]
+            ).catch(() => ({ rows: [] }))
+        ]);
+        res.json({
+            success: true,
+            attendance: result.rows,
+            today: {
+                date: today,
+                holiday: hRes.rows.length ? hRes.rows[0].name : null,
+                weekoff: isWeekOff(today, wcfg.weekoffDay),
+                onLeave: lRes.rows.length > 0
+            }
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
     }
@@ -762,6 +803,14 @@ router.get('/monthly', verifyToken, isManager, async (req, res) => {
                     matrix[emp.id][d] = { status: leaveCls === 'paid' ? 'onleave' : 'absent', check_in: null, check_out: null, leave: true };
                 } else if (rec) {
                     matrix[emp.id][d] = rec;
+                } else if (date.getTime() === today.getTime()) {
+                    // Today with no record yet is NOT an absence: the employee
+                    // may simply not have checked in (or is on the way). Keep
+                    // the cell neutral like future days so the admin/manager
+                    // grid doesn't show everyone "Absent" at 9 AM and inflate
+                    // the month's Absent count. The day only becomes absent
+                    // once it is over (the auto-absent backend's job).
+                    matrix[emp.id][d] = { status: 'upcoming', check_in: null, check_out: null };
                 } else {
                     matrix[emp.id][d] = { status: 'absent', check_in: null, check_out: null };
                 }

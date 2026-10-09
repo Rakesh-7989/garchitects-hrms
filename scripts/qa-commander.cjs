@@ -280,6 +280,7 @@ const HARNESSES = [
     ['scripts/qa-attendance-checkin-status.cjs', 'attendance check-in status'],
     ['scripts/qa-attendance-break-finalize.cjs', 'attendance break finalize'],
     ['scripts/qa-attendance-my-readpath.cjs', 'attendance my read-path'],
+    ['scripts/qa-attendance-card.cjs', 'attendance card + today context'],
     ['scripts/qa-work-assignments-v2.cjs', 'work assignments v2'],
     ['scripts/qa-fix-sprint.cjs', 'fix-sprint audit batch'],
 ];

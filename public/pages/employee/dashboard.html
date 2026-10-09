@@ -294,6 +294,7 @@
     <script src="../../js/workWeek.js"></script>
     <script>
         let todayAttendance = null;
+        let todayContext = null;
         let durationInterval = null;
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -367,7 +368,7 @@
                 el.style.display = 'block';
                 el.textContent = 'Working: ' + String(hrs).padStart(2,'0') + ':' + String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0');
             }
-            if (todayAttendance && todayAttendance.break_start && !todayAttendance.break_end) {
+            if (todayAttendance && todayAttendance.break_start && !todayAttendance.break_end && !todayAttendance.check_out) {
                 const breakTime = new Date(todayAttendance.check_in_date || todayAttendance.date);
                 const bp = todayAttendance.break_start.split(':');
                 breakTime.setHours(parseInt(bp[0]), parseInt(bp[1]) || 0, parseInt(bp[2]) || 0);
@@ -416,14 +417,37 @@
         }
 
         function renderTodayAttendance(row) {
+            // Status-aware "no row" state: today may be a declared holiday / weekly
+            // off / approved-leave day. A bare "Not checked in yet" invitation there
+            // confuses people into checking in on a day they don't need to - say
+            // what kind of day it is instead. The Check-In button stays: the API
+            // deliberately allows a real check-in on a holiday/leave day, so an
+            // employee who actually worked can still log it.
             if (!row) {
                 document.getElementById('checkInBtn').style.display = 'inline-flex';
                 document.getElementById('checkOutBtn').style.display = 'none';
                 document.getElementById('breakStartBtn').style.display = 'none';
                 document.getElementById('breakEndBtn').style.display = 'none';
                 document.getElementById('breakDuration').style.display = 'none';
-                document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--text-secondary);">Not checked in yet</p>';
-                document.getElementById('statusBadge').innerHTML = '<span class="badge badge-secondary">Not Started</span>';
+                document.getElementById('workDuration').style.display = 'none';
+                let msg = 'Not checked in yet';
+                let badgeText = 'Not Started';
+                let badgeCls = 'secondary';
+                if (todayContext && todayContext.holiday) {
+                    msg = 'Today is a Holiday \u2013 ' + escapeHtml(todayContext.holiday) + '. No check-in needed unless you actually worked.';
+                    badgeText = 'Holiday';
+                    badgeCls = 'info';
+                } else if (todayContext && todayContext.weekoff) {
+                    msg = 'Today is your Week Off. No check-in needed unless you actually worked.';
+                    badgeText = 'Week Off';
+                    badgeCls = 'info';
+                } else if (todayContext && todayContext.onLeave) {
+                    msg = "You're on approved leave today. No check-in needed unless you actually worked.";
+                    badgeText = 'On Leave';
+                    badgeCls = 'info';
+                }
+                document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--text-secondary);">' + msg + '</p>';
+                document.getElementById('statusBadge').innerHTML = '<span class="badge badge-' + badgeCls + '">' + badgeText + '</span>';
                 return;
             }
             document.getElementById('statusCheckIn').textContent = row.check_in || '--';
@@ -452,7 +476,14 @@
             }
             document.getElementById('statusBadge').innerHTML = '<span class="badge badge-' + getStatusBadge(row.status) + '">' + escapeHtml(getStatusText(row.status)) + '</span>';
             const onBreak = row.break_start && !row.break_end;
-            if (!row.check_out) {
+            // liveDay = a real checked-in, still-open day -> Check-Out + breaks.
+            // notStarted = a pre-marked absent / on-leave row today (manager
+            // mark-absent has no date guard): the employee never checked in, so
+            // Check-Out / breaks are NOT offered - only a Check-In that converts
+            // the row into a real present day if they actually worked.
+            const liveDay = row.check_in && !row.check_out;
+            const notStarted = !row.check_in && !row.check_out;
+            if (liveDay) {
                 document.getElementById('checkInBtn').style.display = 'none';
                 document.getElementById('checkOutBtn').style.display = onBreak ? 'none' : 'inline-flex';
                 document.getElementById('breakStartBtn').style.display = onBreak ? 'none' : 'inline-flex';
@@ -460,13 +491,31 @@
                 document.getElementById('breakDuration').style.display = onBreak ? 'block' : 'none';
                 document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--secondary);font-weight:500;"><i class="fas fa-check-circle"></i> Checked in at ' + escapeHtml(row.check_in) + '</p>';
                 updateClock();
+            } else if (notStarted) {
+                document.getElementById('checkInBtn').style.display = 'inline-flex';
+                document.getElementById('checkOutBtn').style.display = 'none';
+                document.getElementById('breakStartBtn').style.display = 'none';
+                document.getElementById('breakEndBtn').style.display = 'none';
+                document.getElementById('breakDuration').style.display = 'none';
+                document.getElementById('workDuration').style.display = 'none';
+                const leaveHint = (todayContext && todayContext.onLeave) ? ' (approved leave)' : '';
+                const msg = row.status === 'absent'
+                    ? 'Marked absent' + leaveHint + ' - check in only if you actually worked today.'
+                    : 'Marked as ' + getStatusText(row.status) + ' - check in only if you actually worked today.';
+                document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--text-secondary);">' + msg + '</p>';
             } else {
+                // Day closed (checked out, or a legacy row closed without a
+                // check-in): no actions, honest message.
                 document.getElementById('checkInBtn').style.display = 'none';
                 document.getElementById('checkOutBtn').style.display = 'none';
                 document.getElementById('breakStartBtn').style.display = 'none';
                 document.getElementById('breakEndBtn').style.display = 'none';
-                document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--info);font-weight:500;"><i class="fas fa-check-double"></i> Day completed</p>';
+                document.getElementById('breakDuration').style.display = 'none';
                 document.getElementById('workDuration').style.display = 'none';
+                const msg = row.check_in
+                    ? '<i class="fas fa-check-double"></i> Day completed'
+                    : 'No check-in recorded';
+                document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--info);font-weight:500;">' + msg + '</p>';
             }
         }
 
@@ -490,6 +539,7 @@
             }
             if (data && data.success) {
                 const today = getTodayIST();
+                todayContext = data.today || null;
                 todayAttendance = (data.attendance || []).find(a => {
                     const adate = a.date ? String(a.date).split('T')[0] : '';
                     return adate === today;
