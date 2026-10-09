@@ -546,10 +546,16 @@
                 }) || null;
                 renderTodayAttendance(todayAttendance);
             } else if (!hadRender) {
-                // Fetch failed and nothing was rendered yet: show an error with
-                // Retry, NEVER a Check-In button (a reload must not invite a
-                // duplicate check-in while the server still has today's row).
-                setAttendanceError();
+                // Fetch failed and nothing was rendered yet: we don't know if a
+                // row exists server-side (cold start / slow DB). Forcing Retry-only
+                // strands employees who genuinely need to check in. Fall back to a
+                // neutral "not checked in yet" state (Check-In visible) so they can
+                // proceed; the 409 recovery path (alreadyCheckedIn) will flip the
+                // card to checked-in immediately if a row actually exists.
+                todayContext = null;
+                todayAttendance = null;
+                renderTodayAttendance(null);
+                showToast('Could not load attendance status yet — showing Check-In option. Tap Retry if it stays unclear.', 'info');
             }
             // If a row was already rendered and this refetch failed, keep the
             // current render (do not degrade to "Check In").
