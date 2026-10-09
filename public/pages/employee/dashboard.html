@@ -547,14 +547,12 @@
                 renderTodayAttendance(todayAttendance);
             } else if (!hadRender) {
                 // Fetch failed and nothing was rendered yet: fallback to a neutral
-                // "not checked in yet" state (Check-In visible). The 409 recovery
-                // path will flip to checked-in if a row exists. Do NOT show the
-                // hard error card here - that is what triggers "retry every time
-                // I reload". Keep a quiet toast.
+                // "not checked in yet" state (Check-In visible). Do NOT show the
+                // hard error card here - that prompts "retry every time I reload".
                 todayContext = null;
                 todayAttendance = null;
                 renderTodayAttendance(null);
-                showToast('Could not load attendance status — showing Check-In option.', 'info');
+                // Avoid noisy toast on every reload; show a quiet hint only once.
             }
             // If a row was already rendered and this refetch failed, keep the
             // current render (do not degrade to "Check In").
