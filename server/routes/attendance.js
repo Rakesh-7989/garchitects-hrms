@@ -512,24 +512,30 @@ router.get('/my', verifyToken, async (req, res) => {
         // what kind of day today is so the client renders a status-aware (still
         // actionable) state instead of confusing the employee into checking in
         // on a day they don't need to.
-        const today = istDateString();
-        const wcfg = await getWorkWeekConfig();
-        const [hRes, lRes] = await Promise.all([
-            query('SELECT name FROM holidays WHERE is_active = 1 AND date = $1 LIMIT 1', [today]).catch(() => ({ rows: [] })),
-            query(
-                "SELECT 1 FROM leave_applications WHERE employee_id = $1 AND status = 'approved' AND start_date <= $2 AND end_date >= $2 LIMIT 1",
-                [req.user.id, today]
-            ).catch(() => ({ rows: [] }))
-        ]);
-        res.json({
-            success: true,
-            attendance: result.rows,
-            today: {
+        let todayCtx = { date: today, holiday: null, weekoff: false, onLeave: false };
+        try {
+            const wcfg = await getWorkWeekConfig().catch(() => ({ weekoffDay: 0 }));
+            const [hRes, lRes] = await Promise.all([
+                query('SELECT name FROM holidays WHERE is_active = 1 AND date = $1 LIMIT 1', [today]).catch(() => ({ rows: [] })),
+                query(
+                    "SELECT 1 FROM leave_applications WHERE employee_id = $1 AND status = 'approved' AND start_date <= $2 AND end_date >= $2 LIMIT 1",
+                    [req.user.id, today]
+                ).catch(() => ({ rows: [] }))
+            ]);
+            todayCtx = {
                 date: today,
                 holiday: hRes.rows.length ? hRes.rows[0].name : null,
                 weekoff: isWeekOff(today, wcfg.weekoffDay),
                 onLeave: lRes.rows.length > 0
-            }
+            };
+        } catch (e) {
+            // Best-effort only: never fail the read because of today-context.
+            todayCtx = { date: today, holiday: null, weekoff: false, onLeave: false };
+        }
+        res.json({
+            success: true,
+            attendance: result.rows,
+            today: todayCtx
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
