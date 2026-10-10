@@ -205,12 +205,12 @@ router.post('/check-in', verifyToken, async (req, res) => {
                 if (buf.length <= 2 * 1024 * 1024) {
                     const token = crypto.randomBytes(32).toString('hex');
                     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-                    await query(
+                    await q(
                         `INSERT INTO attendance_photos (attendance_id, employee_id, photo, token, expires_at, type)
                         VALUES ($1, $2, $3, $4, $5, 'check_in')`,
                         [attendance.id, req.user.id, buf, token, expiresAt]
                     );
-                    await query(
+                    await q(
                         'UPDATE attendance SET photo_token = $1 WHERE id = $2',
                         [token, attendance.id]
                     );
@@ -307,12 +307,12 @@ router.post('/check-out', verifyToken, async (req, res) => {
                 if (buf.length <= 2 * 1024 * 1024) {
                     const token = crypto.randomBytes(32).toString('hex');
                     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-                    await query(
+                    await q(
                         `INSERT INTO attendance_photos (attendance_id, employee_id, photo, token, expires_at, type)
                         VALUES ($1, $2, $3, $4, $5, 'check_out')`,
                         [result.rows[0].id, req.user.id, buf, token, expiresAt]
                     );
-                    await query(
+                    await q(
                         'UPDATE attendance SET photo_token_checkout = $1 WHERE id = $2',
                         [token, result.rows[0].id]
                     );
@@ -745,7 +745,12 @@ router.get('/my', verifyToken, async (req, res) => {
         }
         
         sqlQuery += ' ORDER BY a.date DESC';
-        const result = await query(sqlQuery, params);
+        // q (runWithSchemaRepair) on purpose: this read SELECTs auto_checkout /
+        // checkout_miss_reason / photo_token columns and LEFT JOINs
+        // attendance_photos, none of which a legacy live DB is guaranteed to
+        // have - a raw query there 500s every employee attendance read with a
+        // bare "Server error". Self-heal instead of failing.
+        const result = await q(sqlQuery, params);
         // node-postgres parses DATE columns (OID 1082) at LOCAL midnight, so
         // JSON-serializing them yields the PREVIOUS UTC day on any host east of
         // UTC (e.g. "2026-10-07" -> "2026-10-06T18:30:00.000Z"). The client finds
@@ -786,7 +791,12 @@ router.get('/my', verifyToken, async (req, res) => {
             today: todayCtx
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error' });
+        // Log the real error - the old catch returned a bare 500 with NO logging,
+        // so a schema drift on live was invisible except as the client toast
+        // "Server error — showing empty view."
+        console.error('[attendance.my]', error && error.message ? error.message : error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
     }
 });
 
@@ -857,7 +867,7 @@ router.post('/miss-reason', verifyToken, async (req, res) => {
         }
 
         const canManage = req.user.role === 'admin' || req.user.role === 'hr';
-        const row = await query(
+        const row = await q(
             `SELECT id, employee_id, auto_checkout FROM attendance WHERE id = $1`,
             [attendance_id]
         );
@@ -872,7 +882,7 @@ router.post('/miss-reason', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'This day was not auto-checked-out, so no reason is needed.' });
         }
 
-        await query(
+        await q(
             `UPDATE attendance SET checkout_miss_reason = $1, checkout_miss_reason_at = NOW() WHERE id = $2`,
             [reason, attendance_id]
         );
@@ -1235,7 +1245,7 @@ router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
 // @access  Admin/HR only
 router.get('/photo/:token', verifyToken, isAdminOrHr, async (req, res) => {
     try {
-        const result = await query(
+        const result = await q(
             'SELECT * FROM attendance_photos WHERE token = $1',
             [req.params.token]
         );
@@ -1247,17 +1257,17 @@ router.get('/photo/:token', verifyToken, isAdminOrHr, async (req, res) => {
         const photo = result.rows[0];
 
         if (new Date(photo.expires_at) < new Date()) {
-            await query('DELETE FROM attendance_photos WHERE id = $1', [photo.id]);
+            await q('DELETE FROM attendance_photos WHERE id = $1', [photo.id]);
             return res.status(404).json({ success: false, message: 'Photo has expired' });
         }
 
         const buf = Buffer.isBuffer(photo.photo) ? photo.photo : Buffer.from(photo.photo);
 
-        await query(
+        await q(
             "UPDATE attendance_photos SET viewed = 1, viewed_at = NOW() WHERE id = $1",
             [photo.id]
         );
-        await query('DELETE FROM attendance_photos WHERE id = $1', [photo.id]);
+        await q('DELETE FROM attendance_photos WHERE id = $1', [photo.id]);
 
         res.set({
             'Content-Type': 'image/jpeg',

@@ -238,6 +238,32 @@ async function runMigrations() {
         await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS break_start TIME`);
         await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS break_end TIME`);
         await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS break_log TEXT`);
+        // Auto-checkout / missed-checkout tracking + check-in photo links were
+        // only ever guaranteed by schema.sql (fresh installs) and the lazy
+        // schemaRepair map, while GET /api/attendance/my SELECTs all of them on
+        // a raw (non-self-healing) query. A live DB created before those
+        // releases therefore 500s every employee attendance read with a bare
+        // "Server error". Add them here (idempotent) so any boot heals the DB.
+        await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS auto_checkout BOOLEAN DEFAULT FALSE`);
+        await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS auto_checkout_at TIMESTAMP`);
+        await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS checkout_miss_reason TEXT`);
+        await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS checkout_miss_reason_at TIMESTAMP`);
+        await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS photo_token TEXT`);
+        await query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS photo_token_checkout TEXT`);
+        await query(`CREATE TABLE IF NOT EXISTS attendance_photos (
+            id SERIAL PRIMARY KEY,
+            attendance_id INT NOT NULL REFERENCES attendance(id) ON DELETE CASCADE,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            photo BYTEA NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            viewed INTEGER DEFAULT 0,
+            viewed_at TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            type VARCHAR(20) DEFAULT 'check_in' CHECK (type IN ('check_in', 'check_out')),
+            created_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_attendance_photos_token ON attendance_photos(token)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_attendance_photos_expires ON attendance_photos(expires_at)`);
         console.log('[Migration] Multi-approver columns ensured.');
     } catch (e) { console.warn('[Migration] Multi-approver columns skipped:', e.message); }
 

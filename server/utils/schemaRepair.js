@@ -73,7 +73,13 @@ const ATTENDANCE_ALTER_COLUMNS = {
     // the break-finalize routes without a 42703/undefined-column.
     break_start: 'TIME',
     break_end: 'TIME',
-    break_log: 'TEXT'
+    break_log: 'TEXT',
+    // Check-in/out photo token links (schema.sql-only until now). GET
+    // /attendance/my LEFT JOINs attendance_photos on these, so a legacy DB
+    // missing them 500s every employee attendance read on a non-self-healing
+    // query. 6:3 parity (index.js startup migration) + these heal cold instances.
+    photo_token: 'TEXT',
+    photo_token_checkout: 'TEXT'
 };
 
 // Projects module columns that a half-initialized live database may be missing.
@@ -483,6 +489,25 @@ const ENSURE_TABLE_DDL = {
             UNIQUE (manager_id, daily_update_id)
         )`,
         `CREATE INDEX IF NOT EXISTS idx_dur_manager ON daily_update_reads(manager_id)`
+    ],
+    // Check-in/out selfie photos (one-time view). Existed only in schema.sql -
+    // a live DB that predates it fails every /attendance/my LEFT JOIN and every
+    // photo-write with 42P01 until this ensure-table heals it lazily.
+    attendance_photos: [
+        `CREATE TABLE IF NOT EXISTS attendance_photos (
+            id SERIAL PRIMARY KEY,
+            attendance_id INT NOT NULL REFERENCES attendance(id) ON DELETE CASCADE,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            photo BYTEA NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            viewed INTEGER DEFAULT 0,
+            viewed_at TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            type VARCHAR(20) DEFAULT 'check_in' CHECK (type IN ('check_in', 'check_out')),
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_attendance_photos_token ON attendance_photos(token)`,
+        `CREATE INDEX IF NOT EXISTS idx_attendance_photos_expires ON attendance_photos(expires_at)`
     ]
 };
 
@@ -490,15 +515,20 @@ function missingColumnInfo(error) {
     // Postgres reports 42703 either as `column "x" of relation "y" does not
     // exist`, `column x.y does not exist`, or `column "x" does not exist`.
     const msg = error && error.message ? String(error.message) : '';
-    // Try quoted format first: column "x" [of relation "y"]
+    // Quoted format first: column "x" [of relation "y"] -> column x, table y
     let m = /column "([a-z0-9_]+)"(?:\s+of\s+relation\s+"([a-z0-9_]+)")?\s+does not exist/i.exec(msg);
-    // Try unquoted format: column x.y does not exist
-    if (!m) m = /column\s+([a-z0-9_]+)\.([a-z0-9_]+)\s+does not exist/i.exec(msg);
-    // Try simple unquoted: column x does not exist
-    if (!m) m = /column\s+([a-z0-9_]+)\s+does not exist/i.exec(msg);
-    const column = (m && m[1]) || (error && error.column) || null;
-    const table = (m && m[2]) || (error && error.table) || null;
-    return { column, table };
+    if (m) return { column: m[1] || null, table: m[2] || null };
+    // Unquoted qualified format: column x.y does not exist (x is the table or
+    // ALIAS qualifier, y the real column). Previously assigned m[1]/m[2] to
+    // column/table - swapped - so ALIASED missing columns (e.g. `a.photo_token`
+    // in /attendance/my) could never be healed by the runWithSchemaRepair
+    // qualifier branches and every attempt fell through to rethrow -> 500.
+    m = /column\s+([a-z0-9_]+)\.([a-z0-9_]+)\s+does not exist/i.exec(msg);
+    if (m) return { column: m[2] || null, table: m[1] || null };
+    // Simple unquoted: column x does not exist -> caller resolves the table
+    m = /column\s+([a-z0-9_]+)\s+does not exist/i.exec(msg);
+    if (m) return { column: m[1] || null, table: null };
+    return { column: (error && error.column) || null, table: (error && error.table) || null };
 }
 
 function missingTableInfo(error) {
