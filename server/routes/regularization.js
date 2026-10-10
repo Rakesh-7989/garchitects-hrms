@@ -5,6 +5,7 @@ const { verifyToken, isAdmin, blockAdminSelfService } = require('../middleware/a
 const { istDateString, dateOnly } = require('../utils/date');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
+const { myTreeIds } = require('./project-leads');
 
 // Every query below touches attendance_regularizations, which may not exist
 // yet on a live database that predates the feature - repair and retry.
@@ -149,11 +150,17 @@ router.get('/pending', verifyToken, async (req, res) => {
 
 // @route   POST /api/regularization/:id/review
 // @desc    Approve or reject; on approve writes times into the attendance table
-// @access  Private (Admin only)
+// @access  Private (Admin/HR company-wide; Manager/Team Lead on their own tree)
 router.post('/:id/review', verifyToken, async (req, res) => {
     try {
-        if (req.user.role !== 'admin') {
-            return res.status(403).json({ success: false, message: 'Only Admins can approve or reject attendance regularizations.' });
+        // Review scope mirrors GET /pending: admin/HR review company-wide;
+        // manager/team_lead review only their own reporting tree. Previously
+        // admin-only, which 403'd the manager portal's review UI (the only
+        // review screen) even though managers could SEE their subtree's pending
+        // requests - so a request sat pending unless an admin reviewed it.
+        const isCompanyWide = req.user.role === 'admin' || req.user.role === 'hr';
+        if (!isCompanyWide && !['manager', 'team_lead'].includes(req.user.role)) {
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
         const { status, review_note } = req.body || {};
         if (!['approved', 'rejected'].includes(status)) {
@@ -171,6 +178,15 @@ router.post('/:id/review', verifyToken, async (req, res) => {
 
         if (requestRow.status !== 'pending') {
             return res.status(400).json({ success: false, message: 'This request was already reviewed' });
+        }
+
+        // A manager/team_lead may only review requests for employees inside
+        // their own reporting tree (same scope as the /edit attendance route).
+        if (!isCompanyWide) {
+            const tree = await myTreeIds(req.user.id);
+            if (!tree.has(requestRow.employee_id)) {
+                return res.status(403).json({ success: false, message: 'You can only review regularizations for your own team.' });
+            }
         }
 
         // Run the review + attendance write-back on ONE checked-out connection.

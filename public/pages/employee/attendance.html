@@ -574,7 +574,10 @@
                     // Today before check-in is not an absence yet.
                     cls = 'cal-cell';
                 } else {
-                    cls = 'cal-absent'; tag = 'Absent'; counts.absent++;
+                    // Past day with no attendance row: the employee never checked
+                    // in. Say so plainly - "Absent" alone reads as a genuine
+                    // absence when it is usually just a forgotten check-in.
+                    cls = 'cal-absent'; tag = 'No check-in'; counts.absent++;
                 }
 
                 html += '<div class="cal-cell clickable ' + cls + (isToday ? ' today' : '') + '" onclick="openDayDetail(\'' + dateStr + '\')" title="' + (rec && rec.check_in ? 'Check In: ' + rec.check_in + (rec.check_out ? ' | Check Out: ' + rec.check_out : '') : (holidayDates[dateStr] || '')) + '">';
@@ -672,7 +675,7 @@
             else if (isWeekOff) statusBadge = '<span class="badge badge-secondary">Week Off</span>';
             else if (isFuture) statusBadge = '<span class="badge badge-secondary">Upcoming</span>';
             else if (isToday) statusBadge = '<span class="badge badge-secondary">Not checked in yet</span>';
-            else statusBadge = '<span class="badge badge-danger">Absent</span>';
+            else statusBadge = '<span class="badge badge-danger">No check-in</span>';
 
             rows += row('Status', statusBadge);
 

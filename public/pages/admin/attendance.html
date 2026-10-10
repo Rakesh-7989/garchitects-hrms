@@ -177,10 +177,43 @@
                     <div style="text-align:center;padding:30px;color:var(--text-secondary);"><div class="spinner" style="margin:0 auto;"></div></div>
                 </div>
             </div>
+
+            <div class="card slide-up stagger-4" style="margin-top:24px;">
+                <div class="card-header">
+                    <h3 style="font-weight:600;font-size:1.05rem;"><i class="fas fa-clock-rotate-left" style="color:var(--warning);margin-right:8px;"></i>Pending Regularizations</h3>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <button class="btn btn-sm btn-secondary" onclick="loadRegRequests()"><i class="fas fa-sync"></i> Refresh</button>
+                    </div>
+                </div>
+                <div id="regRequestsContainer">
+                    <div style="text-align:center;padding:30px;color:var(--text-secondary);"><div class="spinner" style="margin:0 auto;"></div></div>
+                </div>
+            </div>
         </div>
     </main>
 
     <div class="cell-tooltip" id="cellTooltip"></div>
+
+    <!-- Review Regularization Modal -->
+    <div class="modal" id="regReviewModal" onclick="if(event.target===this)closeRegReviewModal()">
+        <div class="modal-content" style="max-width:440px;">
+            <div class="modal-header">
+                <h2 id="regReviewTitle">Review Regularization</h2>
+                <button onclick="closeRegReviewModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="regReviewInfo" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;"></p>
+                <div class="form-group">
+                    <label>Review note (optional)</label>
+                    <textarea id="regReviewNote" class="form-control" rows="2" maxlength="500"></textarea>
+                </div>
+                <div style="display:flex;gap:10px;justify-content:flex-end;">
+                    <button class="btn btn-secondary" onclick="closeRegReviewModal()">Cancel</button>
+                    <button class="btn btn-primary" id="regReviewConfirmBtn" onclick="confirmRegReview()">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Mark Present Modal -->
     <div class="modal" id="markPresentModal" onclick="if(event.target===this)closeMarkPresentModal()">
@@ -338,6 +371,7 @@
             loadMatrix();
             loadRecentLogs();
             loadLateWarning();
+            loadRegRequests();
         });
 
         async function loadDesignationFilter() {
@@ -666,6 +700,60 @@
                 container.innerHTML = html;
             } else {
                 showEmptyState(container, 'fa-clock', 'No Records', 'No recent attendance logs');
+            }
+        }
+
+        // ---- Pending Regularizations (admin/HR company-wide) ----
+        let pendingRegReview = null;
+        async function loadRegRequests() {
+            const container = document.getElementById('regRequestsContainer');
+            const data = await apiCall('/regularization/pending');
+            if (!data || !data.success) {
+                container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary);">Could not load requests.</div>';
+                return;
+            }
+            const reqs = data.requests || [];
+            if (reqs.length === 0) {
+                container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary);">No pending regularization requests.</div>';
+                return;
+            }
+            let html = '<div class="table-container"><table><thead><tr><th>Employee</th><th>Date</th><th>Check In</th><th>Check Out</th><th>Reason</th><th>Action</th></tr></thead><tbody>';
+            reqs.forEach(r => {
+                html += '<tr><td>' + escapeHtml((r.first_name || '') + ' ' + (r.last_name || '')) + '</td><td>' + formatDate(r.date) + '</td><td>' + escapeHtml(r.check_in || '-') + '</td><td>' + escapeHtml(r.check_out || '-') + '</td><td style="font-size:0.8rem;">' + escapeHtml(r.reason || '') + '</td>'
+                    + '<td><button class="btn btn-sm btn-success" onclick="openRegReview(' + r.id + ', \'approved\')" title="Approve"><i class="fas fa-check"></i></button> '
+                    + '<button class="btn btn-sm btn-danger" onclick="openRegReview(' + r.id + ', \'rejected\')" title="Reject"><i class="fas fa-times"></i></button></td></tr>';
+            });
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        function openRegReview(id, status) {
+            pendingRegReview = { id, status };
+            document.getElementById('regReviewTitle').textContent = (status === 'approved' ? 'Approve' : 'Reject') + ' Regularization';
+            document.getElementById('regReviewInfo').textContent = 'On approve, the requested check-in/out times are written into the attendance record.';
+            document.getElementById('regReviewNote').value = '';
+            const btn = document.getElementById('regReviewConfirmBtn');
+            btn.className = 'btn ' + (status === 'approved' ? 'btn-success' : 'btn-danger');
+            btn.innerHTML = status === 'approved' ? '<i class="fas fa-check"></i> Approve' : '<i class="fas fa-times"></i> Reject';
+            document.getElementById('regReviewModal').classList.add('active');
+        }
+
+        function closeRegReviewModal() {
+            document.getElementById('regReviewModal').classList.remove('active');
+            pendingRegReview = null;
+        }
+
+        async function confirmRegReview() {
+            if (!pendingRegReview) return;
+            const { id, status } = pendingRegReview;
+            const note = document.getElementById('regReviewNote').value.trim();
+            const data = await apiCall('/regularization/' + id + '/review', 'POST', { status, review_note: note });
+            closeRegReviewModal();
+            if (data && data.success) {
+                showToast('Request ' + status, 'success');
+                loadRegRequests();
+            } else {
+                showToast((data && data.message) || 'Failed to update request', 'error');
             }
         }
 

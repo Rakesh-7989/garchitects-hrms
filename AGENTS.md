@@ -139,6 +139,21 @@ themself; do not expand the guard to them without an owner decision.
 
 ## 11. Current state (update this as work ships)
 
+- **Attendance workflow completed: regularization review gap closed + "No check-in" clarity
+  (2026-10-10):** the founder-specified attendance workflow (check-in within office grace →
+  present; check-out; history updates; calendar day-click popup; employee correction request →
+  approve/reject → attendance write-back; admin edit any day) was audited end-to-end — ~90% was
+  already built. The one broken step: the regularization **review** endpoint was admin-only while
+  the only review UI is the **manager** portal, so managers got **403** approving their own
+  team's requests. Fix: widened `POST /api/regularization/:id/review` to match `/pending`'s
+  scope — **admin/HR company-wide + manager/team_lead on their own reporting tree** (via
+  `myTreeIds`, same scope as `/edit`); added a **Pending Regularizations** review section to
+  `admin/attendance.html`; changed the employee page's past no-check-in day from "Absent" to
+  **"No check-in"** (calendar + day-detail). **QA: new `scripts/qa-reg-review.cjs` → 7/7 green**
+  (manager in-tree 200 [was 403], out-of-tree 403, admin 200, write-back verified); RBAC matrix
+  `regularize-review` row updated; `npm run qa` **59/59 green**. See
+  `docs/FEATURE_REGULARIZATION_REVIEW_WORKFLOW.md`.
+
 - **Attendance day-detail, WFH rendering & staff day editor shipped (2026-10-09):**
   three attendance-workflow gaps closed in one pass. **A** employee attendance
   history/calendar day-detail popup (`openDayDetail` — status, check-in/out,
