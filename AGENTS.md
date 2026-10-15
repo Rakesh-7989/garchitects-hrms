@@ -139,6 +139,22 @@ themself; do not expand the guard to them without an owner decision.
 
 ## 11. Current state (update this as work ships)
 
+- **Missed check-in notification loop shipped (2026-10-15):** founder asked for
+  check-out parity on missed check-ins — notify, never auto-check-in, grace
+  expiry stays absent, forget-to-check-in goes through request → admin review.
+  Deep-dive showed ~80% already built; closed the 3 gaps: (1) auto-mark now
+  notifies each newly-marked absent employee (`attendance_marked_absent` →
+  `/employee/regularization`; INSERT…RETURNING so re-runs never double-notify);
+  (2) filing notifies direct manager (+secondary) + active HR
+  (`regularization_requested`); (3) approve/reject notifies the employee
+  (`regularization_reviewed` + note). Review hardened TOCTOU-safe
+  (`UPDATE … WHERE status='pending'` → 409 on double-review, sequential or
+  concurrent). No schema/UI changes. **QA: `qa-reg-review.cjs` 7→18 checks,
+  18/18 green standalone** (owns 5433/3000 — intentionally NOT in the commander);
+  hermetic `npm run qa` **58/59** (sole fail = known late-night auto-checkout
+  flake, run ~23:30 IST past the 20:30 deadline; untouched paths). See
+  `docs/FEATURE_MISSED_CHECKIN_NOTIFICATIONS.md`.
+
 - **Attendance workflow completed: regularization review gap closed + "No check-in" clarity
   (2026-10-10):** the founder-specified attendance workflow (check-in within office grace →
   present; check-out; history updates; calendar day-click popup; employee correction request →

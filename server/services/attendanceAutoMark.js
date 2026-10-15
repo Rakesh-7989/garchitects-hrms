@@ -1,6 +1,7 @@
 const { query } = require('../config/database');
 const { istDateString, istTimeString } = require('../utils/date');
 const { getWorkWeekConfig } = require('../utils/workWeek');
+const { notify } = require('./notify');
 
 const OFFICE_END_TIME = '18:30:00';
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
@@ -28,6 +29,9 @@ async function isPastCutoff(now) {
 
 // Mark absent for a single date. Skips holidays, approved leave, approved WFH,
 // and any employee who already has an attendance row for that date.
+// Returns the rows actually inserted (each { id, employee_id, date }) so the
+// caller can notify exactly the newly-marked employees - re-runs insert
+// nothing (ON CONFLICT DO NOTHING) and therefore notify nobody twice.
 async function markAbsentForDate(dateStr) {
     const result = await query(
         `INSERT INTO attendance (employee_id, date, status, remarks)
@@ -47,10 +51,11 @@ async function markAbsentForDate(dateStr) {
               WHERE wr.employee_id = e.id AND wr.status = 'approved'
                 AND wr.start_date <= $6 AND wr.end_date >= $7
           )
-        ON CONFLICT (employee_id, date) DO NOTHING`,
+        ON CONFLICT (employee_id, date) DO NOTHING
+        RETURNING id, employee_id, date`,
         [dateStr, dateStr, dateStr, dateStr, dateStr, dateStr, dateStr]
     );
-    return result.changes || 0;
+    return result.rows || [];
 }
 
 // Remove auto-marked absent rows that fall on a declared holiday. Covers
@@ -97,8 +102,21 @@ async function runAutoMark() {
         if (dateStr === todayStr && !(await isPastCutoff(now))) continue;
 
         const marked = await markAbsentForDate(dateStr);
-        total += marked;
-        processedDates.push(dateStr + (marked ? ' (+' + marked + ')' : ''));
+        // No auto check-in, ever: the system only records the absence and
+        // tells the employee, who regularizes if they actually worked.
+        for (const row of marked) {
+            await notify({
+                employeeId: row.employee_id,
+                type: 'attendance_marked_absent',
+                title: 'Marked absent — no check-in recorded',
+                body: `No check-in was recorded for ${dateStr}, so the day was marked absent. If you worked that day, file a regularization request from Attendance → Regularization.`,
+                url: '/employee/regularization',
+                entityType: 'attendance_marked_absent',
+                entityId: row.id
+            });
+        }
+        total += marked.length;
+        processedDates.push(dateStr + (marked.length ? ' (+' + marked.length + ')' : ''));
     }
 
     if (total > 0 || processedDates.length > 0) {

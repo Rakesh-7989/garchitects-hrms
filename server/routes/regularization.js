@@ -5,6 +5,7 @@ const { verifyToken, isAdmin, blockAdminSelfService } = require('../middleware/a
 const { istDateString, dateOnly } = require('../utils/date');
 const { runWithSchemaRepair } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
+const { notify } = require('../services/notify');
 const { myTreeIds } = require('./project-leads');
 
 // Every query below touches attendance_regularizations, which may not exist
@@ -69,6 +70,39 @@ router.post('/', verifyToken, blockAdminSelfService, async (req, res) => {
             },
             ip: req.ip
         });
+
+        // Tell the reviewers: the direct reporting manager plus every active
+        // HR user (admins see the same request via the pending bell badge).
+        // Best-effort sidecar - a failed notification never fails the filing.
+        try {
+            const me = await q(
+                `SELECT reporting_manager_id, secondary_reporting_manager_id,
+                        first_name, last_name, employee_id
+                   FROM employees WHERE id = $1`,
+                [req.user.id]
+            );
+            const who = me.rows[0] || {};
+            const applicant = `${who.first_name || ''} ${who.last_name || ''}`.trim() || who.employee_id || 'An employee';
+            const targets = [];
+            if (who.reporting_manager_id) targets.push({ id: who.reporting_manager_id, url: '/manager/my-team?tab=regularization' });
+            if (who.secondary_reporting_manager_id && who.secondary_reporting_manager_id !== who.reporting_manager_id) {
+                targets.push({ id: who.secondary_reporting_manager_id, url: '/manager/my-team?tab=regularization' });
+            }
+            const hrs = await q(`SELECT id FROM employees WHERE role = 'hr' AND status = 'active'`);
+            for (const h of hrs.rows) targets.push({ id: h.id, url: '/admin/attendance' });
+            for (const t of targets) {
+                await notify({
+                    employeeId: t.id,
+                    actorId: req.user.id,
+                    type: 'regularization_requested',
+                    title: `${applicant} requested attendance regularization`,
+                    body: `${applicant} requested regularization for ${date}${check_in ? ` (in ${String(check_in).slice(0, 5)})` : ''}${check_out ? ` (out ${String(check_out).slice(0, 5)})` : ''}: ${String(reason).trim()}`,
+                    url: t.url,
+                    entityType: 'attendance_regularization',
+                    entityId: result.rows[0].id
+                });
+            }
+        } catch (_) { /* notification sidecar must not fail the request */ }
 
         res.status(201).json({ success: true, request: result.rows[0] });
     } catch (error) {
@@ -176,9 +210,9 @@ router.post('/:id/review', verifyToken, async (req, res) => {
         const requestRow = rows.rows[0];
         if (!requestRow) return res.status(404).json({ success: false, message: 'Request not found' });
 
-        if (requestRow.status !== 'pending') {
-            return res.status(400).json({ success: false, message: 'This request was already reviewed' });
-        }
+        // No pre-check on status here: the conditional UPDATE below is the
+        // single source of truth, so a sequential re-review and a concurrent
+        // race both answer 409 (repo TOCTOU convention).
 
         // A manager/team_lead may only review requests for employees inside
         // their own reporting tree (same scope as the /edit attendance route).
@@ -192,21 +226,32 @@ router.post('/:id/review', verifyToken, async (req, res) => {
         // Run the review + attendance write-back on ONE checked-out connection.
         // Previously BEGIN/COMMIT went through the pool helper, which can pick a
         // different connection per statement and silently break atomicity.
+        //
+        // TOCTOU-safe: the status flip itself is the guard -
+        // UPDATE ... WHERE status = 'pending' lets exactly one concurrent
+        // reviewer win; the loser sees zero rows and gets 409.
         const client = await getClient();
+        let decided;
         try {
             await client.query('BEGIN');
-            await client.query(
+            const guard = await client.query(
                 `UPDATE attendance_regularizations
                 SET status = $1, reviewed_by = $2, review_note = $3, reviewed_at = NOW()
-                WHERE id = $4`,
+                WHERE id = $4 AND status = 'pending'
+                RETURNING *`,
                 [status, req.user.id, (review_note || '').trim() || null, req.params.id]
             );
+            if (guard.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({ success: false, message: 'This request was already reviewed' });
+            }
+            decided = guard.rows[0];
 
             if (status === 'approved') {
                 // Write-back into attendance: update existing row or insert one.
                 const att = await client.query(
                     'SELECT id, remarks FROM attendance WHERE employee_id = $1 AND date = $2',
-                    [requestRow.employee_id, requestRow.date]
+                    [decided.employee_id, decided.date]
                 );
                 if (att.rows.length > 0) {
                     const alreadyTagged = String(att.rows[0].remarks || '').includes('[regularized]');
@@ -217,13 +262,13 @@ router.post('/:id/review', verifyToken, async (req, res) => {
                             status = CASE WHEN status IN ('absent') THEN 'present' ELSE status END,
                             remarks = CASE WHEN $4 THEN remarks ELSE COALESCE(remarks, '') || ' [regularized]' END
                         WHERE id = $3`,
-                        [requestRow.check_in, requestRow.check_out, att.rows[0].id, alreadyTagged]
+                        [decided.check_in, decided.check_out, att.rows[0].id, alreadyTagged]
                     );
                 } else {
                     await client.query(
                         `INSERT INTO attendance (employee_id, date, check_in, check_out, status, remarks)
                         VALUES ($1, $2, $3, $4, 'present', '[regularized]')`,
-                        [requestRow.employee_id, requestRow.date, requestRow.check_in, requestRow.check_out]
+                        [decided.employee_id, decided.date, decided.check_in, decided.check_out]
                     );
                 }
             }
@@ -234,7 +279,24 @@ router.post('/:id/review', verifyToken, async (req, res) => {
         } finally {
             try { client.release(); } catch(e) {}
         }
-        logAudit({ actorId: req.user.id, action: status === 'approved' ? 'regularization.approve' : 'regularization.reject', entityType: 'attendance_regularization', entityId: req.params.id, details: { employee_id: requestRow.employee_id, date: requestRow.date, check_in: requestRow.check_in, check_out: requestRow.check_out }, ip: req.ip });
+        logAudit({ actorId: req.user.id, action: status === 'approved' ? 'regularization.approve' : 'regularization.reject', entityType: 'attendance_regularization', entityId: req.params.id, details: { employee_id: decided.employee_id, date: decided.date, check_in: decided.check_in, check_out: decided.check_out }, ip: req.ip });
+
+        // Tell the employee the outcome (best-effort sidecar).
+        try {
+            const day = decided.date instanceof Date ? decided.date.toISOString().slice(0, 10) : String(decided.date).slice(0, 10);
+            await notify({
+                employeeId: decided.employee_id,
+                actorId: req.user.id,
+                type: 'regularization_reviewed',
+                title: status === 'approved' ? `Regularization approved for ${day}` : `Regularization rejected for ${day}`,
+                body: status === 'approved'
+                    ? `Your regularization request for ${day} was approved and your attendance was updated.`
+                    : `Your regularization request for ${day} was rejected.${decided.review_note ? ' Note: ' + decided.review_note : ''}`,
+                url: '/employee/regularization',
+                entityType: 'attendance_regularization',
+                entityId: req.params.id
+            });
+        } catch (_) { /* notification sidecar must not fail the review */ }
 
         res.json({ success: true, message: 'Request ' + status });
     } catch (error) {

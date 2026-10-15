@@ -8,9 +8,13 @@
  *   - admin approves any request                                 -> 200
  *   - approve writes the times into the attendance record
  *   - out-of-tree request is left pending (no attendance row)
+ *   - double review of the same request                         -> 409 (TOCTOU-safe)
+ *   - approve/reject notifies the employee; filing notifies the
+ *     direct manager + HR; auto-marked absents notify (no auto check-in)
  *
  * Run manually (it owns its own PG cluster on 5433, so it must not run
- * alongside the QA commander):  node scripts/qa-reg-review.cjs
+ * alongside the QA commander or a local dev stack - run it AFTER `npm run qa`,
+ * never under it):  node scripts/qa-reg-review.cjs
  */
 require('dotenv').config();
 const fs = require('fs');
@@ -69,7 +73,7 @@ async function waitHttp(url, timeoutMs = 45000, probe = null) {
 
         const outFd = fs.openSync(path.join(path.dirname(QA_CLUSTER), 'qa-server.out.log'), 'a');
         const errFd = fs.openSync(path.join(path.dirname(QA_CLUSTER), 'qa-server.err.log'), 'a');
-        spawn('node', ['server/index.js'], { cwd: ROOT, windowsHide: true, detached: true, stdio: ['ignore', outFd, errFd], env: { ...process.env, DATABASE_URL: DB_URL } }).unref();
+        spawn('node', ['server/index.js'], { cwd: ROOT, windowsHide: true, detached: true, stdio: ['ignore', outFd, errFd], env: { ...process.env, DATABASE_URL: DB_URL, CRON_SECRET: 'qa-cron-secret' } }).unref();
         const st = await waitHttp(`http://localhost:${SRV_PORT}/api/auth/login`, 45000, { employee_id: 'x', password: 'y', portal: 'employee' });
         if (st !== 401) throw new Error('server not healthy: ' + st);
 
@@ -86,6 +90,7 @@ async function waitHttp(url, timeoutMs = 45000, probe = null) {
         const mgr2Id = await ins('rmgr2', 'Two', 'manager', adminId);
         const emp1Id = await ins('remp1', 'Emp', 'employee', mgr1Id);   // in mgr1's tree
         await ins('remp2', 'Emp2', 'employee', mgr2Id);                  // in mgr2's tree only
+        const hrId = await ins('rhr1', 'Hr', 'hr', adminId);
 
         const login = async (eid) => {
             const r = await fetch(`http://localhost:${SRV_PORT}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ employee_id: eid, password: pw, portal: eid === 'radmin1' ? 'admin' : 'employee' }) });
@@ -95,6 +100,23 @@ async function waitHttp(url, timeoutMs = 45000, probe = null) {
         const mgr1Tok = await login('rmgr1');
         const mgr2Tok = await login('rmgr2');
         const adminTok = await login('radmin1');
+
+        // Missed check-in: auto-mark runs silent no longer - it must notify.
+        // Past weekdays with no row get absent + one notification each.
+        const cron = async () => {
+            const r = await fetch(`http://localhost:${SRV_PORT}/api/cron/auto-attendance`, { headers: { Authorization: 'Bearer qa-cron-secret' } });
+            return r.json();
+        };
+        const cronNoAuth = await fetch(`http://localhost:${SRV_PORT}/api/cron/auto-attendance`);
+        check('auto-attendance cron without secret -> 401', cronNoAuth.status === 401, 'HTTP ' + cronNoAuth.status);
+        const m1 = await cron();
+        check('auto-attendance cron marks absents', m1.success === true && m1.marked > 0, 'marked=' + m1.marked);
+        const absentNotifs = (await pool.query(`SELECT COUNT(*)::int AS n FROM user_notifications WHERE type = 'attendance_marked_absent' AND employee_id = $1`, [emp1Id])).rows[0].n;
+        check('newly auto-marked employee gets absent notification', absentNotifs > 0, 'notifs=' + absentNotifs);
+        const m2 = await cron();
+        check('auto-attendance re-run marks nothing (idempotent)', m2.success === true && m2.marked === 0, 'marked=' + m2.marked);
+        const absentNotifs2 = (await pool.query(`SELECT COUNT(*)::int AS n FROM user_notifications WHERE type = 'attendance_marked_absent' AND employee_id = $1`, [emp1Id])).rows[0].n;
+        check('no duplicate absent notifications on re-run', absentNotifs2 === absentNotifs, `${absentNotifs} -> ${absentNotifs2}`);
 
         // employee1 submits 3 regularization requests (3 distinct past dates this month)
         const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -108,6 +130,14 @@ async function waitHttp(url, timeoutMs = 45000, probe = null) {
         }
         check('employee submits 3 regularization requests', regIds.every(Boolean), 'ids=' + regIds.join(','));
 
+        // Filing notifies the direct manager + HR (admin relies on the bell).
+        const filedNotifs = async (eid) => (await pool.query(
+            `SELECT COUNT(*)::int AS n FROM user_notifications WHERE type = 'regularization_requested' AND employee_id = $1 AND entity_id = $2`,
+            [eid, regIds[0]]
+        )).rows[0].n;
+        check('filing notifies the direct manager', (await filedNotifs(mgr1Id)) === 1, 'mgr1 notifs for req ' + regIds[0]);
+        check('filing notifies HR', (await filedNotifs(hrId)) === 1, 'hr notifs for req ' + regIds[0]);
+
         const review = async (tok, id) => {
             const r = await fetch(`http://localhost:${SRV_PORT}/api/regularization/${id}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify({ status: 'approved', review_note: 'ok' }) });
             return r.status;
@@ -115,6 +145,17 @@ async function waitHttp(url, timeoutMs = 45000, probe = null) {
 
         const s1 = await review(mgr1Tok, regIds[0]);
         check('manager approves request for employee IN their tree -> 200', s1 === 200, 'HTTP ' + s1);
+
+        // Decision notifies the employee.
+        const decidedNotif = (await pool.query(
+            `SELECT title FROM user_notifications WHERE type = 'regularization_reviewed' AND employee_id = $1 AND entity_id = $2`,
+            [emp1Id, regIds[0]]
+        )).rows[0];
+        check('approve notifies the employee', !!decidedNotif && /approved/.test(decidedNotif.title), decidedNotif && decidedNotif.title);
+
+        // Second review of the same request loses the race -> 409, no double write.
+        const s1b = await review(mgr1Tok, regIds[0]);
+        check('double review of the same request -> 409', s1b === 409, 'HTTP ' + s1b);
 
         const s2 = await review(mgr2Tok, regIds[1]);
         check('manager approves request for employee OUTSIDE tree -> 403', s2 === 403, 'HTTP ' + s2);
@@ -127,8 +168,19 @@ async function waitHttp(url, timeoutMs = 45000, probe = null) {
         check('approved request wrote times into attendance (mgr1)', a1 && a1.check_in === '09:00:00' && a1.status === 'present', JSON.stringify(a1));
         const a3 = (await pool.query(`SELECT check_in, status FROM attendance WHERE employee_id=$1 AND date=$2`, [emp1Id, dates[2]])).rows[0];
         check('approved request wrote times into attendance (admin)', a3 && a3.status === 'present', JSON.stringify(a3));
-        const a2 = (await pool.query(`SELECT id FROM attendance WHERE employee_id=$1 AND date=$2`, [emp1Id, dates[1]])).rows[0];
-        check('out-of-tree request NOT written (still pending, no attendance row)', !a2, a2 ? 'unexpected row' : 'no row');
+        // dates[1] may already have an auto-marked absent row (NULL times) from
+        // the cron run above - what matters is the failed review wrote nothing.
+        const a2 = (await pool.query(`SELECT check_in, check_out FROM attendance WHERE employee_id=$1 AND date=$2`, [emp1Id, dates[1]])).rows[0];
+        check('out-of-tree request NOT written (no times set by review)', !a2 || (!a2.check_in && !a2.check_out), a2 ? JSON.stringify(a2) : 'no row');
+
+        // Admin rejects the still-pending out-of-tree request; employee is told.
+        const rej = await fetch(`http://localhost:${SRV_PORT}/api/regularization/${regIds[1]}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + adminTok }, body: JSON.stringify({ status: 'rejected', review_note: 'not needed' }) });
+        check('admin rejects a pending request -> 200', rej.status === 200, 'HTTP ' + rej.status);
+        const rejNotif = (await pool.query(
+            `SELECT title FROM user_notifications WHERE type = 'regularization_reviewed' AND employee_id = $1 AND entity_id = $2`,
+            [emp1Id, regIds[1]]
+        )).rows[0];
+        check('reject notifies the employee', !!rejNotif && /rejected/.test(rejNotif.title), rejNotif && rejNotif.title);
 
         await pool.end();
         console.log(`\n[reg-review] ${pass} passed, ${fail} failed`);
