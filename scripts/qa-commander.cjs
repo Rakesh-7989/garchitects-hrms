@@ -284,6 +284,7 @@ const HARNESSES = [
     ['scripts/qa-attendance-edit.cjs', 'attendance staff editor'],
     ['scripts/qa-work-assignments-v2.cjs', 'work assignments v2'],
     ['scripts/qa-fix-sprint.cjs', 'fix-sprint audit batch'],
+    ['scripts/qa-runtime-errors.cjs', 'live runtime errors (dateOnly / team-updates / audit-log)'],
 ];
 async function runHarness(script, label, stage = 'regression') {
     const out = await new Promise((resolve) => {
