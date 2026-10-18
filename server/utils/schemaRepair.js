@@ -508,6 +508,26 @@ const ENSURE_TABLE_DDL = {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_attendance_photos_token ON attendance_photos(token)`,
         `CREATE INDEX IF NOT EXISTS idx_attendance_photos_expires ON attendance_photos(expires_at)`
+    ],
+    // Consent records (versioned privacy/consent tracking). Written server-side
+    // only; added to all three schema layers so a cold instance can self-heal
+    // the /api/consent/* routes without a 42P01.
+    consent_records: [
+        `CREATE TABLE IF NOT EXISTS consent_records (
+            id SERIAL PRIMARY KEY,
+            user_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            notice_key VARCHAR(100) NOT NULL,
+            notice_version VARCHAR(50) NOT NULL,
+            purpose VARCHAR(100) NOT NULL,
+            choice VARCHAR(20) NOT NULL CHECK (choice IN ('granted', 'declined', 'withdrawn', 'acknowledged')),
+            timestamp TIMESTAMP DEFAULT NOW(),
+            method VARCHAR(50),
+            notice_hash VARCHAR(64),
+            locale VARCHAR(10),
+            withdrawal_timestamp TIMESTAMP
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_consent_records_user ON consent_records(user_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_consent_records_notice ON consent_records(notice_key, notice_version)`
     ]
 };
 

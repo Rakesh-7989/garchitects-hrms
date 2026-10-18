@@ -341,6 +341,26 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- 20. CONSENT RECORDS (versioned privacy/consent tracking)
+-- One row per employee notice acknowledgement / consent grant / withdrawal.
+-- Written server-side only; append an audit event on every write.
+-- Avoids storing unnecessary IP/device fingerprint (blueprint §4).
+CREATE TABLE IF NOT EXISTS consent_records (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    notice_key VARCHAR(100) NOT NULL,
+    notice_version VARCHAR(50) NOT NULL,
+    purpose VARCHAR(100) NOT NULL,
+    choice VARCHAR(20) NOT NULL CHECK (choice IN ('granted', 'declined', 'withdrawn', 'acknowledged')),
+    timestamp TIMESTAMP DEFAULT NOW(),
+    method VARCHAR(50),
+    notice_hash VARCHAR(64),
+    locale VARCHAR(10),
+    withdrawal_timestamp TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_consent_records_user ON consent_records(user_id);
+CREATE INDEX IF NOT EXISTS idx_consent_records_notice ON consent_records(notice_key, notice_version);
+
 -- INDEXES
 CREATE INDEX IF NOT EXISTS idx_employees_email ON employees(email);
 CREATE INDEX IF NOT EXISTS idx_employees_employee_id ON employees(employee_id);

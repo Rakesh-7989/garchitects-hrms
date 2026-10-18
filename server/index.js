@@ -56,6 +56,7 @@ app.use('/api/tickets', require('./routes/tickets'));
 app.use('/api/onboarding', require('./routes/onboarding'));
 app.use('/api/manager', require('./routes/manager'));
 app.use('/api/push', require('./routes/push'));
+app.use('/api/consent', require('./routes/consent'));
 app.use('/api/cron', require('./routes/cron'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/project-reports', require('./routes/project-reports'));
@@ -558,6 +559,27 @@ async function runMigrations() {
         await query(`CREATE INDEX IF NOT EXISTS idx_hr_task_templates_type ON hr_task_templates(type, is_active)`);
         console.log('[Migration] hr_task_templates.type ensured (offboarding ready).');
     } catch (e) { console.warn('[Migration] hr_task_templates.type skipped:', e.message); }
+
+    // Consent records (layer B): created idempotently on every boot so existing
+    // databases that predate the consent release can serve /api/consent/*.
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS consent_records (
+            id SERIAL PRIMARY KEY,
+            user_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            notice_key VARCHAR(100) NOT NULL,
+            notice_version VARCHAR(50) NOT NULL,
+            purpose VARCHAR(100) NOT NULL,
+            choice VARCHAR(20) NOT NULL CHECK (choice IN ('granted', 'declined', 'withdrawn', 'acknowledged')),
+            timestamp TIMESTAMP DEFAULT NOW(),
+            method VARCHAR(50),
+            notice_hash VARCHAR(64),
+            locale VARCHAR(10),
+            withdrawal_timestamp TIMESTAMP
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_consent_records_user ON consent_records(user_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_consent_records_notice ON consent_records(notice_key, notice_version)`);
+        console.log('[Migration] consent_records table ensured.');
+    } catch (e) { console.warn('[Migration] consent_records table skipped:', e.message); }
 }
 runMigrations();
 
