@@ -1,27 +1,25 @@
 -- ============================================================================
 -- server/migrations/2026-10-18-rls-enablement.sql
 --
--- DRAFT — Phase 1 critical risk containment (blueprint §10 Phase 1).
+-- Phase 1 critical risk containment (blueprint §10 Phase 1).
 -- Purpose: remediate the Supabase security advisor's 42 "RLS Disabled in
 -- Public" findings, table-by-table, starting with the most sensitive HR
--- tables. This file is REVIEWABLE but is NOT applied to production here.
+-- tables.
 --
--- GATING (mirrors the existing one-time reshape block in server/index.js):
---   apply exactly once per database, recorded in schema_migrations; additive
---   ENABLE RLS + CREATE POLICY statements; full ROLLBACK section included.
+-- DECISIONS (confirmed by owner, 2026-10-19):
+--   D1 = true: DATABASE_URL connects as a SUPERUSER. PostgreSQL superusers
+--       bypass RLS entirely, so the app's own queries are unaffected. RLS
+--       here protects ONLY direct PostgREST / anonymous access — exactly what
+--       the 42 security-advisor findings flag.
+--   D2 = yes: enable RLS on the 8 most sensitive tables; all other tables
+--       keep app-layer enforcement only.
+--   D3 = no: do NOT FORCE ROW LEVEL SECURITY on the app's service role.
+--       Superuser bypasses RLS anyway; FORCE adds risk with no benefit.
 --
--- PRECONDITIONS (owner must confirm BEFORE applying to production):
---   D1: which Postgres role DATABASE_URL connects as (superuser / non-superuser).
---       A superuser connection bypasses RLS entirely — remediation then only
---       protects direct PostgREST/anon access, not the app's own queries.
---   D2: table-by-table policy intent approved (which roles read/write what).
---   D3: whether RLS should also constrain the app's own pg service role
---       (recommended NO — the service role owns/bypasses tables; policies
---       protect direct anon/PostgREST access).
---
--- TESTING: apply to a staging copy of production first; run positive +
--- negative per-role access tests; verify scheduled jobs + server queries;
--- only then promote via reviewed migration with backup + rollback ready.
+-- GATING: apply exactly once per database, recorded in schema_migrations;
+-- additive ENABLE RLS + CREATE POLICY statements; full ROLLBACK included.
+-- TEST: apply to a staging copy of production first, run positive +
+-- negative per-role access tests, then promote with backup + rollback ready.
 -- ============================================================================
 
 -- One-time application ledger (idempotent guard — this block runs once).
@@ -53,9 +51,8 @@ BEGIN
 
     -- 1. employees — PAN/Aadhaar/passport, bank, salary, DOB, contact.
     ALTER TABLE employees ENABLE ROW LEVEL SECURITY;
-    -- NOTE: policy bodies below use `current_user` / role placeholders that
-    -- must be aligned with the actual DATABASE_URL connection role (D1).
-    -- Until D1-D3 are confirmed, PUBLIC gets NO policy → no direct access.
+    -- App connects as superuser (D1=true) so its own queries bypass RLS.
+    -- These policies block direct PostgREST / anonymous access only.
     CREATE POLICY IF NOT EXISTS rls_employees_app_read ON employees
         FOR SELECT TO PUBLIC USING (false);
     CREATE POLICY IF NOT EXISTS rls_employees_app_write ON employees
