@@ -1,8 +1,9 @@
 # Deep-Dive Analysis: Git History + Local vs HEAD + Improvements
 
-**Date:** 2026-10-09  
-**Repo:** G-Architects HRMS  
-**QA Baseline:** 56/56 (hermetic) green
+**Date:** 2026-10-15 (refresh; first pass 2026-10-09)
+**Repo:** G-Architects HRMS
+**HEAD:** 8518f37 (== master, clean tree)
+**QA Baseline:** 59/59 hermetic green (verified this session)
 
 ## 1. Git History Study (Top Commits)
 
@@ -15,13 +16,30 @@ Latest ~30 commits show Sprint-1 + My Info fixes (Oct 9):
 - 42ebb8c/d9f1e4a: QA Commander v1 + invariant stage (43/43)
 - 93101cc onward: Attendance read-path optimization + break finalize/atomic break-end + reload-state fixes
 
-**Understanding:** Recent work is stabilization (QA harnesses + attendance correctness + TZ safety + error mapping). Codebase is mature, well-tested (56/56).
+**Understanding:** Recent work is stabilization (QA harnesses + attendance correctness + TZ safety + error mapping). Codebase is mature, well-tested (59/59).
 
-## 2. Local vs HEAD Comparison
+## 2. Local vs HEAD Comparison (2026-10-15 refresh)
 
-`git status --short`: **empty** (working tree clean)  
-`git diff --name-only HEAD`: **empty**  
-No unstaged/staged changes vs HEAD. Local matches Git HEAD exactly.
+`git rev-parse HEAD` == `git rev-parse master` == `8518f37`;
+`git status`: **clean** (detached-HEAD worktree, no drift).
+No `.env` locally (correct — hermetic QA only). `sw.js` cache `v16`.
+`public/js` 6 files, `public/css` 3 files, `server/schema.sql` ~57KB,
+35 route modules, 18 admin pages, 11 QA scripts.
+
+## 2b. Live vs Local (verified 2026-10-15)
+
+- Live `/` serves login (200). `/api/holidays` no-token → 401 JSON
+  (guard live). `GET /api/auth/login` → 404 (POST-only, correct).
+- CORS probed live with curl:
+  - `Origin: https://garchitects-hrms.vercel.app` → **no ACAO header**
+    (fail-closed cross-origin); `OPTIONS` → 200 `Allow: GET,HEAD,POST`, no ACAO.
+    Same-origin SPA unaffected (browser skips CORS for same scheme+host+port),
+    matching the F14 decision in AGENTS.md §11.
+  - `Origin: https://www.garchitects.in` → `ACAO` echoed (allowlisted, correct).
+- Hermetic `npm run qa` (needs `npm install` first + hermetic
+  `DATABASE_URL=postgresql://postgres@127.0.0.1:5433/...`):
+  **59/59 green** — regression 24+41+15+32+33+38+58, RBAC 183 cell probes,
+  invariants 43, zero leftovers. Matches AGENTS.md §11.
 
 ## 3. OpenCode/Agent Context Understanding
 
@@ -55,4 +73,4 @@ This matches the requested prompt/expectations precisely.
 
 No code changes needed now. System is stable/verified. Improvements above are optional polish. Keep as-is (green baseline). Squad run confirms understanding; implement only if user wants specific polish.
 
-**Conclusion:** Deep-dive complete. Codebase understood, local==HEAD, QA 56/56. No critical improvements identified; safe to proceed as requested. 
+**Conclusion:** Deep-dive complete. Codebase understood, local==HEAD==master (8518f37), live guards + CORS fail-closed verified, QA 59/59. No critical improvements identified; safe to proceed as requested. 

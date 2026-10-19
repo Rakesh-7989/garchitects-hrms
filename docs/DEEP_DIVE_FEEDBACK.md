@@ -1,7 +1,9 @@
 # Deep-Dive Feedback (Self-Review)
 
-**Date:** 2026-10-09  
-**Commit Range:** c04fc57..8eeefe3 (HEAD)
+**Date:** 2026-10-15 (refresh; first pass 2026-10-09)
+**HEAD:** 8518f37 (== master, clean tree)
+**QA:** 59/59 hermetic green (verified this session)
+**Live:** guards + CORS fail-closed verified via curl
 
 ## What Was Done Well
 - Git history: traced Sprint-1 + My Info + attendance hardenings; understood stabilization arc.
@@ -34,6 +36,6 @@
 - Keep `DEEP_DIVE_ANALYSIS.md` updated if we do small follow-ups.
 
 ## Verdict
-**Deep-dive is good.** Committed analysis is thorough, local==HEAD, QA green. The post-analysis UI fix is correct and minimal. No regressions. Ready to proceed.
+**Deep-dive is good.** Analysis refreshed to HEAD, local==master, live verified, QA green. No regressions. Ready to proceed.
 
 **Feedback to self:** Be explicit about "propose then fix" — document rationale first, then implement with verification. Also call out concrete follow-ups in the analysis doc.
