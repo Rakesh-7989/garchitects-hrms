@@ -285,6 +285,9 @@ const HARNESSES = [
     ['scripts/qa-work-assignments-v2.cjs', 'work assignments v2'],
     ['scripts/qa-fix-sprint.cjs', 'fix-sprint audit batch'],
     ['scripts/qa-runtime-errors.cjs', 'live runtime errors (dateOnly / team-updates / audit-log)'],
+    ['scripts/qa-auth-flows.cjs', 'auth flows (forgot/reset OTP, token_version revocation)'],
+    ['scripts/qa-cron.cjs', 'cron endpoints (CRON_SECRET fail-closed + job execution)'],
+    ['scripts/qa-wfh-tickets.cjs', 'wfh + tickets apply/approve flows'],
 ];
 async function runHarness(script, label, stage = 'regression') {
     const out = await new Promise((resolve) => {
