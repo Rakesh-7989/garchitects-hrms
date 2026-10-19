@@ -131,20 +131,24 @@ Supabase security advisor reported **42 "RLS Disabled in Public"** public-schema
 
 **Blast radius:** Medium (new table + routes + UI modals). Schema change → all 3 layers + migration.
 
-### Phase 4 — Regression & release hardening (Week 4)
+### Phase 4 — Regression & release hardening (Week 4) ⏳ IN PROGRESS
 
 **Goal:** Expand API↔UI contract tests + RBAC matrix across all route modules; add tests for WFH/tickets/documents/letters/project-access/transfers/handovers/cron; run QA; test backup/restore; inspect headers/CORS/secrets.
 
+**Progress:**
+- ✅ RBAC matrix expanded to cover all 35 modules (was 18 modules / 34 rows → now 35 modules / 58 rows). Closed audit-contract.md F4 (16 modules previously had zero coverage: auth, cron, daily-work-logs, letters, project-access, project-documents, project-leads, project-reports, project-status-updates, project-updates, push, team-handovers, team-transfers, team-updates, tickets, wfh).
+- ✅ `noTokenSweep` expanded to include cron endpoints (CRON_SECRET fail-closed → 401).
+- ⬜ Business-logic harnesses for cron (job execution), auth (token_version revocation, SMTP-down forgot-password), and WFH/tickets approve flows.
+- ⬜ Wire `scripts/check-inline-js.cjs` to a package script (syntax gate).
+- ⬜ Headers/CORS/secrets inspection; backup/restore exercise.
+- ⬜ Full `npm run qa` hermetic pass + `qa:json` report.
+
 **Change set:**
-1. Close QA coverage gaps per `qa/audit-contract.md` F4: add RBAC matrix rows + harnesses for `wfh`, `tickets`, `letters`, `project-*`, `team-*`, `cron`, `daily-work-logs`, `auth` (forgot/reset OTP, token_version).
+1. RBAC matrix rows for all previously-uncovered modules (committed to `qa/rbac-matrix.json`).
 2. `scripts/check-inline-js.cjs` wired to a package script (syntax gate).
 3. Headers/CORS/secrets inspection: confirm no secrets in client bundle; `ALLOWED_ORIGINS` set on Vercel; `NODE_ENV=production`.
 4. Backup/restore exercise on a throwaway DB.
 5. Full `npm run qa` hermetic pass + `qa:json` report.
-
-**Decisions (⚠):** None new (follows existing QA conventions).
-
-**Blast radius:** Low (test code only).
 
 ### Phase 5 — Controlled release & monitoring
 
