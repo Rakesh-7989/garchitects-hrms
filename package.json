@@ -11,7 +11,8 @@
     "test:smtp": "node server/scripts/test-smtp.js",
     "qa": "node scripts/qa-commander.cjs",
     "qa:live": "node scripts/qa-commander.cjs --target=live",
-    "qa:json": "node scripts/qa-commander.cjs --json=qa/report.json"
+    "qa:json": "node scripts/qa-commander.cjs --json=qa/report.json",
+    "qa:inline": "node scripts/qa-inline.cjs"
   },
   "keywords": [
     "hrms",

@@ -138,8 +138,8 @@ Supabase security advisor reported **42 "RLS Disabled in Public"** public-schema
 **Progress:**
 - ✅ RBAC matrix expanded to cover all 35 modules (was 18 modules / 34 rows → now 35 modules / 58 rows). Closed audit-contract.md F4 (16 modules previously had zero coverage: auth, cron, daily-work-logs, letters, project-access, project-documents, project-leads, project-reports, project-status-updates, project-updates, push, team-handovers, team-transfers, team-updates, tickets, wfh).
 - ✅ `noTokenSweep` expanded to include cron endpoints (CRON_SECRET fail-closed → 401).
+- ✅ `scripts/qa-inline.cjs` created + `npm run qa:inline` wired into package.json (syntax-gates all 39 portal pages' inline script blocks; 0 failures).
 - ⬜ Business-logic harnesses for cron (job execution), auth (token_version revocation, SMTP-down forgot-password), and WFH/tickets approve flows.
-- ⬜ Wire `scripts/check-inline-js.cjs` to a package script (syntax gate).
 - ⬜ Headers/CORS/secrets inspection; backup/restore exercise.
 - ⬜ Full `npm run qa` hermetic pass + `qa:json` report.
 
