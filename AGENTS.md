@@ -139,20 +139,27 @@ themself; do not expand the guard to them without an owner decision.
 
 ## 11. Current state (update this as work ships)
 
-- **Privacy, Security & SDLC plan shipped to master (2026-10-19):** controlled 5-phase plan
-  committed across 10 commits (branch `audit/privacy-security-baseline` → master `7fde155`).
+- **Privacy, Security & SDLC plan shipped to master (2026-10-21):** controlled 5-phase plan
+  committed across 11 commits (branch `audit/privacy-security-baseline` → master `677862b`).
   **Phase 0/1:** SDLC plan doc (`docs/FEATURE_PRIVACY_SECURITY_SDLC_PLAN.md`), read-only
-  `scripts/rls-map.cjs` (RLS/grants inventory), `scripts/db-backup.cjs` (pg_dump), reviewed
-  RLS migration draft `server/migrations/2026-10-18-rls-enablement.sql` (8 sensitive tables,
-  deny-all PUBLIC policies, full rollback) — **NOT applied to production**; D1=false
-  (non-superuser) means deny-all RLS could break app access; staging test + owner confirmation
-  required before promotion. **Phase 2:** `docs/DATA_INVENTORY.md`, `docs/VENDOR_INVENTORY.md`,
+  `scripts/rls-map.cjs` (RLS/grants inventory), `scripts/db-backup.cjs` (pg_dump),
+  reviewed RLS migration draft `server/migrations/2026-10-18-rls-enablement.sql`
+  (8 sensitive tables: employees, payroll, documents, attendance_photos,
+  password_reset_otps, audit_logs, leave_applications, wfh_requests) — with proper
+  per-role policies (admin/hr full access, employee own-row read), deny-all PUBLIC
+  policies, app-connection-role policy placeholder, and full rollback section.
+  **NOT applied to production** — D1=false (non-superuser connection) means the
+  app-role policy placeholder `<APP_DB_ROLE>` MUST be replaced with the actual
+  DATABASE_URL role before applying, and staging-first testing is required.
+  Read-only staging test helper: `scripts/qa-rls-staging-test.cjs`.
+  **Phase 2:** `docs/DATA_INVENTORY.md`, `docs/VENDOR_INVENTORY.md`,
   3 policy outlines (pending counsel). **Phase 3:** `consent_records` table on all 3 schema
   layers + `POST /api/consent/record` + `GET /api/consent/mine` (`server/routes/consent.js`),
   server-side write only, audit-logged. **Phase 4:** RBAC matrix 34→58 rows (all 35 modules,
-  closes audit-contract F4), `npm run qa:inline` (39 pages, 0 failures), business-logic
-  harnesses (`qa-auth-flows`, `qa-cron`, `qa-wfh-tickets`), `docs/HEADERS_CORS_SECRETS_INSPECTION.md`.
-  All code passes `node --check`. Push to master triggered Vercel production auto-deploy.
+  closes audit-contract F4), `npm run qa:inline` (39 pages, 0 failures),
+  business-logic harnesses (`qa-auth-flows`, `qa-cron`, `qa-wfh-tickets`),
+  `docs/HEADERS_CORS_SECRETS_INSPECTION.md`. All code passes `node --check`.
+  Push to master triggered Vercel production auto-deploy.
 
 - **Missed check-in notification loop shipped (2026-10-15):** founder asked for
   check-out parity on missed check-ins — notify, never auto-check-in, grace
