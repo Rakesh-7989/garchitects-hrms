@@ -58,11 +58,47 @@
                 <div style="text-align:center;margin-top:18px;">
                     <a href="/admin" style="font-size:0.85rem;color:var(--text-secondary);text-decoration:none;display:inline-block;"><i class="fas fa-user-shield" style="margin-right:6px;"></i>Admin Login</a>
                 </div>
+                <div style="text-align:center;margin-top:14px;">
+                    <a href="#" onclick="showConsentModal();return false;" style="font-size:0.8rem;color:var(--text-secondary);text-decoration:none;margin:0 8px;">Privacy Policy</a>
+                    <span style="font-size:0.8rem;color:var(--text-tertiary);">|</span>
+                    <a href="#" onclick="showConsentManageModal();return false;" style="font-size:0.8rem;color:var(--text-secondary);text-decoration:none;margin:0 8px;">Manage Consent</a>
+                    <span style="font-size:0.8rem;color:var(--text-tertiary);">|</span>
+                    <a href="#" onclick="showConsentModal();return false;" style="font-size:0.8rem;color:var(--text-secondary);text-decoration:none;margin:0 8px;">Terms of Use</a>
+                </div>
             </form>
         </div>
     </div>
     
     <script src="../js/auth.js"></script>
     <script src="../js/forgot-password.js"></script>
+
+    <!-- Consent / Privacy Notice Modal (shown after first login) -->
+    <div class="modal" id="consentModal" onclick="if(event.target===this) closeConsentModal()">
+        <div class="modal-content consent-modal" style="max-width:620px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-shield-alt" style="color:var(--primary);margin-right:8px;"></i>Privacy &amp; Consent</h2>
+                <button class="modal-close" onclick="closeConsentModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="consentModalBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="consentBtnSkip" style="display:none;">Skip for now</button>
+                <button class="btn btn-primary" id="consentBtnConfirm">I Agree &amp; Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Consent Withdrawal / Management Modal -->
+    <div class="modal" id="consentManageModal" onclick="if(event.target===this) closeConsentManageModal()">
+        <div class="modal-content consent-modal" style="max-width:620px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-user-shield" style="color:var(--primary);margin-right:8px;"></i>Manage Consent</h2>
+                <button class="modal-close" onclick="closeConsentManageModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="consentManageBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeConsentManageModal()">Close</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

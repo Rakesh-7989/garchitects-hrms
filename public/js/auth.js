@@ -675,3 +675,248 @@ function requestPushPermission() {
 if (PWA_CAN_REGISTER && localStorage.getItem('token')) {
     document.addEventListener('DOMContentLoaded', () => pushSubscription());
 }
+
+// ==================== CONSENT / PRIVACY NOTICES ====================
+// Versioned consent records. Every notice is recorded server-side via
+// POST /api/consent/record; the client cannot forge user_id, timestamp or method.
+// Choice values: granted / declined / withdrawn / acknowledged.
+// Mandatory notices (privacy, employee_notice, terms) must be acknowledged.
+// Attendance camera/location is required for attendance (mandatory, with manual
+// review exception workflow). Push notifications is optional.
+
+const CONSENT_NOTICES = [
+    {
+        key: 'privacy',
+        title: 'Privacy Policy',
+        purpose: 'We collect and process your personal data to administer your employment, run payroll, track attendance, and comply with statutory obligations (PAN, Aadhaar, PF/ESI, bank details). Data is stored in India and accessed only by authorized HR/Admin staff.',
+        required: true,
+        choices: ['acknowledged'],
+        defaultChoice: 'acknowledged'
+    },
+    {
+        key: 'employee_notice',
+        title: 'Employee Privacy Notice',
+        purpose: 'HR-specific notice covering attendance photos/location, manager/HR access to your records, work log monitoring boundaries, retention periods, and your rights to correct data or raise a grievance.',
+        required: true,
+        choices: ['acknowledged'],
+        defaultChoice: 'acknowledged'
+    },
+    {
+        key: 'attendance_camera',
+        title: 'Attendance Camera / Selfie',
+        purpose: 'A selfie is captured at check-in to verify your identity. The photo is stored in a private bucket for 30 days, viewable only by you, your manager, and HR. It is never used for marketing or shared with third parties. Camera permission is requested only when you tap Check In - never in the background.',
+        required: true,
+        choices: ['granted', 'declined'],
+        defaultChoice: 'granted',
+        exceptionText: 'If you cannot provide camera access, a documented manual-review workflow is available: contact HR to record attendance through an alternative method. You will not be denied all attendance recording.'
+    },
+    {
+        key: 'attendance_location',
+        title: 'Attendance Location',
+        purpose: 'Your location (latitude/longitude) is checked at check-in to confirm you are at the office. Only the coordinate is stored - not a continuous trace. Location permission is requested only when you tap Check In - never in the background.',
+        required: true,
+        choices: ['granted', 'declined'],
+        defaultChoice: 'granted',
+        exceptionText: 'If location access is unavailable, contact HR for a manual exception. You will not be denied all attendance recording.'
+    },
+    {
+        key: 'terms_acceptable_use',
+        title: 'Terms of Use / Acceptable Use',
+        purpose: 'Authorized use of the HRMS, account security, accurate data entry, prohibited misuse, acceptable uploads, and suspension/termination process. Does not override your employment contract or statutory rights.',
+        required: true,
+        choices: ['acknowledged'],
+        defaultChoice: 'acknowledged'
+    },
+    {
+        key: 'push_notifications',
+        title: 'Push Notifications',
+        purpose: 'Optional. Receive check-in reminders, leave approvals, and announcements via browser push. You can disable this at any time from My Profile.',
+        required: false,
+        choices: ['granted', 'declined'],
+        defaultChoice: 'granted'
+    }
+];
+
+// Check whether the current user still has pending consent notices.
+// Returns the list of notices not yet acknowledged/granted by this user.
+async function checkConsentRequired() {
+    try {
+        const res = await apiCall('/api/consent/mine', 'GET', null, { silent: true });
+        if (!res || !res.success) return CONSENT_NOTICES.filter(n => n.required);
+        const existing = new Set((res.consent || []).map(c => c.notice_key + ':' + c.choice));
+        return CONSENT_NOTICES.filter(n => {
+            // Required notices must be acknowledged/granted; declined mandatory = still pending
+            if (n.required) {
+                const hasGranted = existing.has(n.key + ':granted') || existing.has(n.key + ':acknowledged');
+                return !hasGranted;
+            }
+            // Optional notices: only pending if never recorded
+            return !existing.has(n.key + ':granted') && !existing.has(n.key + ':declined');
+        });
+    } catch (e) {
+        return CONSENT_NOTICES.filter(n => n.required);
+    }
+}
+
+// Build the HTML for the consent modal body.
+function buildConsentModalBody(pending) {
+    let html = '<div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px;">Before you start, please review and accept the following notices. These explain what data we collect, why, and your rights.</div>';
+    pending.forEach((notice, idx) => {
+        const isRequired = notice.required;
+        html += '<div class="consent-notice">';
+        html += '<h4>' + (isRequired ? '<i class="fas fa-exclamation-circle" style="color:var(--danger);margin-right:6px;"></i>' : '<i class="fas fa-info-circle" style="color:var(--info);margin-right:6px;"></i>') + escapeHtml(notice.title) + '</h4>';
+        html += '<p>' + escapeHtml(notice.purpose) + '</p>';
+        if (notice.exceptionText) {
+            html += '<div class="attendance-exception"><strong>Exception / manual review:</strong> ' + escapeHtml(notice.exceptionText) + '</div>';
+        }
+        html += '<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">';
+        notice.choices.forEach(choice => {
+            const checked = choice === notice.defaultChoice ? 'checked' : '';
+            const choiceLabel = choice === 'granted' ? 'I agree' : (choice === 'acknowledged' ? 'I acknowledge' : 'I decline');
+            html += '<label class="consent-choice">';
+            html += '<input type="radio" name="consent_' + notice.key + '" value="' + escapeHtml(choice) + '" ' + checked + '>';
+            html += '<span class="consent-choice-label"><strong>' + escapeHtml(choiceLabel) + '</strong>';
+            if (isRequired && choice !== 'declined') html += ' <span class="consent-required">required</span>';
+            html += '</span>';
+            html += '<span class="consent-choice-desc">' + escapeHtml(choice === 'granted' ? 'Allow this processing.' : (choice === 'declined' ? 'Do not allow this processing.' : 'Confirm you have read and understood this notice.')) + '</span>';
+            html += '</label>';
+        });
+        html += '</div>';
+        html += '</div>';
+    });
+    html += '<div class="consent-footer-note">Your choices are recorded server-side and can be reviewed or withdrawn at any time from My Profile &gt; Consent.</div>';
+    return html;
+}
+
+// Show the consent modal with pending notices.
+async function showConsentModal() {
+    const pending = await checkConsentRequired();
+    if (!pending || pending.length === 0) return;
+    document.getElementById('consentModalBody').innerHTML = buildConsentModalBody(pending);
+    document.getElementById('consentBtnSkip').style.display = pending.every(n => !n.required) ? 'inline-block' : 'none';
+    document.getElementById('consentBtnConfirm').style.display = pending.some(n => n.required) ? 'inline-block' : 'inline-block';
+    document.getElementById('consentModal').classList.add('active');
+}
+
+function closeConsentModal() {
+    document.getElementById('consentModal').classList.remove('active');
+}
+
+function closeConsentManageModal() {
+    document.getElementById('consentManageModal').classList.remove('active');
+}
+
+// Record consent for one notice.
+async function recordConsent(noticeKey, choice) {
+    const res = await apiCall('/api/consent/record', 'POST', {
+        notice_key: noticeKey,
+        notice_version: '1.0',
+        purpose: CONSENT_NOTICES.find(n => n.key === noticeKey)?.purpose || '',
+        choice: choice,
+        method: 'ui_modal',
+        locale: 'en'
+    });
+    if (!res || !res.success) {
+        showToast('Could not record your choice. Please try again.', 'error');
+        return false;
+    }
+    return true;
+}
+
+// Confirm all consents and close the modal.
+async function confirmConsents() {
+    const modal = document.getElementById('consentModal');
+    const pending = await checkConsentRequired();
+    if (!pending || pending.length === 0) { closeConsentModal(); return; }
+
+    let allRecorded = true;
+    for (const notice of pending) {
+        const selected = modal.querySelector('input[name="consent_' + notice.key + '"]:checked');
+        if (!selected) {
+            showToast('Please select an option for: ' + notice.title, 'error');
+            return;
+        }
+        const choice = selected.value;
+        // Required notices cannot be declined
+        if (notice.required && choice === 'declined') {
+            showToast(notice.title + ' is required to use the HRMS.', 'error');
+            return;
+        }
+        const ok = await recordConsent(notice.key, choice);
+        if (!ok) allRecorded = false;
+    }
+    if (!allRecorded) return;
+
+    closeConsentModal();
+    showToast('Thank you. Your consent choices are recorded.', 'success');
+
+    // If attendance camera/location was declined, show the exception workflow
+    const cam = pending.find(n => n.key === 'attendance_camera');
+    const loc = pending.find(n => n.key === 'attendance_location');
+    if (cam) {
+        const camSelected = modal.querySelector('input[name="consent_attendance_camera"]:checked');
+        if (camSelected && camSelected.value === 'declined') {
+            setTimeout(() => showToast('Camera declined: contact HR for manual attendance recording exception.', 'info'), 1000);
+        }
+    }
+    if (loc) {
+        const locSelected = modal.querySelector('input[name="consent_attendance_location"]:checked');
+        if (locSelected && locSelected.value === 'declined') {
+            setTimeout(() => showToast('Location declined: contact HR for manual attendance recording exception.', 'info'), 1500);
+        }
+    }
+}
+
+// Show consent management modal (view + withdraw).
+async function showConsentManageModal() {
+    const res = await apiCall('/api/consent/mine', 'GET', null, { silent: true });
+    if (!res || !res.success) {
+        showToast('Could not load consent records.', 'error');
+        return;
+    }
+    const consents = res.consent || [];
+    let html = '<p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px;">Your recorded consent choices. Withdraw optional consent at any time.</p>';
+    if (consents.length === 0) {
+        html += '<p style="color:var(--text-secondary);">No consent records found.</p>';
+    } else {
+        consents.forEach(c => {
+            const choiceColor = c.choice === 'granted' ? 'var(--success)' : (c.choice === 'declined' ? 'var(--danger)' : 'var(--info)');
+            const withdrawn = c.choice === 'withdrawn' ? ' <span style="color:var(--danger);font-size:0.75rem;">(withdrawn ' + (c.withdrawal_timestamp ? c.withdrawal_timestamp.substring(0,16) : '') + ')</span>' : '';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-light);">';
+            html += '<div><strong>' + escapeHtml(c.notice_key) + '</strong>' + withdrawn + '<div style="font-size:0.75rem;color:var(--text-secondary);margin-top:2px;">' + escapeHtml(c.purpose || '') + '</div></div>';
+            html += '<div style="text-align:right;">';
+            html += '<span style="color:' + choiceColor + ';font-weight:600;">' + c.choice + '</span>';
+            html += '<div style="font-size:0.7rem;color:var(--text-tertiary);margin-top:2px;">' + (c.timestamp || '').substring(0,16) + '</div>';
+            if (c.choice !== 'withdrawn') {
+                html += '<button class="btn btn-sm btn-secondary" onclick="withdrawConsent(\'' + c.notice_key + '\')" style="margin-top:4px;">Withdraw</button>';
+            }
+            html += '</div>';
+            html += '</div>';
+        });
+    }
+    document.getElementById('consentManageBody').innerHTML = html;
+    document.getElementById('consentManageModal').classList.add('active');
+}
+
+// Withdraw consent for a notice.
+async function withdrawConsent(noticeKey) {
+    if (!confirm('Withdraw consent for "' + noticeKey + '"? You can re-grant it later.')) return;
+    const ok = await recordConsent(noticeKey, 'withdrawn');
+    if (ok) {
+        showToast('Consent withdrawn.', 'success');
+        showConsentManageModal(); // refresh
+    }
+}
+
+// Check consent on every page load when logged in.
+document.addEventListener('DOMContentLoaded', async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+        const pending = await checkConsentRequired();
+        if (pending && pending.length > 0) {
+            // Defer slightly so the page renders first
+            setTimeout(() => showConsentModal(), 500);
+        }
+    } catch (e) { /* consent check is best-effort */ }
+});

@@ -347,6 +347,29 @@
                 document.getElementById('bankDetails').innerHTML = '<p style="color:var(--danger);">Failed to load</p>';
                 document.getElementById('salaryDetails').innerHTML = '<p style="color:var(--danger);">Failed to load</p>';
             }
+            
+            // Load consent records
+            try {
+                const consentRes = await apiCall('/api/consent/mine', 'GET', null, { silent: true });
+                if (consentRes && consentRes.success && consentRes.consent && consentRes.consent.length > 0) {
+                    let consentHtml = '<div class="detail-grid">';
+                    consentRes.consent.forEach(c => {
+                        const choiceColor = c.choice === 'granted' ? 'var(--success)' : (c.choice === 'declined' ? 'var(--danger)' : 'var(--info)');
+                        const withdrawn = c.choice === 'withdrawn' ? ' <span style="color:var(--danger);font-size:0.75rem;">(withdrawn)</span>' : '';
+                        consentHtml += '<div class="detail-item">';
+                        consentHtml += '<div class="detail-item-icon"><i class="fas fa-shield-alt"></i></div>';
+                        consentHtml += '<div>';
+                        consentHtml += '<div class="detail-item-label">' + escapeHtml(c.notice_key) + '</div>';
+                        consentHtml += '<div class="detail-item-value" style="color:' + choiceColor + ';">' + c.choice + withdrawn + '</div>';
+                        consentHtml += '<div style="font-size:0.7rem;color:var(--text-tertiary);margin-top:2px;">' + (c.purpose || '').substring(0, 80) + (c.purpose && c.purpose.length > 80 ? '...' : '') + '</div>';
+                        consentHtml += '</div>';
+                        consentHtml += '</div>';
+                    });
+                    consentHtml += '</div>';
+                    consentHtml += '<button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="showConsentManageModal()"><i class="fas fa-user-shield"></i> Manage Consent</button>';
+                    document.getElementById('salaryDetails').innerHTML += consentHtml;
+                }
+            } catch (e) { /* consent load is best-effort */ }
         }
 
         function openEditProfileModal() {
@@ -590,5 +613,34 @@
             btn.disabled = false;
         }
     </script>
+
+    <!-- Consent / Privacy Notice Modal -->
+    <div class="modal" id="consentModal" onclick="if(event.target===this) closeConsentModal()">
+        <div class="modal-content consent-modal" style="max-width:620px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-shield-alt" style="color:var(--primary);margin-right:8px;"></i>Privacy &amp; Consent</h2>
+                <button class="modal-close" onclick="closeConsentModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="consentModalBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="consentBtnSkip" style="display:none;">Skip for now</button>
+                <button class="btn btn-primary" id="consentBtnConfirm">I Agree &amp; Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Consent Management Modal -->
+    <div class="modal" id="consentManageModal" onclick="if(event.target===this) closeConsentManageModal()">
+        <div class="modal-content consent-modal" style="max-width:620px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-user-shield" style="color:var(--primary);margin-right:8px;"></i>Manage Consent</h2>
+                <button class="modal-close" onclick="closeConsentManageModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="consentManageBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeConsentManageModal()">Close</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

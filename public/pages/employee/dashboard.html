@@ -135,6 +135,18 @@
                         <div class="clock-date" id="liveDate"></div>
                     </div>
                     <div id="attendanceInfo" style="margin-bottom:8px;"></div>
+                    <div id="attendanceNotice" class="attendance-notice" style="display:none;margin-bottom:12px;">
+                        <h4><i class="fas fa-shield-alt"></i> Attendance Verification Notice</h4>
+                        <p>Before you check in, please review:</p>
+                        <ul>
+                            <li><strong>Camera selfie:</strong> A photo is captured at check-in to verify your identity. Stored privately for 30 days. Viewable only by you, your manager, and HR.</li>
+                            <li><strong>Location:</strong> Your latitude/longitude is checked at check-in to confirm office presence. Only the coordinate is stored - no continuous tracking.</li>
+                            <li><strong>Permission only at check-in:</strong> Camera and location are requested only when you tap Check In - never in the background.</li>
+                        </ul>
+                        <div class="attendance-exception">
+                            <strong>Cannot provide camera/location?</strong> Contact HR for a manual attendance recording exception. You will not be denied all attendance recording.
+                        </div>
+                    </div>
                     <div class="work-duration" id="workDuration" style="display:none;"></div>
                     <div class="checkin-buttons">
                         <button class="btn btn-success btn-lg" id="checkInBtn" onclick="handleCheckIn()"><i class="fas fa-sign-in-alt"></i> Check In</button>
@@ -503,6 +515,8 @@
                     ? 'Marked absent' + leaveHint + ' - check in only if you actually worked today.'
                     : 'Marked as ' + getStatusText(row.status) + ' - check in only if you actually worked today.';
                 document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--text-secondary);">' + msg + '</p>';
+                // Show the attendance camera/location notice before check-in
+                document.getElementById('attendanceNotice').style.display = 'block';
             } else {
                 // Day closed (checked out, or a legacy row closed without a
                 // check-in): no actions, honest message.
