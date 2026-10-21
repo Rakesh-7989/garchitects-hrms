@@ -140,7 +140,7 @@ themself; do not expand the guard to them without an owner decision.
 ## 11. Current state (update this as work ships)
 
 - **Privacy, Security & SDLC plan shipped to master (2026-10-21):** controlled 5-phase plan
-  committed across 11 commits (branch `audit/privacy-security-baseline` → master `677862b`).
+  committed across 12 commits (branch `audit/privacy-security-baseline` → master `ccf2e61`).
   **Phase 0/1:** SDLC plan doc (`docs/FEATURE_PRIVACY_SECURITY_SDLC_PLAN.md`), read-only
   `scripts/rls-map.cjs` (RLS/grants inventory), `scripts/db-backup.cjs` (pg_dump),
   reviewed RLS migration draft `server/migrations/2026-10-18-rls-enablement.sql`
@@ -153,13 +153,17 @@ themself; do not expand the guard to them without an owner decision.
   DATABASE_URL role before applying, and staging-first testing is required.
   Read-only staging test helper: `scripts/qa-rls-staging-test.cjs`.
   **Phase 2:** `docs/DATA_INVENTORY.md`, `docs/VENDOR_INVENTORY.md`,
-  3 policy outlines (pending counsel). **Phase 3:** `consent_records` table on all 3 schema
-  layers + `POST /api/consent/record` + `GET /api/consent/mine` (`server/routes/consent.js`),
-  server-side write only, audit-logged. **Phase 4:** RBAC matrix 34→58 rows (all 35 modules,
-  closes audit-contract F4), `npm run qa:inline` (39 pages, 0 failures),
-  business-logic harnesses (`qa-auth-flows`, `qa-cron`, `qa-wfh-tickets`),
-  `docs/HEADERS_CORS_SECRETS_INSPECTION.md`. All code passes `node --check`.
-  Push to master triggered Vercel production auto-deploy.
+  3 policy outlines (pending counsel). **Phase 3:** Backend `consent_records` table
+  on all 3 schema layers + `POST /api/consent/record` + `GET /api/consent/mine`
+  (`server/routes/consent.js`), server-side write only, audit-logged. **Frontend:**
+  consent modal on login/first login (privacy policy, employee notice, attendance
+  camera/location, terms of use, push notifications), attendance camera/location
+  notice on dashboard check-in with manual-review exception workflow, consent
+  management + withdrawal on My Profile, consent/privacy/terms links on login.
+  **Phase 4:** RBAC matrix 34→58 rows (all 35 modules, closes audit-contract F4),
+  `npm run qa:inline` (39 pages, 0 failures), business-logic harnesses
+  (`qa-auth-flows`, `qa-cron`, `qa-wfh-tickets`), `docs/HEADERS_CORS_SECRETS_INSPECTION.md`.
+  All code passes `node --check`. Push to master triggered Vercel production auto-deploy.
 
 - **Missed check-in notification loop shipped (2026-10-15):** founder asked for
   check-out parity on missed check-ins — notify, never auto-check-in, grace
