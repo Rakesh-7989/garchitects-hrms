@@ -161,7 +161,7 @@
                         <div class="form-group"><label>Department</label><select class="form-control" name="department_id" id="departmentSelect"><option value="">Select Department</option></select></div>
                         <div class="form-group"><label>Designation</label><select class="form-control" name="designation_id" id="designationSelect"><option value="">Select Designation</option></select></div>
                         <div class="form-group"><label>Role</label><select class="form-control" name="role" id="addRole"><option value="employee">Employee</option><option value="team_lead">Team Lead</option><option value="manager">Manager</option><option value="hr">HR</option><option value="admin">Admin</option></select></div>
-                        <div class="form-group"><label>Reporting Person</label><select class="form-control" name="reporting_manager_id" id="reportingManagerSelect"><option value="">Select Reporting Person</option></select>
+                        <div class="form-group"><label>Reporting Person(s)</label><select class="form-control" name="reporting_manager_id" id="reportingManagerSelect" multiple style="height:auto;"><option value="">Select Reporting Person(s)</option></select><div class="form-text" style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px;">Select one or more reporting managers. Selected employee will report to all selected managers.</div></div>
                             <small style="color:var(--text-secondary);">Chain: Employee &rarr; Team Lead &rarr; Manager &rarr; Admin; HR reports to a Manager. Admin is top. Set the immediate supervisor. Every new employee is ALSO auto-assigned to the Admin.</small></div>
                         <div class="form-group"><label>Joining Date *</label><input type="date" class="form-control" name="joining_date" required></div>
                         <div class="form-group"><label>Total Compensation</label><input type="number" class="form-control" name="salary"></div>
@@ -668,14 +668,20 @@
         function renderRMOptions(role, selectEl, currentId) {
             const candidates = rmCandidatesFor(role);
             const opt = (e, labelOverride) => `<option value="${e.id}">${escapeHtml(labelOverride || (e.first_name + ' ' + e.last_name) + ' (' + (e.employee_id || '') + ')')}</option>`;
-            let html = '<option value="">' + (role === 'admin' ? 'Admin is top of chain' : 'Select Reporting Person') + '</option>';
+            let html = '<option value="">' + (role === 'admin' ? 'Admin is top of chain' : 'Select Reporting Person(s)') + '</option>';
             if (currentId && !candidates.some(c => String(c.id) === String(currentId))) {
                 const cur = allEmployeesForRM.find(e => String(e.id) === String(currentId));
                 if (cur) html += opt(cur, cur.first_name + ' ' + cur.last_name + ' (' + (cur.employee_id || '') + ') - current');
             }
             html += candidates.map(e => opt(e)).join('');
             selectEl.innerHTML = html;
-            if (currentId) selectEl.value = currentId;
+            if (currentId) {
+                const currentIds = String(currentId).split(',');
+                currentIds.forEach(id => {
+                    const optEl = selectEl.querySelector('option[value="' + id.trim() + '"]');
+                    if (optEl) optEl.selected = true;
+                });
+            }
         }
 
         function onRoleChange(selectEl, rmEl, currentId) {
@@ -724,6 +730,10 @@
             // Checkbox has no name on purpose: unchecked boxes never appear in
             // FormData, and the backend only skips the mail on an explicit false.
             data.send_welcome_email = document.getElementById('sendWelcomeEmail').checked;
+            // Collect multiple reporting managers from multi-select
+            const rmSelect = document.getElementById('reportingManagerSelect');
+            const rms = Array.from(rmSelect.selectedOptions).map(o => o.value).filter(v => v);
+            data.reporting_manager_id = rms.length > 0 ? rms : '';
             const result = await apiCall('/employees', 'POST', data);
             if (result && result.success) {
                 let msg = 'Employee added! Temp password: ' + (result.temp_password || 'welcome123');
@@ -758,7 +768,11 @@
                 document.getElementById('editDesignation').value = emp.designation_id || '';
                 document.getElementById('editRole').value = emp.role || 'employee';
                 renderRMOptions(emp.role || 'employee', document.getElementById('editReportingManager'), emp.reporting_manager_id || '');
-                document.getElementById('editReportingManager').dataset.currentRm = emp.reporting_manager_id || '';
+                const selEditRM = document.getElementById('editReportingManager');
+                if (emp.secondary_reporting_manager_id && emp.secondary_reporting_manager_id !== emp.reporting_manager_id) {
+                    const opt = selEditRM.querySelector('option[value="' + emp.secondary_reporting_manager_id + '"]');
+                    if (opt) opt.selected = true;
+                }
                 document.getElementById('editSalary').value = emp.salary || '';
                 document.getElementById('editUAN').value = emp.uan_number || '';
                 document.getElementById('editStatus').value = emp.status || 'active';
@@ -805,7 +819,16 @@
                 joining_date: document.getElementById('editJoiningDate').value || undefined,
                 department_id: document.getElementById('editDepartment').value || undefined,
                 designation_id: document.getElementById('editDesignation').value || undefined,
-                reporting_manager_id: document.getElementById('editReportingManager').value || '',
+                reporting_manager_id: (function() {
+                    const sel = document.getElementById('editReportingManager');
+                    const vals = Array.from(sel.selectedOptions).map(o => o.value);
+                    return vals.length > 0 ? vals : null;
+                })(),
+                secondary_reporting_manager_id: (function() {
+                    const sel = document.getElementById('editReportingManager');
+                    const vals = Array.from(sel.selectedOptions).map(o => o.value);
+                    return vals[1] || '';
+                })(),
                 salary: document.getElementById('editSalary').value || undefined,
                 uan_number: document.getElementById('editUAN').value || undefined,
                 role: document.getElementById('editRole').value,

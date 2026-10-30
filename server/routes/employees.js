@@ -515,6 +515,17 @@ async function createEmployeeRecord(body, req) {
         incentive, bonus, extra_work, employer_pf, employer_esi, employer_contribution
     } = body;
 
+    // Accept reporting_manager_id as string or array (multi-select from frontend)
+    let reporting_manager_id_raw = reporting_manager_id;
+    reporting_manager_id = null;
+    let secondary_reporting_manager_id = null;
+    if (Array.isArray(reporting_manager_id_raw)) {
+        reporting_manager_id = reporting_manager_id_raw[0] || null;
+        secondary_reporting_manager_id = reporting_manager_id_raw[1] || null;
+    } else if (reporting_manager_id_raw) {
+        reporting_manager_id = reporting_manager_id_raw;
+    }
+
     // Only the main Admin can create admin accounts.
     if (role === 'admin' && Number(req.user.id) !== MAIN_ADMIN_ID) {
         return { ok: false, errors: ['Only the main Admin can create admin accounts.'] };
@@ -594,12 +605,7 @@ async function createEmployeeRecord(body, req) {
             cleanNum(loan_deduction) ?? 0, cleanNum(advance_salary) ?? 0, cleanNum(other_deduction) ?? 0,
             cleanNum(incentive) ?? 0, cleanNum(bonus) ?? 0, cleanNum(extra_work) ?? 0,
             cleanNum(employer_pf) ?? 0, cleanNum(employer_esi) ?? 0, cleanNum(employer_contribution) ?? 0,
-            // EVERY non-admin employee - any designation, any department, any
-            // role, with or without a team lead - is auto-assigned to the main
-            // admin as their secondary reporting manager. The admin must see
-            // and be able to act on everything, so the secondary is the
-            // always-on safety net (primary = their own team lead where set).
-            (role || 'employee') === 'admin' ? null : MAIN_ADMIN_ID
+            secondary_reporting_manager_id ?? null
         ]
     ));
 
@@ -868,7 +874,9 @@ router.put('/:id', verifyToken, isAdminOrHr, async (req, res) => {
              cleanNum(basic_salary), cleanNum(hra), cleanNum(conveyance), cleanNum(medical), cleanNum(special_allowance), cleanNum(other_allowance),
              cleanNum(pf), cleanNum(esi), cleanNum(professional_tax), cleanNum(income_tax), cleanNum(loan_deduction), cleanNum(advance_salary), cleanNum(other_deduction),
              cleanNum(incentive), cleanNum(bonus), cleanNum(extra_work), cleanNum(employer_pf), cleanNum(employer_esi), cleanNum(employer_contribution),
-             reporting_manager_id, req.params.id]
+             cleanNum(reporting_manager_id) ?? null,
+             secondary_reporting_manager_id ?? null,
+             req.params.id]
         ));
         
         if (result.rows.length === 0) {
