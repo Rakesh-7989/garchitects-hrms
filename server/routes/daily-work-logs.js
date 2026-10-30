@@ -96,7 +96,7 @@ router.get('/', verifyToken, async (req, res) => {
 // @route   GET /api/daily-work-logs/team
 // @desc    Get daily work logs by role scope:
 //          - admin/hr: all employees
-//          - manager/team_lead: their reporting tree
+//          - manager/team_lead: ALL employees (cross-team visibility)
 //          - employee: own logs only
 // @access  Private
 router.get('/team', verifyToken, async (req, res) => {
@@ -108,14 +108,8 @@ router.get('/team', verifyToken, async (req, res) => {
         const params = [];
         let idx = 1;
 
-        if (userRole === 'admin' || userRole === 'hr') {
-            // All employees - no employee filter
-        } else if (userRole === 'manager' || userRole === 'team_lead') {
-            const tree = await myTreeIds(userId);
-            const ids = Array.from(tree);
-            if (ids.length === 0) return res.json({ success: true, logs: [] });
-            sql += ` AND dw.employee_id IN (${ids.map(() => `$${idx++}`).join(',')})`;
-            params.push(...ids);
+        if (userRole === 'admin' || userRole === 'hr' || userRole === 'manager' || userRole === 'team_lead') {
+            // All employees - any manager/team lead can see everyone's daily logs
         } else {
             // Employee - only their own logs
             sql += ` AND dw.employee_id = $${idx++}`;
