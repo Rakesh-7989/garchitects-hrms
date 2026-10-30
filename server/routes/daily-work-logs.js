@@ -74,13 +74,13 @@ function applyDateFilters(sql, params, idx, { work_date, start_date, end_date, l
 }
 
 // @route   GET /api/daily-work-logs
-// @desc    Get my daily work logs
-// @access  Private
+// @desc    Get ALL daily work logs (visible to everyone)
+// @access  Private (all roles)
 router.get('/', verifyToken, async (req, res) => {
     try {
-        let sql = `${LOG_SELECT} WHERE dw.employee_id = $1`;
-        const params = [req.user.id];
-        sql = applyDateFilters(sql, params, 2, req.query);
+        let sql = `${LOG_SELECT} WHERE 1=1`;
+        const params = [];
+        sql = applyDateFilters(sql, params, 1, req.query);
         const r = await q(sql, params);
         r.rows.forEach(row => {
             if (row.work_date) row.work_date = dateOnly(row.work_date);
@@ -94,23 +94,21 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // @route   GET /api/daily-work-logs/team
-// @desc    Get ALL daily work logs (everyone can see everyone's logs)
-// @access  Private (all authenticated roles)
+// @desc    Get ALL daily work logs (visible to everyone)
+// @access  Private (all roles)
 router.get('/team', verifyToken, async (req, res) => {
     try {
-        const { work_date, start_date, end_date, limit } = req.query;
         let sql = `${LOG_SELECT} WHERE 1=1`;
         const params = [];
         let idx = 1;
-        // Every authenticated role can see ALL daily work logs
-        sql = applyDateFilters(sql, params, idx, { work_date, start_date, end_date, limit });
+        sql = applyDateFilters(sql, params, idx, { work_date: req.query.work_date, start_date: req.query.start_date, end_date: req.query.end_date, limit: req.query.limit });
         const r = await q(sql, params);
         r.rows.forEach(row => {
             if (row.work_date) row.work_date = dateOnly(row.work_date);
         });
         res.json({ success: true, logs: r.rows });
     } catch (error) {
-        console.error('Get team daily work logs error:', error);
+        console.error('Get daily work logs error:', error);
         const e = pgErrorResponse(error);
         res.status(e.status).json({ success: false, message: e.message });
     }

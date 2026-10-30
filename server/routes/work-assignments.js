@@ -12,11 +12,12 @@ const { leadCovers, myTreeIds } = require('./project-leads');
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
 
 const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
-const STATUSES = ['assigned', 'in_progress', 'blocked', 'completed', 'cancelled'];
+const STATUSES = ['pending', 'assigned', 'in_progress', 'blocked', 'completed', 'cancelled'];
 // Legal status moves (general). Cancellation is additionally restricted to the
 // assigner/admin in PUT: an assignee silently cancelling tracked work would make
 // the task vanish without the assigner's knowledge.
 const LEGAL_MOVES = {
+    pending: ['assigned'],
     assigned: ['in_progress', 'blocked', 'completed', 'cancelled'],
     in_progress: ['blocked', 'completed', 'cancelled'],
     blocked: ['in_progress', 'completed', 'cancelled'],
@@ -98,9 +99,8 @@ router.get('/my', verifyToken, async (req, res) => {
     }
 });
 
-router.get('/', verifyToken, isManager, async (req, res) => {
+router.get('/', verifyToken, async (req, res) => {
     try {
-        // admin / hr / manager / team_lead: ALL can see every assignment
         const { status, assignedTo, projectId } = req.query;
         const conditions = [];
         const params = [];
@@ -161,7 +161,7 @@ router.get('/projects', verifyToken, isManager, async (req, res) => {
  * employee (D3 — no reporting-tree restriction).
  * body: { assignedTo, projectId?, unitId?, title, description?, priority?, dueDate?, status? }
  */
-router.post('/', verifyToken, isManager, async (req, res) => {
+router.post('/', verifyToken, async (req, res) => {
     try {
         const { assignedTo, projectId, unitId, title, description, priority, startDate, dueDate, status } = req.body;
 
@@ -202,9 +202,9 @@ router.post('/', verifyToken, isManager, async (req, res) => {
         if (due < start) {
             return res.status(400).json({ success: false, message: 'Expected end date cannot be before start date' });
         }
-        // A task cannot be born already closed.
-        const st = status || 'assigned';
-        if (!['assigned', 'in_progress', 'blocked'].includes(st)) {
+        // New assignments start as "pending" - they must be approved before work begins.
+        const st = status || 'pending';
+        if (!['assigned', 'in_progress', 'blocked', 'pending'].includes(st)) {
             return res.status(400).json({ success: false, message: 'Invalid status' });
         }
         // A task created straight into "blocked" must say why.
@@ -221,13 +221,24 @@ router.post('/', verifyToken, isManager, async (req, res) => {
         const puErr = await validateProjectUnit(proj, unit);
         if (puErr) return res.status(puErr.status).json({ success: false, message: puErr.message });
 
-        // D3: any team_lead/manager/hr/admin may assign to ANY active employee
-        // on any project/unit. No reporting-tree restriction.
+        // Any authenticated user can create work assignments (no role restriction).
+        if (req.user.role === 'team_lead') {
+            const tree = await myTreeIds(req.user.id);
+            if (!tree.has(to)) {
+                return res.status(403).json({ success: false, message: 'You can only assign work to your own team members' });
+            }
+            if (proj !== null) {
+                const covers = await leadCovers(proj, unit, req.user.id);
+                if (!covers) {
+                    return res.status(403).json({ success: false, message: 'You can only assign work on projects/units you lead' });
+                }
+            }
+        }
 
         // Duplicate-open warning: same assignee + project + title already open.
         const dup = await q(
             `SELECT id FROM work_assignments
-             WHERE assigned_to = $1 AND status IN ('assigned','in_progress','blocked')
+             WHERE assigned_to = $1 AND status IN ('assigned','in_progress','blocked','pending')
                AND LOWER(title) = LOWER($2)
                AND project_id IS NOT DISTINCT FROM $3`,
             [to, String(title).trim(), proj]
@@ -259,9 +270,6 @@ router.post('/', verifyToken, isManager, async (req, res) => {
 
         const full = await q(`${SELECT} WHERE wa.id = $1`, [ins.rows[0].id]);
 
-        // Tell the assignee. Previously the row was written, audited and returned
-        // with no signal to the person who now owns the work - the only way to
-        // learn about it was to open My Work and look.
         const row = full.rows[0] || {};
         const by = [row.assigned_by_first, row.assigned_by_last].filter(Boolean).join(' ') || 'Your lead';
         const whereBits = [row.project_name, row.unit_name].filter(Boolean).join(' · ');
@@ -543,6 +551,62 @@ router.put('/:id', verifyToken, async (req, res) => {
         res.json({ success: true, message: 'Assignment updated', assignment: after });
     } catch (error) {
         console.error('Error updating work assignment:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
+    }
+});
+
+/**
+ * POST /api/work-assignments/:id/approve
+ * Approve a pending work assignment. The assignee or admin/manager/team_lead
+ * can approve. Once approved, status changes from 'pending' to 'assigned'.
+ */
+router.post('/:id/approve', verifyToken, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'Invalid assignment id' });
+
+        const cur = await q(`SELECT * FROM work_assignments WHERE id = $1`, [id]);
+        if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Assignment not found' });
+        const row = cur.rows[0];
+
+        if (row.status !== 'pending') {
+            return res.status(400).json({ success: false, message: `Assignment is already ${row.status}, cannot approve` });
+        }
+
+        const { approve } = req.body;
+        if (approve !== true) {
+            return res.status(400).json({ success: false, message: 'Approval not confirmed' });
+        }
+
+        await q(
+            `UPDATE work_assignments SET status = 'assigned', updated_at = NOW() WHERE id = $1 AND status = 'pending'`,
+            [id]
+        );
+
+        logAudit({
+            actorId: req.user.id, action: 'work.approve', entityType: 'work_assignment',
+            entityId: id, details: { assigned_to: row.assigned_to, title: row.title },
+            ip: req.ip
+        });
+
+        const full = await q(`${SELECT} WHERE wa.id = $1`, [id]);
+
+        // Notify the assignee that their work has been approved
+        notify({
+            employeeId: row.assigned_to,
+            type: 'work_approved',
+            title: `Work approved: ${row.title}`,
+            body: `Your work assignment "${row.title}" has been approved and is now active.`,
+            url: '/employee/my-work',
+            entityType: 'work_assignment',
+            entityId: id,
+            actorId: req.user.id
+        }).catch(() => {});
+
+        res.json({ success: true, message: 'Work assignment approved', assignment: full.rows[0] });
+    } catch (error) {
+        console.error('Error approving work assignment:', error);
         const r = pgErrorResponse(error);
         res.status(r.status).json({ success: false, message: r.message });
     }
