@@ -94,27 +94,15 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // @route   GET /api/daily-work-logs/team
-// @desc    Get team daily work logs (TL/Manager/Admin/HR)
-// @access  Private (Manager+)
+// @desc    Get ALL daily work logs (everyone can see everyone's logs)
+// @access  Private (all authenticated roles)
 router.get('/team', verifyToken, async (req, res) => {
     try {
-        const userRole = req.user.role;
-        const userId = req.user.id;
         const { work_date, start_date, end_date, limit } = req.query;
         let sql = `${LOG_SELECT} WHERE 1=1`;
         const params = [];
         let idx = 1;
-        if (userRole === 'admin' || userRole === 'hr') {
-            // all
-        } else if (userRole === 'manager' || userRole === 'team_lead') {
-            const tree = await myTreeIds(userId);
-            const ids = Array.from(tree);
-            if (ids.length === 0) return res.json({ success: true, logs: [] });
-            sql += ` AND dw.employee_id IN (${ids.map(() => `$${idx++}`).join(',')})`;
-            params.push(...ids);
-        } else {
-            return res.status(403).json({ success: false, message: 'Access denied' });
-        }
+        // Every authenticated role can see ALL daily work logs
         sql = applyDateFilters(sql, params, idx, { work_date, start_date, end_date, limit });
         const r = await q(sql, params);
         r.rows.forEach(row => {

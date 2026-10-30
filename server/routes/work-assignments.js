@@ -100,16 +100,11 @@ router.get('/my', verifyToken, async (req, res) => {
 
 router.get('/', verifyToken, isManager, async (req, res) => {
     try {
-        const overlord = req.user.role === 'admin' || req.user.role === 'hr';
+        // admin / hr / manager / team_lead: ALL can see every assignment
         const { status, assignedTo, projectId } = req.query;
         const conditions = [];
         const params = [];
         let p = 0;
-        if (!overlord) {
-            p++;
-            conditions.push(`wa.assigned_by = $${p}`);
-            params.push(req.user.id);
-        }
         if (status) { p++; conditions.push(`wa.status = $${p}`); params.push(status); }
         if (assignedTo) { p++; conditions.push(`wa.assigned_to = $${p}`); params.push(assignedTo); }
         if (projectId) { p++; conditions.push(`wa.project_id = $${p}`); params.push(projectId); }
@@ -226,22 +221,8 @@ router.post('/', verifyToken, isManager, async (req, res) => {
         const puErr = await validateProjectUnit(proj, unit);
         if (puErr) return res.status(puErr.status).json({ success: false, message: puErr.message });
 
-        // P9/D11 parallel: a team_lead may only assign work to their reporting
-        // tree, and only onto projects/units they lead. A project-less task has
-        // no project boundary, so the tree rule alone applies. Managers/admin/hr
-        // keep the D3 general power.
-        if (req.user.role === 'team_lead') {
-            const tree = await myTreeIds(req.user.id);
-            if (!tree.has(to)) {
-                return res.status(403).json({ success: false, message: 'You can only assign work to your own team members' });
-            }
-            if (proj !== null) {
-                const covers = await leadCovers(proj, unit, req.user.id);
-                if (!covers) {
-                    return res.status(403).json({ success: false, message: 'You can only assign work on projects/units you lead' });
-                }
-            }
-        }
+        // D3: any team_lead/manager/hr/admin may assign to ANY active employee
+        // on any project/unit. No reporting-tree restriction.
 
         // Duplicate-open warning: same assignee + project + title already open.
         const dup = await q(
