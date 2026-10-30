@@ -222,18 +222,8 @@ router.post('/', verifyToken, async (req, res) => {
         if (puErr) return res.status(puErr.status).json({ success: false, message: puErr.message });
 
         // Any authenticated user can create work assignments (no role restriction).
-        if (req.user.role === 'team_lead') {
-            const tree = await myTreeIds(req.user.id);
-            if (!tree.has(to)) {
-                return res.status(403).json({ success: false, message: 'You can only assign work to your own team members' });
-            }
-            if (proj !== null) {
-                const covers = await leadCovers(proj, unit, req.user.id);
-                if (!covers) {
-                    return res.status(403).json({ success: false, message: 'You can only assign work on projects/units you lead' });
-                }
-            }
-        }
+        // Any team lead/manager/hr/admin can assign work to any active employee.
+        // Multiple team leads can assign work to the same employee.
 
         // Duplicate-open warning: same assignee + project + title already open.
         const dup = await q(
