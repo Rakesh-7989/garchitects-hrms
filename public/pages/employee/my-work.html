@@ -98,6 +98,11 @@
         <div style="padding:30px;">
             <div class="grid grid-4" style="margin-bottom:24px;">
                 <div class="work-stat">
+                    <div class="stat-icon" style="background:#FEE2E2;color:#B91C1C;"><i class="fas fa-hourglass-half"></i></div>
+                    <div class="stat-num" id="statPending">0</div>
+                    <div class="stat-label">Pending Approval</div>
+                </div>
+                <div class="work-stat">
                     <div class="stat-icon" style="background:var(--primary-50);color:var(--primary);"><i class="fas fa-clipboard-list"></i></div>
                     <div class="stat-num" id="statOpen">0</div>
                     <div class="stat-label">Open</div>
@@ -133,6 +138,7 @@
                 </div>
                 <div class="chip-bar">
                     <button class="chip-btn active" data-f="all" onclick="setFilter('all')">All</button>
+                    <button class="chip-btn" data-f="pending" onclick="setFilter('pending')">Pending</button>
                     <button class="chip-btn" data-f="open" onclick="setFilter('open')">Open</button>
                     <button class="chip-btn" data-f="in_progress" onclick="setFilter('in_progress')">In Progress</button>
                     <button class="chip-btn" data-f="blocked" onclick="setFilter('blocked')">Blocked</button>
@@ -197,7 +203,7 @@
 
         function isOverdue(t) {
             if (!t.due_date) return false;
-            if (!['assigned', 'in_progress', 'blocked'].includes(t.status)) return false;
+            if (!['pending', 'assigned', 'in_progress', 'blocked'].includes(t.status)) return false;
             return String(t.due_date).slice(0, 10) < getTodayIST();
         }
 
@@ -216,11 +222,13 @@
         }
 
         function renderStats() {
+            const pending = allTasks.filter(t => t.status === 'pending').length;
             const open = allTasks.filter(t => t.status === 'assigned').length;
             const prog = allTasks.filter(t => t.status === 'in_progress').length;
             const blocked = allTasks.filter(t => t.status === 'blocked').length;
             const done = allTasks.filter(t => t.status === 'completed').length;
             const due = allTasks.filter(isOverdue).length;
+            document.getElementById('statPending').textContent = pending;
             document.getElementById('statOpen').textContent = open;
             document.getElementById('statProgress').textContent = prog;
             document.getElementById('statBlocked').textContent = blocked;
@@ -237,10 +245,6 @@
         function filterTasks() {
             if (curFilter === 'all') return allTasks;
             if (curFilter === 'overdue') return allTasks.filter(isOverdue);
-            // "Open" = not yet started (mirrors the Open stat tile). Previously
-            // this compared against a literal status 'open' that never exists,
-            // so the chip always showed an empty list.
-            if (curFilter === 'open') return allTasks.filter(t => t.status === 'assigned');
             return allTasks.filter(t => t.status === curFilter);
         }
 
@@ -251,6 +255,7 @@
 
         function statusBadge(s) {
             const map = {
+                pending: ['badge-warning', 'Pending Approval'],
                 assigned: ['badge-warning', 'Assigned'],
                 in_progress: ['badge-warning', 'In Progress'],
                 blocked: ['badge-danger', 'Blocked'],
@@ -266,6 +271,9 @@
         function actionButtons(t) {
             if (t.status === 'completed' || t.status === 'cancelled') return '';
             const btns = [];
+            if (t.status === 'pending') {
+                btns.push('<button class="btn btn-sm btn-success" onclick="updateStatus(' + t.id + ', \'assigned\')"><i class="fas fa-check-circle"></i> Accept Work</button>');
+            }
             if (t.status === 'assigned') {
                 btns.push('<button class="btn btn-sm btn-primary" onclick="updateStatus(' + t.id + ', \'in_progress\')"><i class="fas fa-play"></i> Start</button>');
             }

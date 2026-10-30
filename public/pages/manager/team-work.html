@@ -107,6 +107,7 @@
                 </div>
                 <div class="chip-bar">
                     <button class="chip-btn active" data-f="all" onclick="setFilter('all')">All</button>
+                    <button class="chip-btn" data-f="pending" onclick="setFilter('pending')">Pending</button>
                     <button class="chip-btn" data-f="assigned" onclick="setFilter('assigned')">Assigned</button>
                     <button class="chip-btn" data-f="in_progress" onclick="setFilter('in_progress')">In Progress</button>
                     <button class="chip-btn" data-f="blocked" onclick="setFilter('blocked')">Blocked</button>
@@ -195,6 +196,7 @@
         let editingId = null;
         // Only legal status targets are offered (mirrors the server's LEGAL_MOVES).
         const STATUS_TARGETS = {
+            pending: ['assigned'],
             assigned: ['assigned', 'in_progress', 'blocked', 'completed', 'cancelled'],
             in_progress: ['in_progress', 'blocked', 'completed', 'cancelled'],
             blocked: ['blocked', 'in_progress', 'completed', 'cancelled'],
@@ -224,7 +226,7 @@
 
         function isOverdue(t) {
             if (!t.due_date) return false;
-            if (!['assigned', 'in_progress', 'blocked'].includes(t.status)) return false;
+            if (!['pending', 'assigned', 'in_progress', 'blocked'].includes(t.status)) return false;
             return String(t.due_date).slice(0, 10) < getTodayIST();
         }
 
@@ -265,6 +267,7 @@
 
         function statusBadge(s) {
             const map = {
+                pending: ['badge-warning', 'Pending Approval'],
                 assigned: ['badge-warning', 'Assigned'],
                 in_progress: ['badge-warning', 'In Progress'],
                 blocked: ['badge-danger', 'Blocked'],
@@ -286,6 +289,10 @@
             const btns = [];
             if (canEdit) btns.push('<button class="btn btn-sm btn-primary" onclick="openEditModal(' + a.id + ')"><i class="fas fa-pen"></i> Edit</button>');
             if (canDelete) btns.push('<button class="btn btn-sm btn-danger" onclick="withdraw(' + a.id + ')"><i class="fas fa-trash"></i> Withdraw</button>');
+            // Only admin/manager/team_lead can approve pending assignments (the assignee cannot self-approve)
+            if (a.status === 'pending' && overlord) {
+                btns.push('<button class="btn btn-sm btn-success" onclick="approveAssignment(' + a.id + ')"><i class="fas fa-check-circle"></i> Approve</button>');
+            }
             return btns.join('');
         }
 
@@ -488,6 +495,19 @@
             const r = await apiCall('/work-assignments/' + id, 'DELETE');
             if (r && r.success) {
                 showToast('Assignment withdrawn', 'success');
+                loadAssignments();
+            } else if (r && r.message) {
+                showToast(r.message, 'error');
+            }
+        }
+
+        async function approveAssignment(id) {
+            const a = assignments.find(x => x.id === id);
+            if (!a) return;
+            if (!confirm('Approve this work assignment "' + a.title + '" for ' + (a.assigned_to_first || '') + ' ' + (a.assigned_to_last || '') + '?')) return;
+            const r = await apiCall('/work-assignments/' + id + '/approve', 'POST', { approve: true });
+            if (r && r.success) {
+                showToast('Assignment approved', 'success');
                 loadAssignments();
             } else if (r && r.message) {
                 showToast(r.message, 'error');
