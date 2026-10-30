@@ -74,13 +74,13 @@ function applyDateFilters(sql, params, idx, { work_date, start_date, end_date, l
 }
 
 // @route   GET /api/daily-work-logs
-// @desc    Get ALL daily work logs (visible to everyone)
-// @access  Private (all roles)
+// @desc    Get caller's OWN daily work logs
+// @access  Private (all roles - own logs only)
 router.get('/', verifyToken, async (req, res) => {
     try {
-        let sql = `${LOG_SELECT} WHERE 1=1`;
-        const params = [];
-        sql = applyDateFilters(sql, params, 1, req.query);
+        let sql = `${LOG_SELECT} WHERE dw.employee_id = $1`;
+        const params = [req.user.id];
+        sql = applyDateFilters(sql, params, 2, req.query);
         const r = await q(sql, params);
         r.rows.forEach(row => {
             if (row.work_date) row.work_date = dateOnly(row.work_date);
@@ -94,21 +94,42 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // @route   GET /api/daily-work-logs/team
-// @desc    Get ALL daily work logs (visible to everyone)
-// @access  Private (all roles)
+// @desc    Get daily work logs by role scope:
+//          - admin/hr: all employees
+//          - manager/team_lead: their reporting tree
+//          - employee: own logs only
+// @access  Private
 router.get('/team', verifyToken, async (req, res) => {
     try {
+        const userRole = req.user.role;
+        const userId = req.user.id;
+        const { work_date, start_date, end_date, limit } = req.query;
         let sql = `${LOG_SELECT} WHERE 1=1`;
         const params = [];
         let idx = 1;
-        sql = applyDateFilters(sql, params, idx, { work_date: req.query.work_date, start_date: req.query.start_date, end_date: req.query.end_date, limit: req.query.limit });
+
+        if (userRole === 'admin' || userRole === 'hr') {
+            // All employees - no employee filter
+        } else if (userRole === 'manager' || userRole === 'team_lead') {
+            const tree = await myTreeIds(userId);
+            const ids = Array.from(tree);
+            if (ids.length === 0) return res.json({ success: true, logs: [] });
+            sql += ` AND dw.employee_id IN (${ids.map(() => `$${idx++}`).join(',')})`;
+            params.push(...ids);
+        } else {
+            // Employee - only their own logs
+            sql += ` AND dw.employee_id = $${idx++}`;
+            params.push(userId);
+        }
+
+        sql = applyDateFilters(sql, params, idx, { work_date, start_date, end_date, limit });
         const r = await q(sql, params);
         r.rows.forEach(row => {
             if (row.work_date) row.work_date = dateOnly(row.work_date);
         });
         res.json({ success: true, logs: r.rows });
     } catch (error) {
-        console.error('Get daily work logs error:', error);
+        console.error('Get team daily work logs error:', error);
         const e = pgErrorResponse(error);
         res.status(e.status).json({ success: false, message: e.message });
     }
