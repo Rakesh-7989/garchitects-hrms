@@ -335,15 +335,13 @@
         }
 
         async function loadEmployeesForPicker() {
-            // P9/D11 parallel: a team_lead's picker = their reporting tree
-            // (matches the server-side scope on POST/PUT). Manager/admin/hr see
-            // the full company directory (D3).
+            // All roles can assign work to ANY active employee (not just reporting tree)
             let data;
-            if (currentRole === 'team_lead') {
-                const d = await apiCall('/project-leads/my-team');
-                data = d && d.success ? { success: true, directory: d.team || [] } : d;
-            } else {
+            try {
                 data = await apiCall('/employees/directory');
+            } catch (e) {
+                console.error('Failed to load employees for picker:', e);
+                return;
             }
             if (!data || !data.success) return;
             activeEmployees = (data.directory || []).slice();
