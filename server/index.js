@@ -33,6 +33,32 @@ app.use(cors({
     }
 }));
 
+// Security headers on every response (HTML documents are served through this
+// function; CSP/X-Frame-Options only affect documents, so applying them here
+// covers all portals). CSP is intentionally pragmatic: inline scripts/styles
+// are pervasive in the no-build static portal, so script/style allow
+// 'unsafe-inline'; everything else is locked to self + https images (profile
+// photos live on Supabase Storage).
+const CSP = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
+    "font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com",
+    "img-src 'self' data: blob: https:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'"
+].join('; ');
+app.use((req, res, next) => {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Content-Security-Policy', CSP);
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+});
+
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/employees', require('./routes/employees'));
@@ -116,11 +142,21 @@ app.get('/manager/:page', servePortalPage('manager'));
 app.get('/employee/:page', servePortalPage('employee'));
 app.get('/admin/:page', servePortalPage('admin'));
 
-// Error handling middleware. Every error that reaches this handler is mapped
-// through pgErrorResponse so known Postgres codes become friendly 400s and
-// nothing raw ever leaks (audit-security F10: centralized friendly-400 net).
+// Error handling middleware. Known Postgres codes map to friendly 400s via
+// pgErrorResponse; anything else 500s generically so internals never leak.
+// A 4xx coming from upstream middleware (e.g. body-parser rejecting bad JSON)
+// is honored instead of flattened to 500 — clients get an honest status, and
+// pgErrorResponse still governs DB-ish errors. Never send err.message in
+// production.
+const CLIENT_ERRORS = { 400: 'Bad request body.', 413: 'Payload too large.' };
 app.use((err, req, res, next) => {
     console.error(err.stack);
+    if (err && Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
+        return res.status(err.status).json({
+            success: false,
+            message: CLIENT_ERRORS[err.status] || 'Request could not be processed.'
+        });
+    }
     const mapped = pgErrorResponse(err);
     res.status(mapped.status).json({
         success: false,
