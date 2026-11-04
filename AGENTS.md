@@ -139,6 +139,18 @@ themself; do not expand the guard to them without an owner decision.
 
 ## 11. Current state (update this as work ships)
 
+- **Work Assignments Increment 2 shipped (2026-11-04, `d444872`):** per-assignment activity
+  trail (`work_assignment_events` — create/status/edit/reassign/delete, 3 schema layers +
+  self-heal) + `GET /:id/events` and `GET /:id/logs` (daily-log roll-up, count + 5 recent),
+  server-side filters/search/pagination (`?status|assignedTo|projectId|priority|q|overdue=1|limit|offset`
+  + `total`), Team Work page filter bar + **Load more** + **Assignment Detail drawer**
+  (timeline + linked logs), My Work page inline Timeline toggle, `/` now enforces its
+  documented role scoping (admin/hr org-wide, manager/team_lead own-created, employees 403),
+  `sw.js` bumped to **v17**. **QA:** live probes green (pagination/filter/overdue/events/logs/400/401);
+  regression (projects/announcements/employees) 200; boot smoke OK. **Caveat:** no hermetic PG
+  run on this machine (no local PostgreSQL); write paths code-reviewed, not executed; no
+  live writes. See `docs/FEATURE_WORK_ASSIGNMENTS_INCREMENT2.md`. **Increment 3 (bulk assign/comments) remains.**
+
 - **Live end-to-end audit + Projects 500 hotfix (2026-11-04):** full live sweep (static 39/39,
   clean URLs, login page 0 errors, 401/400 guards, CORS, cron guards, 54 GETs green) found one
   real bug: `server/routes/projects.js` called `dateOnly()` without importing it → every
