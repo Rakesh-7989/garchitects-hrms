@@ -139,6 +139,21 @@ themself; do not expand the guard to them without an owner decision.
 
 ## 11. Current state (update this as work ships)
 
+- **Attendance v2 + salary basis shipped (2026-11-04, `85a20cb` + `32a8ca1`):**
+  late/early justification flow (mandatory reason before check-out; TL/Manager approve → present,
+  reject late → absent; early checkout → half-day unless approved), break out/in camera selfie
+  with `break_log` photo pairs, anyone-can-report break report (`break_reports`, admin reviews,
+  no auto penalty), payroll salary basis now **calendar working days** (week offs + holidays
+  excluded, e.g. 31-day month → 25 divisor). New routes: `GET/POST /api/attendance/justifications`,
+  `POST /api/attendance/justifications/:id/review`, `POST /api/attendance/break-report`,
+  `GET /api/attendance/break-reports`, `PUT /:id/review`, cron `GET /api/cron/sweep-late`
+  (21:30 IST). Four pages changed (admin/attendance, manager/my-team, employee/dashboard,
+  payroll-generate) + `public/sw.js` v18. **QA:** live GETs 200/400/401 correct; payroll summary
+  live shows `working_days=25` for Oct-2026; regression OK; no live writes (all new write paths
+  code-reviewed, not executed); hermetic PG unavailable on this machine — see
+  `docs/FEATURE_ATTENDANCE_V2.md`. **Pending:** first live run of `sweep-late` (21:30 IST) —
+  observe and tune if needed.
+
 - **Work Assignments Increment 2 shipped (2026-11-04, `d444872`):** per-assignment activity
   trail (`work_assignment_events` — create/status/edit/reassign/delete, 3 schema layers +
   self-heal) + `GET /:id/events` and `GET /:id/logs` (daily-log roll-up, count + 5 recent),
