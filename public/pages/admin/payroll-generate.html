@@ -372,9 +372,9 @@
                             dv.textContent = 'This period has not started yet - attendance numbers appear once the month begins.';
                         } else {
                             const workDays = (s.total_days || 0) - (s.week_offs || 0) - (s.holidays || 0);
-                            const parts = [workDays + ' work days'];
-                            if (s.week_offs) parts.push(s.week_offs + ' week off' + (s.week_offs !== 1 ? 's' : ''));
-                            if (s.holidays) parts.push(s.holidays + ' holiday' + (s.holidays !== 1 ? 's' : ''));
+                            const parts = [workDays + ' working days'];
+                            if (s.week_offs) parts.push('− ' + s.week_offs + ' week off' + (s.week_offs !== 1 ? 's' : ''));
+                            if (s.holidays) parts.push('− ' + s.holidays + ' holiday' + (s.holidays !== 1 ? 's' : ''));
                             let extra = '';
                             if ((s.leave_taken || 0) > 0) {
                                 const q = s.monthly_leave_quota != null ? s.monthly_leave_quota : 1;
@@ -389,7 +389,7 @@
                                 extra += ' | Late logins ' + s.breakdown.late + ': first ' + g + ' excused, ' + (s.breakdown.late - g) + ' counted as half day';
                             }
                             dv.style.display = 'block';
-                            dv.textContent = parts.join(' + ') + ' = ' + s.working_days + ' total days | Present ' + s.present_days + ' (incl. check-ins, WFH, week offs & holidays)' + extra + ' | LOP ' + s.lop_days + ' days will be deducted (period ' + s.period_start + ' to ' + s.period_end + ')';
+                            dv.textContent = (s.total_days || 0) + ' calendar days ' + parts.join(' ') + ' = ' + s.working_days + ' salary days (week offs & holidays excluded) | Present ' + s.present_days + ' (check-ins & WFH)' + extra + ' | LOP ' + s.lop_days + ' days will be deducted (period ' + s.period_start + ' to ' + s.period_end + ')';
                             if (s.status_warning) {
                                 dv.textContent = '⚠ ' + s.status_warning + ' | ' + dv.textContent;
                                 dv.style.background = '#FEF3C7'; dv.style.border = '1px solid #F59E0B'; dv.style.color = '#92400E';

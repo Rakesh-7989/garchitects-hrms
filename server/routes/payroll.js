@@ -117,10 +117,14 @@ function computeTotals(v) {
     const presentDays = num(v.present_days);
     const leaveDays = num(v.leave_days);
     const lopDays = num(v.lop_days);
+    // Sandwich-leave days (paid leave falling on weekoff/holiday inside an
+    // approved leave span) sit outside the working-day basis; allow them in
+    // the identity check so valid payrolls are not rejected.
+    const sandwich = num(v.sandwich_leave_days);
     const paidDays = presentDays + leaveDays;
     // Mid-month previews legitimately leave a gap: upcoming days are neither
     // present nor LOP, so the paid buckets only need to fit within working days.
-    const attendanceValid = (presentDays + leaveDays + lopDays) <= workingDays + 0.001;
+    const attendanceValid = (presentDays + leaveDays + lopDays) <= workingDays + sandwich + 0.001;
     const actualPayableGross = gross - totalDeductions + bonus;
     const totalDeductionsWithEmployer = totalDeductions + employerTotal;
     const netPayable = actualPayableGross;
@@ -294,10 +298,13 @@ async function computeAttendanceSummary(employeeId, month, year) {
         }
     }
 
-    // Calendar split over the FULL month - working days are always quoted on
-    // a full-month basis. Every day lands in exactly one calendar bucket:
-    // holiday, week off, or working day.
-    let totalDays = 0, weekOffs = 0, workingDays = 0, paidRaw = 0.0, leaveDays = 0;
+    // Calendar split over the FULL month. Every day lands in exactly one
+    // calendar bucket: holiday, week off, or working day. `workingDays` IS
+    // the salary basis; the divisor for per-day pay (net payable / working
+    // days) follows the founder rule: the full calendar month's working
+    // days count — holidays and week offs are excluded entirely. (Salary is
+    // not divided by calendar days.)
+    let totalDays = 0, weekOffs = 0, workingDays = 0, paidRaw = 0.0, leaveDays = 0, sandwichLeaveDays = 0;
     // First N late logins per payslip period are excused; beyond that each
     // late login costs half a day.
     const LATE_LOGIN_GRACE = 3;
@@ -318,6 +325,7 @@ async function computeAttendanceSummary(employeeId, month, year) {
             // Sandwich rule: this non-working day falls inside a leave span -
             // it is PAID LEAVE, not free.
             leaveDays++;
+            sandwichLeaveDays++;
         }
         if (isHol) continue;
         if (isWo) { weekOffs++; continue; }
@@ -352,39 +360,10 @@ async function computeAttendanceSummary(employeeId, month, year) {
 
     // LOP counts only GENUINE absences (no check-in, no approved leave/WFH)
     // that have already happened. Upcoming days never inflate it.
-    // Week off / holiday credit only applies up to the employee's LAST
-    // ACTIVE day (attendance, approved WFH or approved leave). Someone who
-    // never showed up - or walked out mid-month - earns no free week offs
-    // for the rest of the period.
-    let lastActive = null;
-    for (const r of attRes.rows) {
-        const d = fmtD(r.date);
-        if (d >= effStart && d <= end && d <= todayStr && (!lastActive || d > lastActive)) lastActive = d;
-    }
-    const markActivityEnd = (s, e) => {
-        const cs = fmtD(s), ceRaw = fmtD(e);
-        if (!cs || !ceRaw) return;
-        const ce = [ceRaw, end, todayStr].sort()[0];
-        if (ce >= effStart && (!lastActive || ce > lastActive)) lastActive = ce;
-    };
-    wfhRes.rows.forEach(w => markActivityEnd(w.start_date, w.end_date));
-    leaveRes.rows.forEach(l => markActivityEnd(l.start_date, l.end_date));
-
-    let creditedWOs = 0, creditedHols = 0;
-    if (lastActive) {
-        let c = new Date(effStart + 'T00:00:00Z');
-        const cEnd = new Date(lastActive + 'T00:00:00Z');
-        while (istDateString(c) <= istDateString(cEnd)) {
-            const ds = istDateString(c);
-            if (holidaySet.has(ds)) creditedHols++;
-            else { const dw = new Date(ds + 'T00:00:00').getDay(); if (dw === wcfg.weekoffDay) creditedWOs++; }
-            c.setUTCDate(c.getUTCDate() + 1);
-        }
-    }
-    // Present days follow the employee-view convention: check-ins (incl.
-    // late logins & half days), approved WFH, plus week offs and holidays
-    // up to the employee's last active day.
-    const presentDays = Math.min(totalDays, Math.floor(paidRaw) + creditedWOs + creditedHols);
+    // Week off / holiday handling: the whole month is split into working days
+    // only — week offs and holidays are excluded from the salary basis and
+    // are never charged as LOP either.
+    const presentDays = Math.min(workingDays, Math.floor(paidRaw));
 
     // ---- Leave quota vs LOP ----
     // Every employee earns the configured number of paid leaves per month
@@ -405,7 +384,12 @@ async function computeAttendanceSummary(employeeId, month, year) {
         {
             let c = new Date(effStart + 'T00:00:00Z');
             const cE = new Date([end, todayStr].sort()[0] + 'T00:00:00Z');
-            while (istDateString(c) <= istDateString(cE)) { elapsedAll++; c.setUTCDate(c.getUTCDate() + 1); }
+            while (istDateString(c) <= istDateString(cE)) {
+                const ds2 = istDateString(c);
+                const dw = new Date(ds2 + 'T00:00:00').getDay();
+                if (!holidaySet.has(ds2) && dw !== wcfg.weekoffDay) elapsedAll++;
+                c.setUTCDate(c.getUTCDate() + 1);
+            }
         }
         lopDays = Math.max(0, elapsedAll - quotaCovered);
     } else {
@@ -426,7 +410,7 @@ async function computeAttendanceSummary(employeeId, month, year) {
     return {
         // "Working days" now carries the FULL calendar month (Total Days) -
         // per-day salary divides by every day of the month, not just work days.
-        working_days: totalDays,
+        working_days: workingDays,
         present_days: presentDays,
         // Payslip "Leave Days" shows only the quota-protected portion.
         leave_days: quotaCovered,
@@ -434,6 +418,10 @@ async function computeAttendanceSummary(employeeId, month, year) {
         total_days: totalDays,
         week_offs: weekOffs,
         holidays: holidaySet.size,
+        // Sandwich-leave days (paid leave falling on weekoff/holiday inside an
+        // approved leave span) - used by the payroll gate to keep identities
+        // consistent with the working-day basis.
+        sandwich_leave_days: sandwichLeaveDays,
         // Extra context for the admin UI derivation note.
         leave_taken: leaveDays,
         monthly_leave_quota: MONTHLY_LEAVE_QUOTA,
@@ -763,7 +751,7 @@ async function renderPayslipPdf(p, company) {
                 ['Employee ID', p.emp_id || '-'],
                 ['Pay Period', `${PP_MONTHS[p.month] || ''} ${p.year}`],
                 ['Employee Name', `${p.first_name || ''} ${p.last_name || ''}`.trim() || '-'],
-                ['Total Days', p.working_days || 0],
+                ['Working Days', p.working_days || 0],
                 ['Designation', p.designation_name || '-'],
                 ['Present Days', p.present_days || 0],
                 ['Department', p.department_name || '-'],

@@ -93,10 +93,13 @@ function ppCompute(v) {
     const presentDays = ppNum(v.present_days);
     const leaveDays = ppNum(v.leave_days);
     const lopDays = ppNum(v.lop_days);
+    // Sandwich-leave days sit outside the working-day basis; mirror the
+    // server-side tolerance so valid payrolls are not rejected.
+    const sandwich = ppNum(v.sandwich_leave_days);
     const paidDays = presentDays + leaveDays;
     // Mid-month previews legitimately leave a gap (upcoming days are neither
- // present nor LOP), so paid buckets only need to fit WITHIN working days.
- const attendanceValid = (presentDays + leaveDays + lopDays) <= workingDays + 0.001;
+    // present nor LOP), so paid buckets only need to fit WITHIN working days.
+    const attendanceValid = (presentDays + leaveDays + lopDays) <= workingDays + sandwich + 0.001;
     const actualPayableGross = gross - totalDeductions + bonus;
     const totalDeductionsWithEmployer = totalDeductions + employerTotal;
     // Employer contributions (D) are an employer cost shown separately on the
