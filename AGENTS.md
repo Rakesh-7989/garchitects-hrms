@@ -139,6 +139,23 @@ themself; do not expand the guard to them without an owner decision.
 
 ## 11. Current state (update this as work ships)
 
+- **Live end-to-end audit + Projects 500 hotfix (2026-11-04):** full live sweep (static 39/39,
+  clean URLs, login page 0 errors, 401/400 guards, CORS, cron guards, 54 GETs green) found one
+  real bug: `server/routes/projects.js` called `dateOnly()` without importing it → every
+  projects route 500'd (list, **and create/update after the row was written** — client sees
+  500, users retry → duplicate-create risk). **Fix: one-line import, `969f7ea`**, live verified
+  200. Same-day follow-ups (`026cf73`): malformed JSON now maps to **400** (was flattened 500),
+  and every response now sends `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: strict-origin-when-cross-origin` and a pragmatic `Content-Security-Policy`
+  (self + inline + cdnjs/jsdelivr/fonts + https images; verified: login page loads with 0 CSP
+  console errors). **Vercel env/infra:** production `DATABASE_URL` re-confirmed byte-exact
+  against the Supabase pooler string; stale **preview** `DATABASE_URL` aligned to the same
+  value; function region is now **bom1** (Mumbai, same metro as the DB — lower latency).
+  **Note:** an earlier "live DB down (500 everywhere)" report was a **false alarm** caused by a
+  client quoting bug (PowerShell→curl mangled JSON → body-parser SyntaxError → generic 500);
+  the DB, auth and audit writes were healthy throughout — always test the client first before
+  declaring prod down. See `docs/FEATURE_PROJECTS_DATEONLY_HOTFIX.md`.
+
 - **Privacy, Security & SDLC plan shipped to master (2026-10-21):** controlled 5-phase plan
   committed across 12 commits (branch `audit/privacy-security-baseline` → master `ccf2e61`).
   **Phase 0/1:** SDLC plan doc (`docs/FEATURE_PRIVACY_SECURITY_SDLC_PLAN.md`), read-only
