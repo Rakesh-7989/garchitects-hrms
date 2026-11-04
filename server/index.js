@@ -498,6 +498,25 @@ async function runMigrations() {
         console.log('[Migration] work_assignments ensured.');
     } catch (e) { console.warn('[Migration] work_assignments migration skipped:', e.message); }
 
+    // Assignment activity trail (Increment 2): appended on create/status/edit/
+    // reassign/delete so the UI drawer can render a per-assignment timeline.
+    // assignment_id is nullable + ON DELETE SET NULL so deleting an assignment
+    // keeps its trail instead of cascading it away.
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS work_assignment_events (
+            id SERIAL PRIMARY KEY,
+            assignment_id INT REFERENCES work_assignments(id) ON DELETE SET NULL,
+            actor_id INT REFERENCES employees(id) ON DELETE SET NULL,
+            type VARCHAR(30) NOT NULL,
+            from_status VARCHAR(20),
+            to_status VARCHAR(20),
+            note TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_wae_assignment ON work_assignment_events(assignment_id, created_at DESC)`);
+        console.log('[Migration] work_assignment_events ensured.');
+    } catch (e) { console.warn('[Migration] work_assignment_events migration skipped:', e.message); }
+
     // Daily work logs (self-reported) + optional link to an assignment.
     try {
         await query(`CREATE TABLE IF NOT EXISTS daily_work_logs (

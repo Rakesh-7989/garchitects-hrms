@@ -26,6 +26,12 @@
         .task-card .task-title { font-weight: 600; font-size: 0.95rem; }
         .task-card .task-meta { font-size: 0.78rem; color: var(--text-secondary); margin-top: 5px; line-height: 1.55; }
         .task-card .task-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+        .wa-timeline { border-left: 2px solid var(--border-light); margin: 10px 0 0 6px; padding-left: 14px; }
+        .wa-timeline-item { position: relative; padding: 4px 0 11px 2px; font-size: 0.8rem; color: var(--text-secondary); }
+        .wa-timeline-item::before { content: ''; position: absolute; left: -20px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+        .wa-timeline-item b { color: var(--text-primary); }
+        .btn-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); }
+        .btn-outline:hover { background: var(--primary); color: #fff; }
         .task-desc { font-size: 0.85rem; margin-top: 8px; line-height: 1.5; }
         .prio-high { background: #FEE2E2; color: #B91C1C; }
         .prio-urgent { background: #FEE2E2; color: #991B1B; }
@@ -307,7 +313,10 @@
                 (t.description ? '<div class="task-desc">' + escapeHtml(t.description) + '</div>' : '') +
                 (doneHtml ? '<div class="task-meta" style="margin-top:8px;">' + doneHtml + '</div>' : '') +
                 blockedHtml +
-                '<div class="task-actions">' + actionButtons(t) + '</div>' +
+                '<div class="task-actions">' + actionButtons(t) +
+                    ' <button class="btn btn-sm btn-outline" onclick="toggleTimeline(' + t.id + ')"><i class="fas fa-stream"></i> Timeline</button>' +
+                '</div>' +
+                '<div class="wa-timeline" id="tl-' + t.id + '" style="display:none;"></div>' +
             '</div>';
         }
 
@@ -319,6 +328,36 @@
                 return;
             }
             container.innerHTML = list.map(taskCard).join('');
+        }
+
+        const timelineCache = {};
+        async function toggleTimeline(id) {
+            const el = document.getElementById('tl-' + id);
+            if (!el) return;
+            if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+            el.style.display = 'block';
+            if (!timelineCache[id]) {
+                el.innerHTML = '<div style="font-size:0.8rem;color:var(--text-secondary);">Loading timeline...</div>';
+                const r = await apiCall('/work-assignments/' + id + '/events').catch(() => null);
+                timelineCache[id] = (r && r.events) || [];
+            }
+            const events = timelineCache[id];
+            if (!events.length) {
+                el.innerHTML = '<div style="font-size:0.8rem;color:var(--text-secondary);">No activity recorded yet.</div>';
+                return;
+            }
+            el.innerHTML = events.map(ev => {
+                const actor = ((ev.actor_first || '') + ' ' + (ev.actor_last || '')).trim() || ev.actor_code || 'Removed user';
+                let text = '';
+                if (ev.type === 'status') text = 'moved <b>' + escapeHtml(String(ev.from_status || '').replace(/_/g, ' ')) + ' → ' + escapeHtml(String(ev.to_status || '').replace(/_/g, ' ')) + '</b>' + (ev.note ? ' · ' + escapeHtml(ev.note) : '');
+                else if (ev.type === 'created') text = 'created this task';
+                else if (ev.type === 'edit') text = 'edited the task';
+                else if (ev.type === 'reassigned') text = 'reassigned this task';
+                else if (ev.type === 'deleted') text = 'deleted/withdrew this task';
+                else text = escapeHtml(ev.type);
+                const when = ev.created_at ? new Date(ev.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+                return '<div class="wa-timeline-item"><i class="fas fa-circle" style="font-size:0.45rem;color:var(--primary);margin-right:6px;vertical-align:middle;"></i><b>' + escapeHtml(actor) + '</b> ' + text + (when ? '<br><span style="opacity:0.7;font-size:0.74rem;">' + when + '</span>' : '') + '</div>';
+            }).join('');
         }
 
         async function updateStatus(id, status, extra) {

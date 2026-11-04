@@ -841,6 +841,20 @@ CREATE INDEX IF NOT EXISTS idx_wa_assignee ON work_assignments(assigned_to, stat
 CREATE INDEX IF NOT EXISTS idx_wa_assigner ON work_assignments(assigned_by, status);
 CREATE INDEX IF NOT EXISTS idx_wa_project ON work_assignments(project_id);
 
+-- Assignment activity trail (create/status/edit/reassign/delete). assignment_id
+-- is nullable + ON DELETE SET NULL so deleting an assignment keeps its trail.
+CREATE TABLE IF NOT EXISTS work_assignment_events (
+  id SERIAL PRIMARY KEY,
+  assignment_id INT REFERENCES work_assignments(id) ON DELETE SET NULL,
+  actor_id INT REFERENCES employees(id) ON DELETE SET NULL,
+  type VARCHAR(30) NOT NULL,
+  from_status VARCHAR(20),
+  to_status VARCHAR(20),
+  note TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_wae_assignment ON work_assignment_events(assignment_id, created_at DESC);
+
 -- ============================================================
 -- 24b. DAILY WORK LOGS (Self-reported work, no assignment)
 -- ============================================================

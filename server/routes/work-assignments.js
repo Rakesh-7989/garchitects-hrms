@@ -5,11 +5,82 @@ const { verifyToken, isManager } = require('../middleware/auth');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
 const { logAudit } = require('../utils/audit');
 const { notify } = require('../services/notify');
-const { dateOnly } = require('../utils/date');
+const { dateOnly, istDateString } = require('../utils/date');
 const { leadCovers, myTreeIds } = require('./project-leads');
 
 // Self-healing query wrapper (mirrors sibling project routes).
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
+
+// LIKE-escape for ?q= search (client input interpolated into ILIKE).
+function escLike(s) {
+    return String(s).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+// Best-effort activity-trail write. Never throws - an event is a side
+// effect, not the operation. Self-heals the table on first use.
+async function recordEvent(assignmentId, actorId, type, fromStatus, toStatus, note) {
+    try {
+        await runWithSchemaRepair(() => query(
+            `INSERT INTO work_assignment_events (assignment_id, actor_id, type, from_status, to_status, note)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [assignmentId, actorId, type, fromStatus || null, toStatus || null, note || null]
+        ));
+    } catch (e) {
+        console.error('work_assignment_events write failed:', e.message);
+    }
+}
+
+// Access rule shared by the event/log roll-up read routes: the assigner,
+// the assignee, or admin/HR (per D-A4 timeline visibility).
+function assignmentAccess(row, user) {
+    if (['admin', 'hr'].includes(user.role)) return true;
+    if (Number(row.assigned_to) === Number(user.id)) return true;
+    if (Number(row.assigned_by) === Number(user.id)) return true;
+    return false;
+}
+
+// Shared filter parser for GET / and GET /my. startP = params already in
+// use by the route (e.g. /my binds assigned_to as $1). Everything optional;
+// garbage priorities/ids are rejected loudly (400) instead of silently
+// matching nothing. Pagination is opt-in and capped at 100 rows/page;
+// `total` always reflects the WHERE, not the page.
+function parseListQuery(req, startP = 0) {
+    const { status, assignedTo, projectId, priority, q: search, limit, offset } = req.query;
+    const conditions = [];
+    const params = [];
+    let p = startP;
+    if (status) { p++; conditions.push(`wa.status = $${p}`); params.push(status); }
+    if (assignedTo) {
+        const n = parseInt(assignedTo, 10);
+        if (isNaN(n)) return { error: { status: 400, message: 'Invalid assignedTo filter' } };
+        p++; conditions.push(`wa.assigned_to = $${p}`); params.push(n);
+    }
+    if (projectId) {
+        const n = parseInt(projectId, 10);
+        if (isNaN(n)) return { error: { status: 400, message: 'Invalid projectId filter' } };
+        p++; conditions.push(`wa.project_id = $${p}`); params.push(n);
+    }
+    if (priority) {
+        if (!PRIORITIES.includes(priority)) return { error: { status: 400, message: 'Invalid priority filter (low/normal/high/urgent)' } };
+        p++; conditions.push(`wa.priority = $${p}`); params.push(priority);
+    }
+    if (search) {
+        const s = String(search).trim();
+        if (s) {
+            p++;
+            conditions.push(`(wa.title ILIKE $${p} ESCAPE '\\' OR wa.description ILIKE $${p} ESCAPE '\\')`);
+            params.push('%' + escLike(s.slice(0, 100)) + '%');
+        }
+    }
+    if (req.query.overdue === '1') {
+        p++;
+        conditions.push(`(wa.due_date IS NOT NULL AND wa.due_date < $${p} AND wa.status IN ('pending','assigned','in_progress','blocked'))`);
+        params.push(istDateString());
+    }
+    const lim = Math.min(Math.max(parseInt(limit, 10) || 0, 0), 100);
+    const off = Math.max(parseInt(offset, 10) || 0, 0);
+    return { conditions, params, lim, off };
+}
 
 const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
 const STATUSES = ['pending', 'assigned', 'in_progress', 'blocked', 'completed', 'cancelled'];
@@ -86,12 +157,26 @@ async function validateProjectUnit(proj, unit) {
  */
 router.get('/my', verifyToken, async (req, res) => {
     try {
-        const result = await q(`${SELECT} WHERE wa.assigned_to = $1 ORDER BY wa.created_at DESC`, [req.user.id]);
+        const parsed = parseListQuery(req, 1);
+        if (parsed.error) return res.status(parsed.error.status).json({ success: false, message: parsed.error.message });
+        const whereSql = 'WHERE wa.assigned_to = $1' + (parsed.conditions.length ? ' AND ' + parsed.conditions.join(' AND ') : '');
+        const base = [req.user.id, ...parsed.params];
+        const count = await q(`SELECT COUNT(*) AS n FROM work_assignments wa ${whereSql}`, base);
+        const total = parseInt(count.rows[0].n, 10);
+        let sql = `${SELECT} ${whereSql} ORDER BY wa.created_at DESC`;
+        const pageParams = [...base];
+        if (parsed.lim > 0) {
+            pageParams.push(parsed.lim);
+            sql += ` LIMIT $${pageParams.length}`;
+            pageParams.push(parsed.off);
+            sql += ` OFFSET $${pageParams.length}`;
+        }
+        const result = await q(sql, pageParams);
         result.rows.forEach(r => {
             if (r.start_date) r.start_date = dateOnly(r.start_date);
             if (r.due_date) r.due_date = dateOnly(r.due_date);
         });
-        res.json({ success: true, assignments: result.rows });
+        res.json({ success: true, assignments: result.rows, total });
     } catch (error) {
         console.error('Error fetching my work assignments:', error);
         const r = pgErrorResponse(error);
@@ -101,20 +186,40 @@ router.get('/my', verifyToken, async (req, res) => {
 
 router.get('/', verifyToken, async (req, res) => {
     try {
-        const { status, assignedTo, projectId } = req.query;
-        const conditions = [];
-        const params = [];
-        let p = 0;
-        if (status) { p++; conditions.push(`wa.status = $${p}`); params.push(status); }
-        if (assignedTo) { p++; conditions.push(`wa.assigned_to = $${p}`); params.push(assignedTo); }
-        if (projectId) { p++; conditions.push(`wa.project_id = $${p}`); params.push(projectId); }
-        const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
-        const result = await q(`${SELECT} ${where} ORDER BY wa.created_at DESC`, params);
+        const parsed = parseListQuery(req);
+        if (parsed.error) return res.status(parsed.error.status).json({ success: false, message: parsed.error.message });
+        // Documented role scoping: admin/hr see all assignments (admin dashboard);
+        // manager/team_lead see only the assignments they created (team page);
+        // anyone else uses GET /my instead.
+        const scopedConditions = [...parsed.conditions];
+        const scopedParams = [...parsed.params];
+        const role = req.user.role;
+        if (role === 'admin' || role === 'hr') {
+            // full org visibility
+        } else if (role === 'manager' || role === 'team_lead') {
+            const p = scopedParams.length + 1;
+            scopedConditions.push(`wa.assigned_by = $${p}`);
+            scopedParams.push(req.user.id);
+        } else {
+            return res.status(403).json({ success: false, message: 'Access denied' });
+        }
+        const whereSql = scopedConditions.length ? 'WHERE ' + scopedConditions.join(' AND ') : '';
+        const count = await q(`SELECT COUNT(*) AS n FROM work_assignments wa ${whereSql}`, scopedParams);
+        const total = parseInt(count.rows[0].n, 10);
+        let sql = `${SELECT} ${whereSql} ORDER BY wa.created_at DESC`;
+        const pageParams = [...scopedParams];
+        if (parsed.lim > 0) {
+            pageParams.push(parsed.lim);
+            sql += ` LIMIT $${pageParams.length}`;
+            pageParams.push(parsed.off);
+            sql += ` OFFSET $${pageParams.length}`;
+        }
+        const result = await q(sql, pageParams);
         result.rows.forEach(r => {
             if (r.start_date) r.start_date = dateOnly(r.start_date);
             if (r.due_date) r.due_date = dateOnly(r.due_date);
         });
-        res.json({ success: true, assignments: result.rows });
+        res.json({ success: true, assignments: result.rows, total });
     } catch (error) {
         console.error('Error listing work assignments:', error);
         const r = pgErrorResponse(error);
@@ -250,6 +355,8 @@ router.post('/', verifyToken, async (req, res) => {
              st === 'in_progress' ? new Date() : null,
              st === 'completed' ? new Date() : null]
         );
+
+        recordEvent(ins.rows[0].id, req.user.id, 'created', null, st, String(title).trim());
 
         logAudit({
             actorId: req.user.id, action: 'work.assign', entityType: 'work_assignment',
@@ -459,6 +566,20 @@ router.put('/:id', verifyToken, async (req, res) => {
             return res.status(409).json({ success: false, message: 'This assignment was changed by someone else. Please reload and try again.' });
         }
 
+        // Activity trail for the per-assignment timeline (Increment 2).
+        const prevStatus = row.status;
+        if (changes.assigned_to !== undefined && Number(changes.assigned_to) !== Number(row.assigned_to)) {
+            recordEvent(id, req.user.id, 'reassigned', prevStatus, changes.status || prevStatus, 'Reassigned');
+        }
+        if (changes.status && changes.status !== prevStatus) {
+            const evNote = changes.status === 'blocked' ? (blockedNote || null)
+                : changes.status === 'cancelled' ? (cancelNote || null) : null;
+            recordEvent(id, req.user.id, 'status', prevStatus, changes.status, evNote);
+        } else {
+            const editedKeys = Object.keys(changes).filter(k => k !== 'assigned_to');
+            if (editedKeys.length) recordEvent(id, req.user.id, 'edit', prevStatus, prevStatus, 'Updated: ' + editedKeys.join(', '));
+        }
+
         logAudit({
             actorId: req.user.id, action: 'work.assign_update', entityType: 'work_assignment',
             entityId: id, details: changes, ip: req.ip
@@ -573,6 +694,7 @@ router.post('/:id/approve', verifyToken, async (req, res) => {
             `UPDATE work_assignments SET status = 'assigned', updated_at = NOW() WHERE id = $1 AND status = 'pending'`,
             [id]
         );
+        recordEvent(id, req.user.id, 'status', 'pending', 'assigned', 'Approved');
 
         logAudit({
             actorId: req.user.id, action: 'work.approve', entityType: 'work_assignment',
@@ -611,7 +733,7 @@ router.delete('/:id', verifyToken, async (req, res) => {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id)) return res.status(400).json({ success: false, message: 'Invalid assignment id' });
 
-        const cur = await q(`SELECT id, assigned_by, assigned_to, title FROM work_assignments WHERE id = $1`, [id]);
+        const cur = await q(`SELECT id, assigned_by, assigned_to, title, status FROM work_assignments WHERE id = $1`, [id]);
         if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Assignment not found' });
 
         // A demoted assigner no longer has delete authority; admin always may.
@@ -622,6 +744,7 @@ router.delete('/:id', verifyToken, async (req, res) => {
             return res.status(403).json({ success: false, message: 'Only the assigner or admin can delete this assignment' });
         }
 
+        recordEvent(id, req.user.id, 'deleted', cur.rows[0].status, null, 'Assignment deleted/withdrawn');
         await q(`DELETE FROM work_assignments WHERE id = $1`, [id]);
         logAudit({ actorId: req.user.id, action: 'work.delete', entityType: 'work_assignment', entityId: id, details: {}, ip: req.ip });
 
@@ -641,6 +764,76 @@ router.delete('/:id', verifyToken, async (req, res) => {
         res.json({ success: true, message: 'Assignment deleted' });
     } catch (error) {
         console.error('Error deleting work assignment:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
+    }
+});
+
+/**
+ * GET /api/work-assignments/:id/events
+ * Activity timeline (work_assignment_events), newest first. Visible to the
+ * assigner, the assignee, or admin/HR.
+ */
+router.get('/:id/events', verifyToken, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'Invalid assignment id' });
+        const cur = await q(`SELECT assigned_by, assigned_to FROM work_assignments WHERE id = $1`, [id]);
+        if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Assignment not found' });
+        if (!assignmentAccess(cur.rows[0], req.user)) {
+            return res.status(403).json({ success: false, message: 'Access denied to this assignment' });
+        }
+        const result = await q(
+            `SELECT wae.id, wae.assignment_id, wae.actor_id, wae.type,
+                    wae.from_status, wae.to_status, wae.note, wae.created_at,
+                    e.first_name AS actor_first, e.last_name AS actor_last, e.employee_id AS actor_code
+             FROM work_assignment_events wae
+             LEFT JOIN employees e ON e.id = wae.actor_id
+             WHERE wae.assignment_id = $1
+             ORDER BY wae.id DESC
+             LIMIT 200`,
+            [id]
+        );
+        res.json({ success: true, events: result.rows });
+    } catch (error) {
+        console.error('Error fetching assignment events:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
+    }
+});
+
+/**
+ * GET /api/work-assignments/:id/logs
+ * Linked daily-work-log roll-up: total + 5 most recent (read-only).
+ */
+router.get('/:id/logs', verifyToken, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'Invalid assignment id' });
+        const cur = await q(`SELECT assigned_by, assigned_to FROM work_assignments WHERE id = $1`, [id]);
+        if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Assignment not found' });
+        if (!assignmentAccess(cur.rows[0], req.user)) {
+            return res.status(403).json({ success: false, message: 'Access denied to this assignment' });
+        }
+        const count = await q(`SELECT COUNT(*) AS n FROM daily_work_logs WHERE assignment_id = $1`, [id]);
+        const recent = await q(
+            `SELECT l.id, l.work_date, l.title, l.description, l.logged_at,
+                    p.name AS project_name, u.name AS unit_name
+             FROM daily_work_logs l
+             LEFT JOIN projects p ON p.id = l.project_id
+             LEFT JOIN project_units u ON u.id = l.unit_id
+             WHERE l.assignment_id = $1
+             ORDER BY l.logged_at DESC
+             LIMIT 5`,
+            [id]
+        );
+        res.json({
+            success: true,
+            total: parseInt(count.rows[0].n, 10),
+            recent: recent.rows.map(r => ({ ...r, work_date: dateOnly(r.work_date) }))
+        });
+    } catch (error) {
+        console.error('Error fetching assignment logs roll-up:', error);
         const r = pgErrorResponse(error);
         res.status(r.status).json({ success: false, message: r.message });
     }

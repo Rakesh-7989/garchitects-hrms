@@ -18,9 +18,30 @@
         .work-stat .stat-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; margin-bottom: 10px; }
         .work-stat .stat-num { font-size: 1.5rem; font-weight: 700; }
         .work-stat .stat-label { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
-        .chip-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+        .chip-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
         .chip-btn { border: 1px solid var(--border-light); background: var(--bg-card); color: var(--text-secondary); padding: 7px 14px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
         .chip-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+        .toolbar input, .toolbar select { padding: 8px 12px; border: 1px solid var(--border-light); border-radius: var(--radius-md); font-size: 0.85rem; background: var(--bg-card); color: var(--text-primary); }
+        .toolbar input:focus, .toolbar select:focus { outline: none; border-color: var(--primary); }
+        .timeline { border-left: 2px solid var(--border-light); margin: 12px 0 0 6px; padding-left: 16px; }
+        .timeline-item { position: relative; padding: 5px 0 13px 4px; font-size: 0.82rem; color: var(--text-secondary); }
+        .timeline-item::before { content: ''; position: absolute; left: -22px; top: 8px; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
+        .timeline-item:last-child { padding-bottom: 2px; }
+        .timeline-item b { color: var(--text-primary); font-weight: 600; }
+        .timeline-item .tl-note { display: block; font-size: 0.78rem; margin-top: 2px; }
+        .log-rollup { border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 10px 12px; margin-top: 10px; font-size: 0.8rem; }
+        .log-rollup-item { padding: 6px 0; border-top: 1px solid var(--border-light); }
+        .log-rollup-item:first-child { border-top: none; }
+        #waDrawer { position: fixed; top: 0; right: 0; height: 100vh; width: 430px; max-width: 96vw; background: var(--bg-card); z-index: 1000; box-shadow: -4px 0 28px rgba(0,0,0,0.22); transform: translateX(102%); transition: transform 0.25s ease; overflow-y: auto; }
+        #waDrawer.open { transform: translateX(0); }
+        #waDrawerOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 999; display: none; }
+        #waDrawerOverlay.open { display: block; }
+        .drawer-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--border-light); position: sticky; top: 0; background: var(--bg-card); z-index: 2; }
+        .drawer-body { padding: 16px 18px; }
+        .drawer-meta { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 0.83rem; margin-top: 12px; }
+        .drawer-meta dt { color: var(--text-secondary); font-weight: 600; }
+        .drawer-meta dd { margin: 0; color: var(--text-primary); }
         .task-card { padding: 16px 18px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-md); margin-bottom: 12px; }
         .task-card .task-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
         .task-card .task-title { font-weight: 600; font-size: 0.95rem; }
@@ -115,8 +136,19 @@
                     <button class="chip-btn" data-f="cancelled" onclick="setFilter('cancelled')">Cancelled</button>
                     <button class="chip-btn" data-f="overdue" onclick="setFilter('overdue')">Overdue</button>
                 </div>
+                <div class="toolbar">
+                    <input type="text" id="waSearch" placeholder="Search title / description..." maxlength="100" style="flex:1;min-width:170px;" oninput="waSearchChanged()">
+                    <select id="waPriorityFilter" onchange="waFilterChanged()"><option value="">Any priority</option><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select>
+                    <select id="waAssigneeFilter" onchange="waFilterChanged()"><option value="">Anyone</option></select>
+                    <select id="waProjectFilter" onchange="waFilterChanged()"><option value="">Any project</option></select>
+                    <button type="button" class="chip-btn" onclick="resetWaFilters()" title="Clear all filters"><i class="fas fa-eraser"></i> Clear</button>
+                </div>
                 <div id="assignmentList">
                     <div class="spinner" style="margin:0 auto;"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                    <span id="waCount" style="font-size:0.78rem;color:var(--text-secondary);"></span>
+                    <button type="button" class="btn btn-sm btn-secondary" id="waLoadMore" onclick="loadMoreAssignments()" style="display:none;"><i class="fas fa-chevron-down"></i> Load more</button>
                 </div>
             </div>
 
@@ -172,6 +204,15 @@
     </div>
 
     <script src="../../js/auth.js"></script>
+    <div id="waDrawerOverlay" onclick="closeWaDrawer()"></div>
+    <aside id="waDrawer" aria-label="Assignment details">
+        <div class="drawer-header">
+            <div style="font-weight:700;font-size:0.95rem;"><i class="fas fa-clipboard-list" style="color:var(--primary);margin-right:6px;"></i>Assignment Detail</div>
+            <button type="button" class="notification-btn" onclick="closeWaDrawer()" aria-label="Close"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="drawer-body" id="waDrawerBody"></div>
+    </aside>
+
     <script src="../../js/dashboard.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -186,6 +227,7 @@
             loadEmployeesForPicker();
             loadProjectsForPicker();
             loadTeamLogs();
+            loadWaFilterSelects();
         });
 
         let currentRole = null;
@@ -230,34 +272,93 @@
             return String(t.due_date).slice(0, 10) < getTodayIST();
         }
 
-        async function loadAssignments(manual) {
+        let waOffset = 0, waTotal = 0, waHasMore = false, waFetching = false;
+        const waFilter = { q: '', priority: '', assignedTo: '', projectId: '' };
+        let waSearchTimer = null;
+
+        function waFilterParams(includeOffset) {
+            const p = new URLSearchParams();
+            p.set('limit', '25');
+            p.set('offset', String(includeOffset ? waOffset : 0));
+            if (curFilter === 'overdue') p.set('overdue', '1');
+            else if (curFilter !== 'all') p.set('status', curFilter);
+            if (waFilter.priority) p.set('priority', waFilter.priority);
+            if (waFilter.assignedTo) p.set('assignedTo', waFilter.assignedTo);
+            if (waFilter.projectId) p.set('projectId', waFilter.projectId);
+            if (waFilter.q) p.set('q', waFilter.q);
+            return p.toString();
+        }
+
+        async function loadAssignments(manual, reset) {
+            if (waFetching) return;
+            waFetching = true;
             const container = document.getElementById('assignmentList');
-            const data = await apiCall('/work-assignments');
+            if (reset !== false) waOffset = 0;
+            const data = await apiCall('/work-assignments?' + waFilterParams(reset === false));
+            waFetching = false;
             if (!data || !data.success) {
                 container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);font-size:0.85rem;">Failed to load assignments' + (data && data.message ? ': ' + escapeHtml(data.message) : '') + '</div>';
                 if (manual) showToast(data && data.message ? data.message : 'Refresh failed', 'error');
                 return;
             }
-            assignments = data.assignments || [];
+            const rows = data.assignments || [];
+            waTotal = typeof data.total === 'number' ? data.total : rows.length;
+            if (reset !== false) assignments = rows;
+            else assignments = assignments.concat(rows);
+            waOffset = assignments.length;
+            waHasMore = waOffset < waTotal;
+            const lm = document.getElementById('waLoadMore');
+            if (lm) lm.style.display = waHasMore ? 'inline-flex' : 'none';
+            const cnt = document.getElementById('waCount');
+            if (cnt) cnt.textContent = 'Showing ' + assignments.length + ' of ' + waTotal;
             const user = getCurrentUser();
             const overlord = user && (user.role === 'admin' || user.role === 'hr');
             document.getElementById('scopeLabel').textContent = overlord
-                ? 'Showing all assignments (' + assignments.length + ')'
-                : 'Showing assignments I created (' + assignments.length + ')';
+                ? 'Showing all assignments (' + waTotal + ')'
+                : 'Showing assignments I created (' + waTotal + ')';
             renderFiltered();
             if (manual) showToast('Refreshed', 'success');
         }
 
+        function loadMoreAssignments() {
+            loadAssignments(true, false);
+        }
+
+        function waFilterChanged() {
+            waFilter.priority = document.getElementById('waPriorityFilter').value;
+            waFilter.assignedTo = document.getElementById('waAssigneeFilter').value;
+            waFilter.projectId = document.getElementById('waProjectFilter').value;
+            loadAssignments(true, true);
+        }
+
+        function waSearchChanged() {
+            clearTimeout(waSearchTimer);
+            waSearchTimer = setTimeout(() => {
+                waFilter.q = document.getElementById('waSearch').value.trim();
+                loadAssignments(true, true);
+            }, 300);
+        }
+
+        function resetWaFilters() {
+            waFilter.q = waFilter.priority = waFilter.assignedTo = waFilter.projectId = '';
+            document.getElementById('waSearch').value = '';
+            document.getElementById('waPriorityFilter').value = '';
+            document.getElementById('waAssigneeFilter').value = '';
+            document.getElementById('waProjectFilter').value = '';
+            curFilter = 'all';
+            document.querySelectorAll('.chip-bar .chip-btn').forEach(b => b.classList.toggle('active', b.dataset.f === 'all'));
+            loadAssignments(true, true);
+        }
+
         function setFilter(f) {
             curFilter = f;
-            document.querySelectorAll('.chip-btn').forEach(b => b.classList.toggle('active', b.dataset.f === f));
-            renderFiltered();
+            document.querySelectorAll('.chip-bar .chip-btn').forEach(b => b.classList.toggle('active', b.dataset.f === f));
+            loadAssignments(true, true);
         }
 
         function filteredList() {
-            if (curFilter === 'all') return assignments;
-            if (curFilter === 'overdue') return assignments.filter(isOverdue);
-            return assignments.filter(a => a.status === curFilter);
+            // Server has already filtered by chip/overdue/search/priority/etc.
+            return assignments;
         }
 
         function prioPill(p) {
@@ -312,7 +413,7 @@
                 ? '<div class="task-meta" style="margin-top:8px;color:var(--text-secondary);"><i class="fas fa-ban"></i> Cancelled: ' + escapeHtml(a.cancel_reason) + '</div>'
                 : '';
             return '<div class="task-card">' +
-                '<div class="task-top">' +
+                '<div class="task-top" style="cursor:pointer;" onclick="openWaDrawer(' + a.id + ')" title="View details &amp; timeline">' +
                     '<div><div class="task-title">' + escapeHtml(a.title) + ' ' + prioPill(a.priority) + '</div>' +
                         '<div class="task-meta">' + [assigneeHtml, projHtml, assignerHtml, startHtml, assignedOnHtml].filter(Boolean).join(' &nbsp;·&nbsp; ') + '</div></div>' +
                     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + statusBadge(a.status) + dueHtml + '</div>' +
@@ -320,7 +421,7 @@
                 (a.description ? '<div class="task-desc">' + escapeHtml(a.description) + '</div>' : '') +
                 (doneHtml ? '<div class="task-meta" style="margin-top:8px;">' + doneHtml + '</div>' : '') +
                 reasonHtml +
-                '<div class="task-actions">' + cardActions(a) + '</div>' +
+                '<div class="task-actions" onclick="event.stopPropagation()">' + cardActions(a) + '</div>' +
             '</div>';
         }
 
@@ -564,6 +665,132 @@
                 (l.description ? '<div class="task-desc">' + escapeHtml(l.description) + '</div>' : '') +
             '</div>';
         }
+
+        function loadWaFilterSelects() {
+            // Assignee filter (directory list, same source as the create picker).
+            apiCall('/employees/directory').then(data => {
+                const sel = document.getElementById('waAssigneeFilter');
+                if (!sel || !data || !data.success) return;
+                const list = data.employees || [];
+                list.forEach(e => {
+                    const o = document.createElement('option');
+                    o.value = e.id;
+                    o.textContent = ((e.first_name || '') + ' ' + (e.last_name || '')).trim() + (e.employee_id ? ' (' + e.employee_id + ')' : '');
+                    sel.appendChild(o);
+                });
+            }).catch(() => {});
+            // Project filter (manager-level picker endpoint).
+            apiCall('/work-assignments/projects').then(data => {
+                const sel = document.getElementById('waProjectFilter');
+                if (!sel || !data || !data.success) return;
+                (data.projects || []).forEach(p => {
+                    const o = document.createElement('option');
+                    o.value = p.id;
+                    o.textContent = p.name;
+                    sel.appendChild(o);
+                });
+            }).catch(() => {});
+        }
+
+        function assigneeName(a, id) {
+            const f = [a.assigned_to_first, a.assigned_to_last].filter(Boolean).join(' ').trim();
+            return f || (a.assigned_to_code || ('Employee #' + a.assigned_to));
+        }
+
+        function statusText(s) {
+            return String(s || '').replace(/_/g, ' ');
+        }
+
+        function eventIcon(t) {
+            return { created: 'fa-plus-circle', status: 'fa-exchange-alt', edit: 'fa-pen', reassigned: 'fa-user-arrows', deleted: 'fa-trash', approved: 'fa-check-circle' }[t] || 'fa-circle';
+        }
+
+        function eventLabel(ev) {
+            const actor = ((ev.actor_first || '') + ' ' + (ev.actor_last || '')).trim() || ev.actor_code || 'Removed user';
+            if (ev.type === 'status') {
+                return '<b>' + escapeHtml(actor) + '</b> moved <b>' + escapeHtml(statusText(ev.from_status)) + ' → ' + escapeHtml(statusText(ev.to_status)) + '</b>' +
+                    (ev.note ? '<span class="tl-note">Reason: ' + escapeHtml(ev.note) + '</span>' : '');
+            }
+            if (ev.type === 'created') return '<b>' + escapeHtml(actor) + '</b> created this assignment' + (ev.note ? '<span class="tl-note">' + escapeHtml(ev.note) + '</span>' : '');
+            if (ev.type === 'edit') return '<b>' + escapeHtml(actor) + '</b> edited the assignment<span class="tl-note">' + escapeHtml(ev.note || '') + '</span>';
+            if (ev.type === 'reassigned') return '<b>' + escapeHtml(actor) + '</b> reassigned this work<span class="tl-note">' + escapeHtml(ev.note || '') + '</span>';
+            if (ev.type === 'deleted') return '<b>' + escapeHtml(actor) + '</b> deleted/withdrew this assignment';
+            return '<b>' + escapeHtml(actor) + '</b> ' + escapeHtml(ev.type) + (ev.note ? '<span class="tl-note">' + escapeHtml(ev.note) + '</span>' : '');
+        }
+
+        function formatDateTime(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            if (isNaN(d.getTime())) return String(ts).slice(0, 16).replace('T', ' ');
+            return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        function openWaDrawer(id) {
+            const a = assignments.find(x => x.id === id);
+            if (!a) return;
+            const drawer = document.getElementById('waDrawer');
+            const overlay = document.getElementById('waDrawerOverlay');
+            drawer.classList.add('open');
+            overlay.classList.add('open');
+            const body = document.getElementById('waDrawerBody');
+            body.innerHTML = '<div style="text-align:center;padding:28px;"><div class="spinner" style="margin:0 auto;"></div></div>';
+
+            const meta =
+                '<div style="font-size:1.05rem;font-weight:700;line-height:1.35;">' + escapeHtml(a.title) + ' ' + prioPill(a.priority) + '</div>' +
+                '<div style="margin-top:8px;">' + statusBadge(a.status) + (a.status === 'blocked' && a.blocked_reason
+                    ? ' <span style="color:#B91C1C;font-size:0.8rem;"><i class="fas fa-circle-exclamation"></i> ' + escapeHtml(a.blocked_reason) + '</span>' : '') +
+                    (a.status === 'cancelled' && a.cancel_reason
+                    ? ' <span style="color:var(--text-secondary);font-size:0.8rem;"><i class="fas fa-ban"></i> ' + escapeHtml(a.cancel_reason) + '</span>' : '') + '</div>' +
+                (a.description ? '<div class="task-desc" style="margin-top:10px;">' + escapeHtml(a.description) + '</div>' : '') +
+                '<dl class="drawer-meta">' +
+                    '<dt>Assignee</dt><dd>' + escapeHtml(assigneeName(a)) + '</dd>' +
+                    '<dt>Assigner</dt><dd>' + escapeHtml([a.assigned_by_first, a.assigned_by_last].filter(Boolean).join(' ').trim() || a.assigned_by_code || '') + '</dd>' +
+                    (a.project_name ? '<dt>Project</dt><dd>' + escapeHtml(a.project_name) + (a.unit_name ? ' / ' + escapeHtml(a.unit_name) : '') + '</dd>' : '') +
+                    '<dt>Start</dt><dd>' + escapeHtml(a.start_date ? formatDate(a.start_date) : '—') + '</dd>' +
+                    '<dt>Due</dt><dd>' + escapeHtml(a.due_date ? formatDate(a.due_date) : '—') + '</dd>' +
+                    (a.started_at ? '<dt>Started</dt><dd>' + escapeHtml(formatDateTime(a.started_at)) + '</dd>' : '') +
+                    (a.completed_at ? '<dt>Completed</dt><dd>' + escapeHtml(formatDateTime(a.completed_at)) + '</dd>' : '') +
+                    (a.cancelled_at ? '<dt>Cancelled</dt><dd>' + escapeHtml(formatDateTime(a.cancelled_at)) + '</dd>' : '') +
+                    '<dt>Assigned on</dt><dd>' + escapeHtml(formatDateTime(a.assigned_at)) + '</dd>' +
+                '</dl>' +
+                '<div class="task-actions" style="margin-top:12px;">' + cardActions(a) + '</div>';
+
+            Promise.all([
+                apiCall('/work-assignments/' + id + '/events').catch(() => null),
+                apiCall('/work-assignments/' + id + '/logs').catch(() => null)
+            ]).then(([ev, lg]) => {
+                const events = (ev && ev.events) || [];
+                const timeline = events.length
+                    ? '<div class="timeline">' + events.map(e =>
+                        '<div class="timeline-item"><i class="fas ' + eventIcon(e.type) + '" style="margin-right:6px;color:var(--primary);"></i>' +
+                        eventLabel(e) + '<span class="tl-note" style="opacity:0.75;">' + escapeHtml(formatDateTime(e.created_at)) + '</span></div>'
+                      ).join('') + '</div>'
+                    : '<div style="font-size:0.85rem;color:var(--text-secondary);padding:8px 0;">No activity recorded yet.</div>';
+
+                const recent = (lg && lg.recent) || [];
+                const logs = '<div class="log-rollup"><div style="font-weight:600;margin-bottom:6px;"><i class="fas fa-pen-to-square" style="color:var(--primary);margin-right:6px;"></i>Linked daily work logs (' + ((lg && lg.total) || 0) + ')</div>' +
+                    (recent.length
+                        ? recent.map(l =>
+                            '<div class="log-rollup-item"><b>' + escapeHtml(String(l.work_date || '').slice(0, 10)) + '</b> · ' + escapeHtml(l.title) +
+                            '<div style="color:var(--text-secondary);font-size:0.75rem;margin-top:2px;">' + escapeHtml([l.project_name, l.unit_name].filter(Boolean).join(' · ') || 'No project') + '</div></div>'
+                          ).join('')
+                        : '<div style="color:var(--text-secondary);">No daily work logs linked to this task yet.</div>') +
+                '</div>';
+
+                body.innerHTML = meta +
+                    '<div style="font-weight:700;font-size:0.9rem;margin-top:18px;"><i class="fas fa-stream" style="color:var(--primary);margin-right:6px;"></i>Timeline</div>' +
+                    timeline + logs;
+            });
+        }
+
+        function closeWaDrawer() {
+            document.getElementById('waDrawer').classList.remove('open');
+            document.getElementById('waDrawerOverlay').classList.remove('open');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeWaDrawer();
+        });
 
         function renderTeamLogs() {
             const el = document.getElementById('teamLogList');
