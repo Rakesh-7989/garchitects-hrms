@@ -78,4 +78,27 @@ router.get('/expire-handovers', async (req, res) => {
     }
 });
 
+// Flip unjustified late check-ins (reason never filed / review not approved)
+// into absent. Runs after office hours + grace; idempotent — only rows still
+// 'late' from a past date are touched.
+router.get('/sweep-late', async (req, res) => {
+    if (!isCronAuthorized(req)) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    try {
+        const result = await runWithSchemaRepair(() =>
+            query(`UPDATE attendance a
+                   SET status = 'absent', remarks = COALESCE(a.remarks, '') || ' [late justification missing/rejected]'
+                   WHERE a.status = 'late'
+                     AND a.date < CURRENT_DATE
+                     AND NOT EXISTS (
+                         SELECT 1 FROM attendance_justifications aj
+                         WHERE aj.attendance_id = a.id AND aj.kind = 'late' AND aj.status = 'approved'
+                     )`)
+        );
+        res.json({ success: true, absented: result.changes || 0 });
+    } catch (error) {
+        console.error('Sweep-late cron error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 module.exports = router;

@@ -312,7 +312,7 @@ CREATE TABLE IF NOT EXISTS attendance_photos (
     viewed INTEGER DEFAULT 0,
     viewed_at TIMESTAMP,
     expires_at TIMESTAMP NOT NULL,
-    type VARCHAR(20) DEFAULT 'check_in' CHECK (type IN ('check_in', 'check_out')),
+    type VARCHAR(20) DEFAULT 'check_in' CHECK (type IN ('check_in', 'check_out', 'break_out', 'break_in')),
     created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -383,6 +383,40 @@ CREATE INDEX IF NOT EXISTS idx_holidays_date ON holidays(date);
 CREATE INDEX IF NOT EXISTS idx_announcements_active ON announcements(is_active);
 CREATE INDEX IF NOT EXISTS idx_attendance_photos_token ON attendance_photos(token);
 CREATE INDEX IF NOT EXISTS idx_attendance_photos_expires ON attendance_photos(expires_at);
+
+-- Late check-in / early check-out justifications. TL/Manager reviews them
+-- (same pattern as regularization): approve -> present, reject/absent. At most
+-- one row per (attendance, kind) - re-filing overwrites with upsert.
+CREATE TABLE IF NOT EXISTS attendance_justifications (
+    id SERIAL PRIMARY KEY,
+    attendance_id INT NOT NULL REFERENCES attendance(id) ON DELETE CASCADE,
+    employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    kind VARCHAR(20) NOT NULL CHECK (kind IN ('late','early_checkout')),
+    reason TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+    reviewed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMP,
+    review_note TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE (attendance_id, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_aj_status ON attendance_justifications(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_aj_employee ON attendance_justifications(employee_id);
+
+-- Break reports by any staff member (log + alert only; admin reviews).
+CREATE TABLE IF NOT EXISTS break_reports (
+    id SERIAL PRIMARY KEY,
+    reporter_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    target_employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    note TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','reviewed')),
+    admin_note TEXT,
+    reviewed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_br_status ON break_reports(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_br_target ON break_reports(target_employee_id);
 CREATE INDEX IF NOT EXISTS idx_profile_requests_employee ON profile_update_requests(employee_id);
 CREATE INDEX IF NOT EXISTS idx_profile_requests_status ON profile_update_requests(status);
 CREATE INDEX IF NOT EXISTS idx_announcement_reads_employee ON announcement_reads(employee_id);

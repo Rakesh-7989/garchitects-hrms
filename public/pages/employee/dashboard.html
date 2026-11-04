@@ -15,6 +15,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         .clock-display { font-size: 2.8rem; font-weight: 800; color: var(--primary); letter-spacing: 2px; font-variant-numeric: tabular-nums; }
+        .btn-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); }
+        .btn-outline:hover { background: var(--primary); color: #fff; }
         .clock-date { font-size: 0.95rem; color: var(--text-secondary); margin-top: 4px; }
         .checkin-widget { text-align: center; padding: 10px 0; }
         .checkin-widget .clock-section { margin-bottom: 16px; }
@@ -151,6 +153,7 @@
                     <div class="checkin-buttons">
                         <button class="btn btn-success btn-lg" id="checkInBtn" onclick="handleCheckIn()"><i class="fas fa-sign-in-alt"></i> Check In</button>
                         <button class="btn btn-danger btn-lg" id="checkOutBtn" onclick="handleCheckOut()" style="display:none;"><i class="fas fa-sign-out-alt"></i> Check Out</button>
+                        <button class="btn btn-outline btn-lg" id="breakReportBtn" onclick="openBreakReportModal()" title="Report an unauthorized break"><i class="fas fa-flag"></i> Report</button>
                         <button class="btn-break" id="breakStartBtn" onclick="handleBreakStart()" style="display:none;"><i class="fas fa-mug-hot"></i> Start Break</button>
                         <button class="btn-break" id="breakEndBtn" onclick="handleBreakEnd()" style="display:none;"><i class="fas fa-redo"></i> End Break</button>
                     </div>
@@ -296,6 +299,49 @@
                     <button class="btn btn-secondary" id="retakeBtn" onclick="retakePhoto()" style="display:none;"><i class="fas fa-redo"></i> Retake</button>
                     <button class="btn btn-success" id="confirmBtn" onclick="confirmCheckIn()" style="display:none;"><i class="fas fa-check"></i> Confirm &amp; Check In</button>                </div>
                 <p id="cameraError" style="display:none;color:var(--danger);font-size:0.85rem;margin-top:12px;text-align:center;"></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="justifyModal">
+        <div class="modal-content" style="max-width:480px;">
+            <div class="modal-header">
+                <h2 id="justifyTitle"><i class="fas fa-pen" style="color:var(--primary);margin-right:8px;"></i>Reason required</h2>
+                <button onclick="closeJustifyModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="justifyPrompt" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;"></p>
+                <textarea id="justifyReason" class="form-control" rows="4" maxlength="1000" placeholder="e.g. Client meeting ran over; personal reason; traffic..."></textarea>
+                <div id="justifyError" style="display:none;color:#B91C1C;font-size:0.82rem;margin-top:8px;"></div>
+            </div>
+            <div class="modal-footer" style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeJustifyModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" id="justifySubmitBtn" onclick="submitJustification()"><i class="fas fa-paper-plane"></i> Submit</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="breakReportModal">
+        <div class="modal-content" style="max-width:480px;">
+            <div class="modal-header">
+                <h2 id="breakReportTitle"><i class="fas fa-flag" style="color:var(--warning);margin-right:8px;"></i>Report an unauthorized break</h2>
+                <button onclick="closeBreakReportModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;">Anyone (employee / team lead / manager / HR) can report an employee taking an unauthorized break during office hours. The admin team reviews every report — no automatic penalty.</p>
+                <div class="form-group">
+                    <label>Who are you reporting? *</label>
+                    <select id="breakReportTarget" class="form-control"><option value="">Loading employees...</option></select>
+                </div>
+                <div class="form-group">
+                    <label>What did you see? *</label>
+                    <textarea id="breakReportNote" class="form-control" rows="3" maxlength="1000" placeholder="e.g. Seen having lunch outside during 3:00 PM, not on any break..."></textarea>
+                </div>
+                <div id="breakReportError" style="display:none;color:#B91C1C;font-size:0.82rem;"></div>
+            </div>
+            <div class="modal-footer" style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeBreakReportModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" id="breakReportSubmitBtn" onclick="submitBreakReport()"><i class="fas fa-paper-plane"></i> Send Report</button>
             </div>
         </div>
     </div>
@@ -501,7 +547,18 @@
                 document.getElementById('breakStartBtn').style.display = onBreak ? 'none' : 'inline-flex';
                 document.getElementById('breakEndBtn').style.display = onBreak ? 'inline-flex' : 'none';
                 document.getElementById('breakDuration').style.display = onBreak ? 'block' : 'none';
-                document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--secondary);font-weight:500;"><i class="fas fa-check-circle"></i> Checked in at ' + escapeHtml(row.check_in) + '</p>';
+                const needsReason = row.status === 'late' && !row.justification_status;
+                const banner = needsReason
+                    ? '<div style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;border-radius:8px;padding:10px 12px;margin:10px 0;font-size:0.82rem;"><i class="fas fa-triangle-exclamation"></i> <b>Reason required:</b> you checked in late today — the reason must be reviewed by your Team Lead / Manager. ' +
+                        (row.justification_status === 'pending'
+                            ? 'Your reason is pending review.'
+                            : 'Add it now, otherwise you cannot check out and the day will count as absent.') +
+                        (row.justification_status === 'pending'
+                            ? ''
+                            : '<br><button class="btn btn-sm btn-danger" style="margin-top:8px;" onclick="openJustifyModal(\'late\')"><i class="fas fa-pen"></i> Add reason</button>') +
+                      '</div>'
+                    : '';
+                document.getElementById('attendanceInfo').innerHTML = '<p style="color:var(--secondary);font-weight:500;"><i class="fas fa-check-circle"></i> Checked in at ' + escapeHtml(row.check_in) + '</p>' + banner;
                 updateClock();
             } else if (notStarted) {
                 document.getElementById('checkInBtn').style.display = 'inline-flex';
@@ -582,11 +639,16 @@
         function openCameraModal(mode) {
             cameraMode = mode || 'check-in';
             const isCheckOut = cameraMode === 'check-out';
-            document.getElementById('cameraModalTitle').innerHTML = '<i class="fas fa-camera" style="color:var(--primary);margin-right:8px;"></i>' + (isCheckOut ? 'Check-Out Photo' : 'Check-In Photo');
-            document.getElementById('cameraModalHint').textContent = isCheckOut
-                ? 'A selfie with your face visible is required to check out.'
-                : 'A selfie with your face visible is required to check in.';
-            document.getElementById('confirmBtn').innerHTML = '<i class="fas fa-check"></i> Confirm &amp; ' + (isCheckOut ? 'Check Out' : 'Check In');
+            const META = {
+                'check-in': { title: 'Check-In Photo', hint: 'A selfie with your face visible is required to check in.', action: 'Check In' },
+                'check-out': { title: 'Check-Out Photo', hint: 'A selfie with your face visible is required to check out.', action: 'Check Out' },
+                'break-start': { title: 'Break-Out Photo', hint: 'A selfie with your face visible is required to start your break.', action: 'Start Break' },
+                'break-end': { title: 'Break-In Photo', hint: 'A selfie with your face visible is required to end your break.', action: 'End Break' }
+            };
+            const meta = META[cameraMode] || META['check-in'];
+            document.getElementById('cameraModalTitle').innerHTML = '<i class="fas fa-camera" style="color:var(--primary);margin-right:8px;"></i>' + meta.title;
+            document.getElementById('cameraModalHint').textContent = meta.hint;
+            document.getElementById('confirmBtn').innerHTML = '<i class="fas fa-check"></i> Confirm &amp; ' + meta.action;
             document.getElementById('capturedPreview').style.display = 'none';
             document.getElementById('cameraPreview').style.display = 'block';
             document.getElementById('captureBtn').style.display = 'inline-flex';
@@ -677,6 +739,10 @@
             closeCameraModal();
             if (cameraMode === 'check-out') {
                 await doCheckOut(capturedPhotoData || undefined);
+            } else if (cameraMode === 'break-start') {
+                await doBreakStart(capturedPhotoData || undefined);
+            } else if (cameraMode === 'break-end') {
+                await doBreakEnd(capturedPhotoData || undefined);
             } else {
                 await doCheckIn(capturedPhotoData || undefined);
             }
@@ -730,6 +796,7 @@
                 todayAttendance = data.attendance || null;
                 renderTodayAttendance(todayAttendance);
                 loadAttendanceStatus();
+                if (data.requiresReason) openJustifyModal('late');
             } else if (data && data.alreadyCheckedIn) {
                 // The server already has today's check-in but the current view
                 // missed it - recover immediately so Check-Out is reachable
@@ -762,6 +829,10 @@
                 showToast('Checked out successfully!' + (data.has_photo ? ' Selfie verified.' : ''), 'success');
                 todayAttendance = null;
                 await loadAttendanceStatus();
+            } else if (data && (data.requiresLateReason || data.requiresEarlyReason)) {
+                const kind = data.requiresEarlyReason ? 'early_checkout' : 'late';
+                openJustifyModal(kind, data.message);
+                showToast(data.message || 'Reason required', 'warning');
             } else {
                 showToast(data?.message || 'Check-out failed', 'error');
             }
@@ -769,11 +840,116 @@
             btn.disabled = false;
         }
 
-        async function handleBreakStart() {
+        let justifyKind = 'late';
+
+        function openJustifyModal(kind, prompt) {
+            justifyKind = kind === 'early_checkout' ? 'early_checkout' : 'late';
+            const isEarly = justifyKind === 'early_checkout';
+            document.getElementById('justifyTitle').innerHTML = '<i class="fas fa-pen" style="color:var(--primary);margin-right:8px;"></i>' + (isEarly ? 'Early checkout — reason required' : 'Late check-in — reason required');
+            const p = document.getElementById('justifyPrompt');
+            p.textContent = prompt || (isEarly
+                ? 'It is not checkout time yet. Give a reason — without it you cannot check out, and unapproved early leaving is marked half-day. Your Team Lead / Manager will review it.'
+                : 'You checked in after office start + grace. Give a reason — without it you cannot check out, and the day will be counted absent. Your Team Lead / Manager will review it.');
+            const ta = document.getElementById('justifyReason');
+            ta.value = '';
+            document.getElementById('justifyError').style.display = 'none';
+            document.getElementById('justifyModal').classList.add('active');
+        }
+
+        function closeJustifyModal() {
+            document.getElementById('justifyModal').classList.remove('active');
+        }
+
+        async function submitJustification() {
+            const ta = document.getElementById('justifyReason');
+            const errBox = document.getElementById('justifyError');
+            const reason = (ta.value || '').trim();
+            if (reason.length < 5) {
+                errBox.textContent = 'Please give a real reason (at least 5 characters).';
+                errBox.style.display = 'block';
+                return;
+            }
+            const btn = document.getElementById('justifySubmitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+            const data = await apiCall('/attendance/justify', 'POST', { reason, kind: justifyKind });
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit';
+            if (data && data.success) {
+                showToast('Reason submitted for review by your Team Lead / Manager.', 'success');
+                closeJustifyModal();
+                todayAttendance = null;
+                await loadAttendanceStatus();
+            } else {
+                errBox.textContent = (data && data.message) || 'Could not submit the reason.';
+                errBox.style.display = 'block';
+            }
+        }
+
+        let directoryCache = null;
+
+        async function openBreakReportModal() {
+            const sel = document.getElementById('breakReportTarget');
+            const errBox = document.getElementById('breakReportError');
+            if (errBox) errBox.style.display = 'none';
+            document.getElementById('breakReportNote').value = '';
+            if (!directoryCache) {
+                const data = await apiCall('/employees/directory');
+                directoryCache = (data && data.success && Array.isArray(data.employees)) ? data.employees
+                    : (data && data.success && Array.isArray(data)) ? data : [];
+            }
+            const meId = (getCurrentUser() || {}).id;
+            sel.innerHTML = '<option value="">Select an employee...</option>';
+            directoryCache
+                .filter(e => Number(e.id) !== Number(meId))
+                .forEach(e => {
+                    const o = document.createElement('option');
+                    o.value = e.id;
+                    o.textContent = ((e.first_name || '') + ' ' + (e.last_name || '')).trim()
+                        + (e.employee_id ? ' (' + e.employee_id + ')' : '');
+                    sel.appendChild(o);
+                });
+            document.getElementById('breakReportModal').classList.add('active');
+        }
+
+        function closeBreakReportModal() {
+            document.getElementById('breakReportModal').classList.remove('active');
+        }
+
+        async function submitBreakReport() {
+            const errBox = document.getElementById('breakReportError');
+            const targetId = document.getElementById('breakReportTarget').value;
+            const note = (document.getElementById('breakReportNote').value || '').trim();
+            if (!targetId) { errBox.textContent = 'Select who you are reporting about.'; errBox.style.display = 'block'; return; }
+            if (note.length < 5) { errBox.textContent = 'Please add a short note (at least 5 characters).'; errBox.style.display = 'block'; return; }
+            const btn = document.getElementById('breakReportSubmitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+            const data = await apiCall('/attendance/break-report', 'POST', { targetId: parseInt(targetId, 10), note });
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Report';
+            if (data && data.success) {
+                showToast('Report sent — admin reviews it.', 'success');
+                closeBreakReportModal();
+            } else {
+                errBox.textContent = (data && data.message) || 'Could not send the report.';
+                errBox.style.display = 'block';
+            }
+        }
+
+        function handleBreakStart() {
+            openCameraModal('break-start');
+        }
+
+        function handleBreakEnd() {
+            openCameraModal('break-end');
+        }
+
+        async function doBreakStart(photo) {
             const btn = document.getElementById('breakStartBtn');
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
             btn.disabled = true;
-            const data = await apiCall('/attendance/break-start', 'POST');
+            const data = await apiCall('/attendance/break-start', 'POST', { photo });
             if (data && data.success) {
                 showToast('Break started!', 'success');
                 todayAttendance = null;
@@ -785,11 +961,11 @@
             btn.disabled = false;
         }
 
-        async function handleBreakEnd() {
+        async function doBreakEnd(photo) {
             const btn = document.getElementById('breakEndBtn');
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ending...';
             btn.disabled = true;
-            const data = await apiCall('/attendance/break-end', 'POST');
+            const data = await apiCall('/attendance/break-end', 'POST', { photo });
             if (data && data.success) {
                 showToast('Break ended!', 'success');
                 todayAttendance = null;

@@ -7,9 +7,44 @@ const { myTreeIds } = require('./project-leads');
 const { istDateString, istTimeString, istMonth, istYear, dateOnly } = require('../utils/date');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
 const { logAudit } = require('../utils/audit');
+const { notify, notifyMany, managerIdsOf } = require('../services/notify');
 const { getWorkWeekConfig, isWeekOff } = require('../utils/workWeek');
 const { runAutoCheckout } = require('../services/attendanceAutoCheckout');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
+
+/**
+ * Decode + validate an attendance camera photo (data URL). Returns
+ * { buf, mime } or null when invalid/oversized.
+ */
+function decodePhoto(photo) {
+    const m = String(photo || '').match(/^data:image\/(jpeg|png|webp);base64,(.+)$/i);
+    if (!m) return null;
+    try {
+        const buf = Buffer.from(m[2], 'base64');
+        if (buf.length > 2 * 1024 * 1024) return null;
+        return { buf, mime: 'image/' + m[1].toLowerCase() };
+    } catch (_) { return null; }
+}
+
+/**
+ * Insert an attendance camera photo row. Returns the token, or null on error
+ * (photo failure must never break an attendance action; caller decides).
+ */
+async function saveAttendancePhoto(attId, empId, buf, type) {
+    try {
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await q(
+            `INSERT INTO attendance_photos (attendance_id, employee_id, photo, token, expires_at, type)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [attId, empId, buf, token, expiresAt, type]
+        );
+        return token;
+    } catch (e) {
+        console.error('Attendance photo save failed:', e.message);
+        return null;
+    }
+}
 
 // Self-healing query wrapper (creates missing tables/columns on cold instances).
 const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
@@ -220,7 +255,10 @@ router.post('/check-in', verifyToken, async (req, res) => {
             }
         }
 
-        res.json({ success: true, attendance, has_photo });
+        // Late check-ins (past grace) must be justified before the employee
+        // can check out — the client uses this flag to pop the mandatory
+        // reason box right after check-in.
+        res.json({ success: true, attendance, has_photo, requiresReason: attendance && attendance.status === 'late' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
     }
@@ -248,14 +286,40 @@ router.post('/check-out', verifyToken, async (req, res) => {
             // (manager mark-absent has no date guard) has no check-in yet, so it
             // must never be "closed" - that would create an impossible
             // check_out-without-check_in day.
-            'SELECT check_in, status, break_start, break_end FROM attendance WHERE employee_id = $1 AND date = $2 AND check_out IS NULL AND check_in IS NOT NULL',
+            'SELECT id, check_in, status, break_start, break_end FROM attendance WHERE employee_id = $1 AND date = $2 AND check_out IS NULL AND check_in IS NOT NULL',
             [req.user.id, today]
         );
-        
+
         if (checkIn.rows.length === 0) {
             return res.status(400).json({ success: false, message: 'No check-in found for today' });
         }
-        
+
+        // LATE-JUSTIFICATION GATE: a late check-in must be reasoned before the
+        // employee checks out. The reason stays in the TL/Manager review queue
+        // until they approve it (approve -> present; never given -> absent).
+        if (checkIn.rows[0].status === 'late') {
+            const jf = await q('SELECT id FROM attendance_justifications WHERE attendance_id = $1 AND kind = $2', [checkIn.rows[0].id, 'late']);
+            if (jf.rows.length === 0) {
+                return res.status(400).json({ success: false, requiresLateReason: true, message: 'You checked in late today — add the reason first, then check out.' });
+            }
+        }
+        // EARLY-CHECKOUT GATE: leaving before office end time needs a reason.
+        // Without manager approval the day is marked half-day on checkout.
+        if (checkIn.rows[0].status !== 'wfh') {
+            const settingsRows = await query(`SELECT setting_value FROM company_settings WHERE setting_key = 'office_end_time'`).catch(() => ({ rows: [] }));
+            const officeEnd5 = String((settingsRows.rows[0] && settingsRows.rows[0].setting_value) || '18:30');
+            const officeEndNorm = officeEnd5.length === 5 ? officeEnd5 + ':00' : officeEnd5;
+            if (now < officeEndNorm) {
+                const jf = await q('SELECT id, status FROM attendance_justifications WHERE attendance_id = $1 AND kind = $2', [checkIn.rows[0].id, 'early_checkout']);
+                if (jf.rows.length === 0) {
+                    return res.status(400).json({ success: false, requiresEarlyReason: true, message: 'It is not checkout time yet — add the reason you are leaving early (required).' });
+                }
+                if (jf.rows[0].status !== 'approved' && ['present', 'late'].includes(checkIn.rows[0].status)) {
+                    await query(`UPDATE attendance SET status = 'half-day' WHERE id = $1`, [checkIn.rows[0].id]);
+                    checkIn.rows[0].status = 'half-day';
+                }
+            }
+        }
         const checkInTime = checkIn.rows[0].check_in;
 
         // Short-day rule: a morning login that ends up working under 3 hours
@@ -352,13 +416,20 @@ router.post('/break-start', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Break already started' });
         }
 
+        // Photo mandatory: founder rule - break out/in is camera-verified.
+        const decoded = decodePhoto(req.body.photo);
+        if (!decoded) {
+            return res.status(400).json({ success: false, message: 'A selfie is required to start a break. Allow camera access and try again.' });
+        }
+
         const result = await query(
             `UPDATE attendance SET break_start = $1, break_end = NULL
-            WHERE employee_id = $2 AND date = $3 RETURNING *`,
+            WHERE employee_id = $2 AND date = $3 RETURNING id`,
             [now, req.user.id, today]
         );
+        const outToken = await saveAttendancePhoto(result.rows[0].id, req.user.id, decoded.buf, 'break_out');
 
-        res.json({ success: true, attendance: result.rows[0] });
+        res.json({ success: true, attendance: result.rows[0], break_photo_token: outToken });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
     }
@@ -372,7 +443,7 @@ router.post('/break-end', verifyToken, async (req, res) => {
         const record = await query(
             // Same guard as check-out / break-start: only a real checked-in day
             // can end a break - a pre-marked absent row has no break to end.
-            'SELECT break_start, break_log, break_end, check_out FROM attendance WHERE employee_id = $1 AND date = $2 AND check_in IS NOT NULL',
+            'SELECT id, break_start, break_log, break_end, check_out FROM attendance WHERE employee_id = $1 AND date = $2 AND check_in IS NOT NULL',
             [req.user.id, today]
         );
 
@@ -392,12 +463,23 @@ router.post('/break-end', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Break already ended' });
         }
 
-        // Atomic end: ONE guarded UPDATE appends the entry and clears the
-        // open-break columns. The WHERE guard means two concurrent break-end
-        // requests can never lose an entry to a read-modify-write race (the
-        // old code read the log, pushed, and blindly overwrote it) or record
-        // the same break twice - exactly one wins, the loser matches 0 rows.
-        const entry = JSON.stringify({ start: record.rows[0].break_start, end: now });
+        // Photo mandatory: founder rule - break out/in is camera-verified.
+        const decoded = decodePhoto(req.body.photo);
+        if (!decoded) {
+            return res.status(400).json({ success: false, message: 'A selfie is required to end a break. Allow camera access and try again.' });
+        }
+
+        // Pair the latest unmatched break_out photo so the log entry carries
+        // both tokens (start + end) for the report/admin views.
+        const outPhoto = await q(
+            `SELECT token FROM attendance_photos
+             WHERE attendance_id = $1 AND type = 'break_out'
+             ORDER BY id DESC LIMIT 1`,
+            [record.rows[0].id]
+        );
+        const outToken = outPhoto.rows.length ? outPhoto.rows[0].token : null;
+        const inToken = crypto.randomBytes(32).toString('hex');
+        const entry = JSON.stringify({ start: record.rows[0].break_start, end: now, out_photo: outToken, in_photo: inToken });
         const result = await query(
             `UPDATE attendance
              SET break_log = CASE
@@ -418,7 +500,13 @@ router.post('/break-end', verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Break already ended' });
         }
 
-        res.json({ success: true, attendance: result.rows[0] });
+        await q(
+            `INSERT INTO attendance_photos (attendance_id, employee_id, photo, token, expires_at, type)
+             VALUES ($1, $2, $3, $4, $5, 'break_in')`,
+            [record.rows[0].id, req.user.id, decoded.buf, inToken, new Date(Date.now() + 24 * 60 * 60 * 1000)]
+        ).catch(e => { console.error('break_in photo save failed:', e.message); });
+
+        res.json({ success: true, attendance: result.rows[0], break_photo_token: inToken });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
     }
@@ -731,11 +819,13 @@ router.get('/my', verifyToken, async (req, res) => {
                 a.remarks, a.created_at, a.break_start, a.break_end, a.break_log,
                 a.check_in_location, a.check_out_location,
                 a.auto_checkout, a.auto_checkout_at, a.checkout_miss_reason, a.checkout_miss_reason_at,
+                aj.status AS justification_status, aj.reason AS justification_reason,
                 CASE WHEN apci.id IS NOT NULL THEN 1 ELSE 0 END as has_photo_checkin,
                 CASE WHEN apco.id IS NOT NULL THEN 1 ELSE 0 END as has_photo_checkout
             FROM attendance a
             LEFT JOIN attendance_photos apci ON apci.token = a.photo_token
             LEFT JOIN attendance_photos apco ON apco.token = a.photo_token_checkout
+            LEFT JOIN attendance_justifications aj ON aj.attendance_id = a.id AND aj.kind = 'late'
             WHERE a.employee_id = $1`;
         const params = [req.user.id];
         
@@ -1243,6 +1333,302 @@ router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
 // @route   GET /api/attendance/photo/:token
 // @desc    Serve check-in photo once, then delete it (one-time view)
 // @access  Admin/HR only
+/**
+ * POST /api/attendance/justify
+ * Employee files the reason for a late check-in (or why they are leaving
+ * early). One row per (attendance, kind); re-filing overwrites the previous
+ * reason and resets the review to pending. TL / Manager reviews.
+ * body: { reason: string, kind?: 'late' | 'early_checkout' }
+ */
+router.post('/justify', verifyToken, async (req, res) => {
+    try {
+        if (req.user.role === 'admin') {
+            return res.status(400).json({ success: false, message: 'Attendance is not tracked for admin accounts' });
+        }
+        const { reason, kind } = req.body;
+        const targetKind = kind === 'early_checkout' ? 'early_checkout' : 'late';
+        const text = String(reason || '').trim();
+        if (text.length < 5) return res.status(400).json({ success: false, message: 'Please give a real reason (at least 5 characters).' });
+        if (text.length > 1000) return res.status(400).json({ success: false, message: 'Reason must be 1000 characters or fewer' });
+
+        const today = istDateString();
+        const row = await q('SELECT id FROM attendance WHERE employee_id = $1 AND date = $2 AND check_in IS NOT NULL', [req.user.id, today]);
+        if (row.rows.length === 0) return res.status(400).json({ success: false, message: 'No attendance record found for today' });
+
+        const attId = row.rows[0].id;
+        await q(
+            `INSERT INTO attendance_justifications (attendance_id, employee_id, kind, reason, status, reviewed_by, reviewed_at, review_note)
+             VALUES ($1, $2, $3, $4, 'pending', NULL, NULL, NULL)
+             ON CONFLICT (attendance_id, kind)
+             DO UPDATE SET reason = EXCLUDED.reason, status = 'pending', reviewed_by = NULL, reviewed_at = NULL, review_note = NULL, created_at = NOW()`,
+            [attId, req.user.id, targetKind, text]
+        );
+
+        const mgrs = await managerIdsOf(req.user.id).catch(() => []);
+        if (mgrs.length) {
+            await notifyMany(mgrs, {
+                type: targetKind === 'late' ? 'late_reason_submitted' : 'early_checkout_submitted',
+                title: targetKind === 'late' ? 'Late check-in — reason needs review' : 'Early checkout — reason needs review',
+                body: text.length > 140 ? text.slice(0, 140) + '…' : text,
+                url: targetKind === 'late' ? '/admin/attendance' : '/admin/attendance',
+                entityType: 'attendance',
+                entityId: attId,
+                actorId: req.user.id
+            }).catch(() => {});
+        }
+
+        logAudit({ actorId: req.user.id, action: targetKind === 'late' ? 'attendance.justify_late' : 'attendance.justify_early_checkout', entityType: 'attendance', entityId: attId, details: { kind: targetKind }, ip: req.ip });
+        res.json({ success: true, message: 'Reason submitted for review.' });
+    } catch (error) {
+        console.error('Justify error:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
+    }
+});
+
+/**
+ * GET /api/attendance/justifications?status=pending|approved|rejected
+ * Review queue for TL / Manager / Admin / HR. admin/hr see company-wide;
+ * team_lead/manager are scoped to their own reporting tree.
+ */
+router.get('/justifications', verifyToken, isManager, async (req, res) => {
+    try {
+        const { status } = req.query;
+        if (status && !['pending', 'approved', 'rejected'].includes(status)) {
+            return res.status(400).json({ success: false, message: 'Invalid status filter' });
+        }
+        const wanted = status || 'pending';
+        const isHrAdmin = req.user.role === 'admin' || req.user.role === 'hr';
+        const params = [wanted];
+        let where = `aj.status = $1`;
+        if (!isHrAdmin) {
+            if (!['manager', 'team_lead'].includes(req.user.role)) return res.status(403).json({ success: false, message: 'Forbidden' });
+            const tree = Array.from(await myTreeIds(req.user.id));
+            if (tree.length === 0) return res.json({ success: true, justifications: [] });
+            params.push(tree);
+            where += ` AND aj.employee_id = ANY($2::int[])`;
+        }
+        const result = await q(
+            `SELECT aj.id, aj.attendance_id, aj.kind, aj.reason, aj.status, aj.review_note, aj.created_at, aj.reviewed_at,
+                    a.date, a.status AS attendance_status, a.check_in,
+                    e.first_name, e.last_name, e.employee_id AS emp_code
+             FROM attendance_justifications aj
+             JOIN attendance a ON a.id = aj.attendance_id
+             JOIN employees e ON e.id = aj.employee_id
+             WHERE ${where}
+             ORDER BY aj.created_at DESC
+             LIMIT 100`,
+            params
+        );
+        res.json({ success: true, justifications: result.rows });
+    } catch (error) {
+        console.error('List justifications error:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
+    }
+});
+
+/**
+ * POST /api/attendance/justifications/:id/review
+ * body: { decision: 'approve' | 'reject', note?: string }
+ * Approve (late or early_checkout) -> attendance.status = 'present'.
+ * Reject (late) -> attendance.status = 'absent'.
+ * Reject (early_checkout) -> stays 'half-day'. TOCTOU-safe.
+ */
+router.post('/justifications/:id/review', verifyToken, isManager, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'Invalid justification id' });
+        const { decision, note } = req.body;
+        if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ success: false, message: "decision must be 'approve' or 'reject'" });
+        const reviewNote = note ? String(note).trim().slice(0, 500) : null;
+
+        const cur = await q(
+            `SELECT aj.id, aj.kind, aj.employee_id, aj.attendance_id, aj.status,
+                    a.date
+             FROM attendance_justifications aj
+             JOIN attendance a ON a.id = aj.attendance_id
+             WHERE aj.id = $1`,
+            [id]
+        );
+        if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Justification not found' });
+        const row = cur.rows[0];
+
+        // Team scoping: admin/hr company-wide; manager/team_lead own tree only.
+        const isHrAdmin = req.user.role === 'admin' || req.user.role === 'hr';
+        if (!isHrAdmin) {
+            const tree = await myTreeIds(req.user.id);
+            if (!tree.has(row.employee_id)) return res.status(403).json({ success: false, message: 'You can only review your own reporting tree' });
+        }
+
+        // TOCTOU-safe: only a still-pending row can transition.
+        const newStatus = decision === 'approve' ? 'approved' : 'rejected';
+        const upd = await q(
+            `UPDATE attendance_justifications
+             SET status = $1, reviewed_by = $2, reviewed_at = NOW(), review_note = $3
+             WHERE id = $4 AND status = 'pending'`,
+            [newStatus, req.user.id, reviewNote, id]
+        );
+        if (upd.rowCount === 0) {
+            return res.status(409).json({ success: false, message: 'This request was already reviewed. Please reload.' });
+        }
+
+        // Write back the attendance verdict.
+        if (decision === 'approve') {
+            await q(`UPDATE attendance SET status = 'present' WHERE id = $1`, [row.attendance_id]);
+        } else if (row.kind === 'late') {
+            await q(`UPDATE attendance SET status = 'absent' WHERE id = $1`, [row.attendance_id]);
+        }
+
+        // Notify the employee of the outcome.
+        const employeeName = 'You';
+        await notify({
+            employeeId: row.employee_id,
+            type: decision === 'approve' ? 'justification_approved' : 'justification_rejected',
+            title: decision === 'approve' ? 'Your attendance reason was approved' : 'Your attendance reason was rejected',
+            body: decision === 'approve'
+                ? (row.kind === 'late' ? `Late check-in on ${dateOnly(row.date)} approved — counted as present.` : `Early checkout on ${dateOnly(row.date)} approved — day counted.`)
+                : (row.kind === 'late' ? `Late check-in on ${dateOnly(row.date)} rejected — counted as absent.` : `Early checkout on ${dateOnly(row.date)} rejected — day counted as half-day.`),
+            url: '/employee/attendance',
+            entityType: 'attendance',
+            entityId: row.attendance_id,
+            actorId: req.user.id
+        }).catch(() => {});
+
+        logAudit({ actorId: req.user.id, action: decision === 'approve' ? 'attendance.justify_approve' : 'attendance.justify_reject', entityType: 'attendance_justifications', entityId: id, details: { kind: row.kind, attendanceId: row.attendance_id, note: reviewNote }, ip: req.ip });
+        res.json({ success: true, message: decision === 'approve' ? 'Approved — day marked present.' : 'Rejected.' });
+    } catch (error) {
+        console.error('Review justification error:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
+    }
+});
+
+/**
+ * POST /api/attendance/break-report
+ * Any staff member reports an employee taking an unauthorized break.
+ * Log + alert only; admin reviews; no automatic penalty.
+ * body: { targetId: number, note: string }
+ */
+router.post('/break-report', verifyToken, async (req, res) => {
+    try {
+        if (req.user.role === 'admin') {
+            return res.status(400).json({ success: false, message: 'Admin accounts review reports — use the admin queue' });
+        }
+        const targetId = parseInt(req.body.targetId, 10);
+        if (isNaN(targetId) || targetId <= 0) return res.status(400).json({ success: false, message: 'Select who you are reporting' });
+        const note = String(req.body.note || '').trim();
+        if (note.length < 5) return res.status(400).json({ success: false, message: 'Please add a short note (at least 5 characters)' });
+        if (note.length > 1000) return res.status(400).json({ success: false, message: 'Note must be 1000 characters or fewer' });
+        if (targetId === Number(req.user.id)) return res.status(400).json({ success: false, message: 'You cannot report yourself' });
+        const target = await q('SELECT id FROM employees WHERE id = $1 AND status = $2', [targetId, 'active']);
+        if (target.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found or inactive' });
+        const ins = await q(
+            `INSERT INTO break_reports (reporter_id, target_employee_id, note)
+             VALUES ($1, $2, $3) RETURNING id`,
+            [req.user.id, targetId, note]
+        );
+        const admins = await q(`SELECT id FROM employees WHERE role = 'admin' AND status = 'active'`);
+        const reporterName = req.user.name || req.user.employee_id || 'A colleague';
+        for (const a of admins.rows) {
+            await notify({
+                employeeId: a.id,
+                type: 'break_reported',
+                title: 'Break report filed',
+                body: reporterName + ' reported an unauthorized break. Please review.',
+                url: '/admin/attendance',
+                entityType: 'break_report',
+                entityId: ins.rows[0].id,
+                actorId: req.user.id
+            }).catch(() => {});
+        }
+        logAudit({ actorId: req.user.id, action: 'break.report', entityType: 'break_reports', entityId: ins.rows[0].id, details: { targetId }, ip: req.ip });
+        res.status(201).json({ success: true, message: 'Report sent to admin for review.' });
+    } catch (error) {
+        console.error('Break-report error:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
+    }
+});
+
+/**
+ * GET /api/attendance/break-reports?status=pending|reviewed
+ * Admin/HR see all; manager/team_lead are scoped to their reporting tree.
+ */
+router.get('/break-reports', verifyToken, isManager, async (req, res) => {
+    try {
+        const { status } = req.query;
+        if (status && !['pending', 'reviewed'].includes(status)) {
+            return res.status(400).json({ success: false, message: 'Invalid status filter' });
+        }
+        const wanted = status || 'pending';
+        const isHrAdmin = req.user.role === 'admin' || req.user.role === 'hr';
+        const params = [wanted];
+        let where = 'br.status = $1';
+        if (!isHrAdmin) {
+            const tree = Array.from(await myTreeIds(req.user.id));
+            if (tree.length === 0) return res.json({ success: true, reports: [] });
+            params.push(tree);
+            where += ' AND br.target_employee_id = ANY($2::int[])';
+        }
+        const result = await q(
+            `SELECT br.id, br.note, br.status, br.admin_note, br.created_at, br.reviewed_at,
+                    rep.first_name AS reporter_first, rep.last_name AS reporter_last,
+                    tgt.first_name AS target_first, tgt.last_name AS target_last, tgt.employee_id AS target_code
+             FROM break_reports br
+             JOIN employees rep ON rep.id = br.reporter_id
+             JOIN employees tgt ON tgt.id = br.target_employee_id
+             WHERE ${where}
+             ORDER BY br.created_at DESC
+             LIMIT 100`,
+            params
+        );
+        res.json({ success: true, reports: result.rows });
+    } catch (error) {
+        console.error('List break-reports error:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
+    }
+});
+
+/**
+ * PUT /api/attendance/break-reports/:id/review
+ * Admin/HR marks a report reviewed. body: { admin_note?: string }
+ */
+router.put('/break-reports/:id/review', verifyToken, isAdminOrHr, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'Invalid report id' });
+        const note = req.body.admin_note ? String(req.body.admin_note).trim().slice(0, 500) : null;
+        const upd = await q(
+            `UPDATE break_reports
+             SET status = 'reviewed', reviewed_by = $1, reviewed_at = NOW(), admin_note = $2
+             WHERE id = $3 AND status = 'pending'`,
+            [req.user.id, note, id]
+        );
+        if (upd.rowCount === 0) return res.status(409).json({ success: false, message: 'This report was already reviewed' });
+        const r = await q('SELECT reporter_id FROM break_reports WHERE id = $1', [id]);
+        if (r.rows.length) {
+            await notify({
+                employeeId: r.rows[0].reporter_id,
+                type: 'break_report_reviewed',
+                title: 'Your break report was reviewed',
+                body: 'Admin reviewed your report.',
+                url: '/employee/dashboard',
+                entityType: 'break_report',
+                entityId: id,
+                actorId: req.user.id
+            }).catch(() => {});
+        }
+        logAudit({ actorId: req.user.id, action: 'break.reviewed', entityType: 'break_reports', entityId: id, details: { admin_note: note }, ip: req.ip });
+        res.json({ success: true, message: 'Report marked reviewed.' });
+    } catch (error) {
+        console.error('Review break-report error:', error);
+        const r = pgErrorResponse(error);
+        res.status(r.status).json({ success: false, message: r.message });
+    }
+});
+
 router.get('/photo/:token', verifyToken, isAdminOrHr, async (req, res) => {
     try {
         const result = await q(

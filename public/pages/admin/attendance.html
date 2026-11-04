@@ -189,6 +189,30 @@
                     <div style="text-align:center;padding:30px;color:var(--text-secondary);"><div class="spinner" style="margin:0 auto;"></div></div>
                 </div>
             </div>
+
+            <div class="card slide-up" style="margin-top:24px;">
+                <div class="card-header">
+                    <h3 style="font-weight:600;font-size:1.05rem;"><i class="fas fa-person-walking-arrow-right" style="color:var(--danger);margin-right:8px;"></i>Pending Attendance Reasons (Late / Early checkout)</h3>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <button class="btn btn-sm btn-secondary" onclick="loadJustRequests()"><i class="fas fa-sync"></i> Refresh</button>
+                    </div>
+                </div>
+                <div id="justRequestsContainer">
+                    <div style="text-align:center;padding:30px;color:var(--text-secondary);"><div class="spinner" style="margin:0 auto;"></div></div>
+                </div>
+            </div>
+
+            <div class="card slide-up" style="margin-top:24px;">
+                <div class="card-header">
+                    <h3 style="font-weight:600;font-size:1.05rem;"><i class="fas fa-triangle-exclamation" style="color:var(--warning);margin-right:8px;"></i>Break Reports (reported by staff)</h3>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <button class="btn btn-sm btn-secondary" onclick="loadBreakReports()"><i class="fas fa-sync"></i> Refresh</button>
+                    </div>
+                </div>
+                <div id="breakReportsContainer">
+                    <div style="text-align:center;padding:30px;color:var(--text-secondary);"><div class="spinner" style="margin:0 auto;"></div></div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -210,6 +234,25 @@
                 <div style="display:flex;gap:10px;justify-content:flex-end;">
                     <button class="btn btn-secondary" onclick="closeRegReviewModal()">Cancel</button>
                     <button class="btn btn-primary" id="regReviewConfirmBtn" onclick="confirmRegReview()">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="justReviewModal" onclick="if(event.target===this)closeJustReviewModal()">
+        <div class="modal-content" style="max-width:440px;">
+            <div class="modal-header">
+                <h2 id="justReviewTitle">Review Reason</h2>
+                <button onclick="closeJustReviewModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="justReviewInfo" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;"></p>
+                <div class="form-group">
+                    <label>Review note (optional)</label>
+                    <textarea id="justReviewNote" class="form-control" rows="2" maxlength="500"></textarea>
+                </div>
+                <div style="display:flex;gap:10px;justify-content:flex-end;" id="justReviewActions">
+                    <button class="btn btn-secondary" onclick="closeJustReviewModal()">Cancel</button>
                 </div>
             </div>
         </div>
@@ -372,6 +415,8 @@
             loadRecentLogs();
             loadLateWarning();
             loadRegRequests();
+            loadJustRequests();
+            loadBreakReports();
         });
 
         async function loadDesignationFilter() {
@@ -700,6 +745,109 @@
                 container.innerHTML = html;
             } else {
                 showEmptyState(container, 'fa-clock', 'No Records', 'No recent attendance logs');
+            }
+        }
+
+        // ---- Pending Attendance Reasons (Late / Early checkout) ----
+        let pendingJustReview = null;
+        async function loadJustRequests() {
+            const container = document.getElementById('justRequestsContainer');
+            const data = await apiCall('/attendance/justifications');
+            if (!data || !data.success) {
+                container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary);">Could not load reasons.</div>';
+                return;
+            }
+            const list = data.justifications || [];
+            if (list.length === 0) {
+                container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary);">No pending attendance reasons.</div>';
+                return;
+            }
+            let html = '<div class="table-container"><table><thead><tr><th>Employee</th><th>Date</th><th>Type</th><th>Reason</th><th>Action</th></tr></thead><tbody>';
+            list.forEach(j => {
+                const name = ((j.first_name || '') + ' ' + (j.last_name || '')).trim();
+                html += '<tr><td>' + escapeHtml(name) + '</td><td>' + formatDate(j.date) + '</td><td>' + escapeHtml(j.kind === 'late' ? 'Late check-in' : 'Early checkout') + '</td><td style="font-size:0.8rem;">' + escapeHtml(j.reason || '') + '</td>'
+                    + '<td><button class="btn btn-sm btn-success" onclick="openJustReview(' + j.id + ', \'approved\')" title="Approve"><i class="fas fa-check"></i></button> '
+                    + '<button class="btn btn-sm btn-danger" onclick="openJustReview(' + j.id + ', \'rejected\')" title="Reject"><i class="fas fa-times"></i></button></td></tr>';
+            });
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        let justReviewMode = null; // 'justification' | 'break-report'
+        function openJustReview(id, status, extra) {
+            pendingJustReview = { id, status, mode: extra && extra.kind ? 'justification' : 'justification' };
+            const kind = extra && extra.kind;
+            document.getElementById('justReviewTitle').textContent = (status === 'approved' ? 'Approve' : 'Reject') + ' Reason';
+            document.getElementById('justReviewInfo').textContent = kind === 'early_checkout'
+                ? 'Approve -> the day counts as present; reject -> it stays half-day.'
+                : 'Approve -> the day counts as present; reject -> it counts as absent.';
+            document.getElementById('justReviewNote').value = '';
+            document.getElementById('justReviewActions').innerHTML =
+                '<button class="btn btn-secondary" onclick="closeJustReviewModal()">Cancel</button>'
+                + '<button class="btn btn-danger" id="justSubmitBtnRej" onclick="submitJustReview(\'reject\')"><i class="fas fa-times"></i> Reject</button>'
+                + '<button class="btn btn-success" id="justSubmitBtnAcc" onclick="submitJustReview(\'approve\')"><i class="fas fa-check"></i> Approve</button>';
+            document.getElementById('justReviewModal').classList.add('active');
+        }
+
+        async function submitJustReview(decision) {
+            if (!pendingJustReview) return;
+            const note = document.getElementById('justReviewNote').value.trim();
+            const data = await apiCall('/attendance/justifications/' + pendingJustReview.id + '/review', 'POST', { decision, note });
+            closeJustReviewModal();
+            if (data && data.success) {
+                showToast(decision === 'approve' ? 'Approved — day marked present.' : 'Rejected.', 'success');
+                loadJustRequests();
+            } else {
+                showToast((data && data.message) || 'Failed to update request', 'error');
+            }
+        }
+
+        // ---- Break Reports (log + alert only) ----
+        let justReviewBreakId = null;
+        async function loadBreakReports() {
+            const container = document.getElementById('breakReportsContainer');
+            const data = await apiCall('/attendance/break-reports');
+            if (!data || !data.success) {
+                container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary);">Could not load break reports.</div>';
+                return;
+            }
+            const list = data.reports || [];
+            if (list.length === 0) {
+                container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary);">No break reports.</div>';
+                return;
+            }
+            let html = '<div class="table-container"><table><thead><tr><th>Reporter</th><th>Reported</th><th>Date</th><th>Note</th><th>Action</th></tr></thead><tbody>';
+            list.forEach(r => {
+                const reporter = ((r.reporter_first || '') + ' ' + (r.reporter_last || '')).trim();
+                const target = ((r.target_first || '') + ' ' + (r.target_last || '')).trim();
+                html += '<tr><td>' + escapeHtml(reporter) + '</td><td>' + escapeHtml(target) + '</td><td>' + formatDate(r.created_at) + '</td><td style="font-size:0.8rem;">' + escapeHtml(r.note || '') + '</td>'
+                    + '<td><button class="btn btn-sm btn-secondary" onclick="openBreakReportReview(' + r.id + ')" title="Mark reviewed"><i class="fas fa-check"></i></button></td></tr>';
+            });
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        function openBreakReportReview(id) {
+            pendingJustReview = { id, status: 'reviewed', mode: 'break-report' };
+            document.getElementById('justReviewTitle').textContent = 'Mark report reviewed';
+            document.getElementById('justReviewInfo').textContent = 'Log + alert only — no automatic penalty is applied.';
+            document.getElementById('justReviewNote').value = '';
+            document.getElementById('justReviewActions').innerHTML =
+                '<button class="btn btn-secondary" onclick="closeJustReviewModal()">Cancel</button>'
+                + '<button class="btn btn-primary" id="justSubmitBtn" onclick="submitBreakReportReview()"><i class="fas fa-check"></i> Mark reviewed</button>';
+            document.getElementById('justReviewModal').classList.add('active');
+        }
+
+        async function submitBreakReportReview() {
+            if (!pendingJustReview) return;
+            const note = document.getElementById('justReviewNote').value.trim();
+            const data = await apiCall('/attendance/break-reports/' + pendingJustReview.id + '/review', 'PUT', { admin_note: note });
+            closeJustReviewModal();
+            if (data && data.success) {
+                showToast('Report marked reviewed.', 'success');
+                loadBreakReports();
+            } else {
+                showToast((data && data.message) || 'Failed to update report', 'error');
             }
         }
 

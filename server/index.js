@@ -301,6 +301,39 @@ async function runMigrations() {
         )`);
         await query(`CREATE INDEX IF NOT EXISTS idx_attendance_photos_token ON attendance_photos(token)`);
         await query(`CREATE INDEX IF NOT EXISTS idx_attendance_photos_expires ON attendance_photos(expires_at)`);
+        // Widen the photo type CHECK for camera-verified breaks (idempotent).
+        await query(`ALTER TABLE attendance_photos DROP CONSTRAINT IF EXISTS attendance_photos_type_check`);
+        await query(`ALTER TABLE attendance_photos ADD CONSTRAINT attendance_photos_type_check CHECK (type IN ('check_in','check_out','break_out','break_in'))`);
+        // Late check-in / early check-out justifications (reviewed by TL/Manager).
+        await query(`CREATE TABLE IF NOT EXISTS attendance_justifications (
+            id SERIAL PRIMARY KEY,
+            attendance_id INT NOT NULL REFERENCES attendance(id) ON DELETE CASCADE,
+            employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            kind VARCHAR(20) NOT NULL CHECK (kind IN ('late','early_checkout')),
+            reason TEXT NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+            reviewed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            reviewed_at TIMESTAMP,
+            review_note TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE (attendance_id, kind)
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_aj_status ON attendance_justifications(status, created_at DESC)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_aj_employee ON attendance_justifications(employee_id)`);
+        // Break reports by any staff member (log + alert only; admin reviews).
+        await query(`CREATE TABLE IF NOT EXISTS break_reports (
+            id SERIAL PRIMARY KEY,
+            reporter_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            target_employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            note TEXT NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','reviewed')),
+            admin_note TEXT,
+            reviewed_by INT REFERENCES employees(id) ON DELETE SET NULL,
+            reviewed_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_br_status ON break_reports(status, created_at DESC)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_br_target ON break_reports(target_employee_id)`);
         console.log('[Migration] Multi-approver columns ensured.');
     } catch (e) { console.warn('[Migration] Multi-approver columns skipped:', e.message); }
 
