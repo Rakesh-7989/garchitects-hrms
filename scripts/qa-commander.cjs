@@ -402,6 +402,25 @@ async function stageRbac() {
     }
     console.log(`[rbac] world seeded: ${ROLES.join(', ')} + permEmp + targetEmp (${isLive ? 'live' : 'hermetic'})`);
 
+    // Seeded users are created with must_change_password=1; without clearing it
+    // every non-admin probe returns 403 PASSWORD_CHANGE_REQUIRED regardless of
+    // role — i.e. the whole matrix would only assert the password gate, never
+    // the actual RBAC rules. Clear it the same way a real first login does:
+    // PUT /api/auth/change-password, then re-login per role to pick up the
+    // rotated token. (Admin is exempt from the gate, so it is skipped.)
+    for (const role of ROLES) {
+        if (role === 'admin') continue;
+        const w = world[role];
+        const lr = await apiCall(base, 'POST', '/api/auth/login', null, { employee_id: w.employee_id, password: w.password, portal: 'employee' });
+        const tok = lr.json && lr.json.token;
+        if (!tok) { record('rbac', `changepw ${role}`, false, `login HTTP ${lr.status}`); continue; }
+        const newPw = w.password + 'X';
+        const cr = await apiCall(base, 'PUT', '/api/auth/change-password', tok, { current_password: w.password, new_password: newPw });
+        if (!(cr.status >= 200 && cr.status < 300)) record('rbac', `changepw ${role}`, false, `change HTTP ${cr.status}`);
+        else record('rbac', `changepw ${role}`, true, 'forced password change cleared');
+        w.password = newPw;
+    }
+
     // ---- logins ----
     // Portal role enforcement (server/routes/auth.js): admin accounts MUST use
     // the 'admin' portal, everyone else 'employee' - a mismatch 403s.
