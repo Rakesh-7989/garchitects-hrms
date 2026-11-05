@@ -670,8 +670,9 @@ router.post('/', verifyToken, isAdminOrHr, validateEmployee, async (req, res) =>
 
     } catch (error) {
         console.error('Create employee error:', error);
-        const mapped = pgErrorResponse(error);
-        res.status(mapped.status).json({ success: false, message: mapped.message });
+        // TEMP DIAGNOSTIC (revert after root-cause): surface the raw error
+        // so we can see exactly what is thrown inside createEmployeeRecord.
+        res.status(500).json({ success: false, message: 'Server error', debug: { message: error && error.message, code: error && error.code, constraint: error && error.constraint, detail: error && error.detail, stack: error && error.stack } });
     }
 });
 
