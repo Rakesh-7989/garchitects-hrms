@@ -509,11 +509,16 @@ async function createEmployeeRecord(body, req) {
         permanent_address, languages_spoken, marital_status, personal_email,
         qualification, specialization, pan_number, aadhaar_number, passport_number,
         uan_number, pf_number, esi_number,
-        bank_name, bank_branch, bank_account, bank_ifsc, reporting_manager_id,
+        bank_name, bank_branch, bank_account, bank_ifsc,
         basic_salary, hra, conveyance, medical, special_allowance, other_allowance,
         pf, esi, professional_tax, income_tax, loan_deduction, advance_salary, other_deduction,
         incentive, bonus, extra_work, employer_pf, employer_esi, employer_contribution
     } = body;
+
+    // reporting_manager_id keeps a different type than the raw body value
+    // (string | array | null) and gets reassigned below — keep it separate
+    // from the const destructure so assignment stays legal.
+    let reporting_manager_id = body.reporting_manager_id ?? null;
 
     // Accept reporting_manager_id as string or array (multi-select from frontend)
     let reporting_manager_id_raw = reporting_manager_id;
@@ -670,9 +675,8 @@ router.post('/', verifyToken, isAdminOrHr, validateEmployee, async (req, res) =>
 
     } catch (error) {
         console.error('Create employee error:', error);
-        // TEMP DIAGNOSTIC (revert after root-cause): surface the raw error
-        // so we can see exactly what is thrown inside createEmployeeRecord.
-        res.status(500).json({ success: false, message: 'Server error', debug: { message: error && error.message, code: error && error.code, constraint: error && error.constraint, detail: error && error.detail, stack: error && error.stack } });
+        const mapped = pgErrorResponse(error);
+        res.status(mapped.status).json({ success: false, message: mapped.message });
     }
 });
 
