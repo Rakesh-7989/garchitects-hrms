@@ -402,34 +402,34 @@ async function stageRbac() {
     }
     console.log(`[rbac] world seeded: ${ROLES.join(', ')} + permEmp + targetEmp (${isLive ? 'live' : 'hermetic'})`);
 
-    // Seeded users are created with must_change_password=1; without clearing it
-    // every non-admin probe returns 403 PASSWORD_CHANGE_REQUIRED regardless of
-    // role — i.e. the whole matrix would only assert the password gate, never
-    // the actual RBAC rules. Clear it the same way a real first login does:
-    // PUT /api/auth/change-password, then re-login per role to pick up the
-    // rotated token. (Admin is exempt from the gate, so it is skipped.)
-    for (const role of ROLES) {
-        if (role === 'admin') continue;
-        const w = world[role];
-        const lr = await apiCall(base, 'POST', '/api/auth/login', null, { employee_id: w.employee_id, password: w.password, portal: 'employee' });
-        const tok = lr.json && lr.json.token;
-        if (!tok) { record('rbac', `changepw ${role}`, false, `login HTTP ${lr.status}`); continue; }
-        const newPw = w.password + 'X';
-        const cr = await apiCall(base, 'PUT', '/api/auth/change-password', tok, { current_password: w.password, new_password: newPw });
-        if (!(cr.status >= 200 && cr.status < 300)) record('rbac', `changepw ${role}`, false, `change HTTP ${cr.status}`);
-        else record('rbac', `changepw ${role}`, true, 'forced password change cleared');
-        w.password = newPw;
-    }
-
-    // ---- logins ----
     // Portal role enforcement (server/routes/auth.js): admin accounts MUST use
     // the 'admin' portal, everyone else 'employee' - a mismatch 403s.
+    // Seeded users are also created with must_change_password=1; without
+    // clearing it every non-admin probe returns 403 PASSWORD_CHANGE_REQUIRED
+    // regardless of role — i.e. the whole matrix would only assert the
+    // password gate. Clear it on first login the way a real login does.
+    // Token budget is tiny (10/15min per network), so each role logs in
+    // exactly twice at most, no more.
     const tokens = {};
     for (const role of ROLES) {
+        const w = world[role];
         const portal = role === 'admin' ? 'admin' : 'employee';
-        const r = await apiCall(base, 'POST', '/api/auth/login', null, { employee_id: world[role].employee_id, password: world[role].password, portal });
-        tokens[role] = (r.json && r.json.token) || null;
-        record('rbac', `login ${role}`, !!tokens[role], `HTTP ${r.status}`);
+        const lr = await apiCall(base, 'POST', '/api/auth/login', null, { employee_id: w.employee_id, password: w.password, portal });
+        tokens[role] = (lr.json && lr.json.token) || null;
+        record('rbac', `login ${role}`, !!tokens[role], `HTTP ${lr.status}`);
+        if (!tokens[role] || role === 'admin') continue; // admin bypasses the password gate
+        const newPw = w.password + 'X';
+        const cr = await apiCall(base, 'PUT', '/api/auth/change-password', tokens[role], { current_password: w.password, new_password: newPw });
+        if (!(cr.status >= 200 && cr.status < 300) || !cr.json || !cr.json.token) {
+            record('rbac', `changepw ${role}`, false, `change HTTP ${cr.status}`);
+            continue;
+        }
+        record('rbac', `changepw ${role}`, true, 'forced password change cleared');
+        w.password = newPw;
+        // The change-password call rotates token_version — use the token the
+        // server just returned instead of a second login (saves ~4 logins
+        // against the tiny limiter budget).
+        tokens[role] = cr.json.token;
     }
 
     // ---- no-token sweep ----
