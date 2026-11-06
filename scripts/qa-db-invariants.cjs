@@ -78,7 +78,7 @@ function recomputeHours(row) {
     return toSec(row.check_out) - toSec(row.check_in) - breaks;
 }
 
-const SETTING_KEYS = ['office_end_time', 'checkout_grace_minutes'];
+const SETTING_KEYS = ['office_end_time', 'office_start_time', 'checkout_grace_minutes'];
 const settingsBackup = {};
 async function saveSetting(key) {
     const r = await pool.query('SELECT setting_value FROM company_settings WHERE setting_key = $1', [key]);
@@ -161,10 +161,14 @@ async function main() {
     );
     world.emp = { id: empRes.rows[0].id, employee_id: `qa${ts}emp`, password: 'Qa!' + ts + 'emp' };
 
-    // Pin office end far in the future so no test row auto-closes mid-flow.
+    // Pin office hours at 00:00 so every flow is always "present check-in,
+    // never early" (late/early justifications are exercised in the
+    // justifications harness) and runAutoCheckout never fires mid-flow —
+    // deadline = 00:00 + 9999 minutes ≈ 7 days away.
     for (const key of SETTING_KEYS) await saveSetting(key);
-    await setSetting('office_end_time', '23:59');
-    await setSetting('checkout_grace_minutes', '120');
+    await setSetting('office_start_time', '23:59');
+    await setSetting('office_end_time', '00:00');
+    await setSetting('checkout_grace_minutes', '9999');
 
     console.log('[QA] throwaway world:', Object.fromEntries(Object.entries(world).map(([k, v]) => [k, v.id])));
 
@@ -300,9 +304,9 @@ async function main() {
     const LOC = '17.4255,78.4378';
     const ci = await api('POST', '/api/attendance/check-in', empT, { location: LOC, photo: tinyPng });
     check('A3: check-in → 200', ci.status === 200 && !!(ci.json && ci.json.success), ci.json);
-    const bs = await api('POST', '/api/attendance/break-start', empT, {});
+    const bs = await api('POST', '/api/attendance/break-start', empT, { photo: tinyPng });
     check('A3: break-start → 200', bs.status === 200 && !!(bs.json && bs.json.success), bs.json);
-    const be = await api('POST', '/api/attendance/break-end', empT, {});
+    const be = await api('POST', '/api/attendance/break-end', empT, { photo: tinyPng });
     check('A4: break-end → 200', be.status === 200 && !!(be.json && be.json.success), be.json);
     const co = await api('POST', '/api/attendance/check-out', empT, { location: LOC, photo: tinyPng });
     check('A4: check-out → 200', co.status === 200 && !!(co.json && co.json.success), co.json);

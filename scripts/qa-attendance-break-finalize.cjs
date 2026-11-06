@@ -72,7 +72,7 @@ function toSec(hhmmss) {
     return (p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0);
 }
 
-const SETTING_KEYS = ['office_end_time', 'checkout_grace_minutes'];
+const SETTING_KEYS = ['office_end_time', 'office_start_time', 'checkout_grace_minutes'];
 const settingsBackup = {};
 async function saveSetting(key) {
     const r = await pool.query('SELECT setting_value FROM company_settings WHERE setting_key = $1', [key]);
@@ -147,8 +147,9 @@ async function main() {
     // is always later than the current IST time). The auto-checkout test later
     // moves the deadline to 00:00 to force it.
     for (const key of SETTING_KEYS) await saveSetting(key);
-    await setSetting('office_end_time', '23:59');
-    await setSetting('checkout_grace_minutes', '120');
+    await setSetting('office_start_time', '23:59');
+    await setSetting('office_end_time', '00:00');
+    await setSetting('checkout_grace_minutes', '9999');
 
     console.log('[QA] throwaway world created:', Object.fromEntries(Object.entries(world).map(([k, v]) => [k, v.id])));
     console.log('[QA] today (IST):', today);
@@ -175,7 +176,7 @@ async function main() {
     // ---- 3. Manual check-out finalizes a running break ----------------------
     const finIn = await api('POST', '/api/attendance/check-in', T.fin, { location: LOC, photo: tinyPng });
     check('fin check-in -> 200', finIn.status === 200 && !!(finIn.json && finIn.json.success), finIn.json);
-    const finBs = await api('POST', '/api/attendance/break-start', T.fin, {});
+    const finBs = await api('POST', '/api/attendance/break-start', T.fin, { photo: tinyPng });
     check('fin break-start -> 200 (break running now)', finBs.status === 200 && !!(finBs.json && finBs.json.success), finBs.json);
     check('fin row carries open break_start while on break',
         !!(finBs.json && finBs.json.attendance && finBs.json.attendance.break_start && !finBs.json.attendance.break_end),
@@ -200,14 +201,14 @@ async function main() {
     // ---- 4. Multi-break day keeps every entry -------------------------------
     const muIn = await api('POST', '/api/attendance/check-in', T.multi, { location: LOC, photo: tinyPng });
     check('multi check-in -> 200', muIn.status === 200 && !!(muIn.json && muIn.json.success), muIn.json);
-    await api('POST', '/api/attendance/break-start', T.multi, {});
-    const muEnd1 = await api('POST', '/api/attendance/break-end', T.multi, {});
+    await api('POST', '/api/attendance/break-start', T.multi, { photo: tinyPng });
+    const muEnd1 = await api('POST', '/api/attendance/break-end', T.multi, { photo: tinyPng });
     check('multi break #1 end -> 200', muEnd1.status === 200 && !!(muEnd1.json && muEnd1.json.success), muEnd1.json);
     check('multi break #1 cleared break_start', !!(muEnd1.json && muEnd1.json.attendance && !muEnd1.json.attendance.break_start), muEnd1.json && muEnd1.json.attendance);
     const muLog1 = parseLog(muEnd1.json && muEnd1.json.attendance);
     check('multi break #1 -> break_log length 1', !!muLog1 && muLog1.length === 1, muLog1);
-    await api('POST', '/api/attendance/break-start', T.multi, {});
-    const muEnd2 = await api('POST', '/api/attendance/break-end', T.multi, {});
+    await api('POST', '/api/attendance/break-start', T.multi, { photo: tinyPng });
+    const muEnd2 = await api('POST', '/api/attendance/break-end', T.multi, { photo: tinyPng });
     check('multi break #2 end -> 200', muEnd2.status === 200 && !!(muEnd2.json && muEnd2.json.success), muEnd2.json);
     const muLog2 = parseLog(muEnd2.json && muEnd2.json.attendance);
     check('multi break #2 appended -> break_log length 2 (nothing lost)', !!muLog2 && muLog2.length === 2, muLog2);
@@ -245,22 +246,23 @@ async function main() {
     // ---- 6. Atomic break-end: concurrent requests never lose an entry -------
     // The auto section forced the deadline to 00:00; restore manual-safe
     // settings so runAutoCheckout can't auto-close race's row mid-flow.
-    await setSetting('office_end_time', '23:59');
-    await setSetting('checkout_grace_minutes', '120');
+    await setSetting('office_start_time', '23:59');
+    await setSetting('office_end_time', '00:00');
+    await setSetting('checkout_grace_minutes', '9999');
     // Two break-end requests fired concurrently must yield exactly ONE winner;
     // the loser 400s, and BOTH entries survive (pre-fix, read-modify-write
     // meant the second request overwrote the first with its own entry).
     const rcIn = await api('POST', '/api/attendance/check-in', T.race, { location: LOC, photo: tinyPng });
     check('race check-in -> 200', rcIn.status === 200 && !!(rcIn.json && rcIn.json.success), rcIn.json);
-    await api('POST', '/api/attendance/break-start', T.race, {});
-    const rcEnd1 = await api('POST', '/api/attendance/break-end', T.race, {});
+    await api('POST', '/api/attendance/break-start', T.race, { photo: tinyPng });
+    const rcEnd1 = await api('POST', '/api/attendance/break-end', T.race, { photo: tinyPng });
     check('race break #1 end -> 200', rcEnd1.status === 200 && !!(rcEnd1.json && rcEnd1.json.success), rcEnd1.json);
     const rcLog1 = parseLog(rcEnd1.json && rcEnd1.json.attendance);
     check('race break #1 -> break_log length 1', !!rcLog1 && rcLog1.length === 1, rcLog1);
-    await api('POST', '/api/attendance/break-start', T.race, {});
+    await api('POST', '/api/attendance/break-start', T.race, { photo: tinyPng });
     const [rcA, rcB] = await Promise.all([
-        api('POST', '/api/attendance/break-end', T.race, {}),
-        api('POST', '/api/attendance/break-end', T.race, {})
+        api('POST', '/api/attendance/break-end', T.race, { photo: tinyPng }),
+        api('POST', '/api/attendance/break-end', T.race, { photo: tinyPng })
     ]);
     const winners = [rcA, rcB].filter(r => r.status === 200 && !!(r.json && r.json.success)).length;
     const losers = [rcA, rcB].filter(r => r.status !== 200).length;

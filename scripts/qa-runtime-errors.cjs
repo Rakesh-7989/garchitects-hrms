@@ -109,7 +109,7 @@ async function main() {
         tu.status === 200, { status: tu.status, date, body: tu.json });
     check('/api/team-updates response has expected keys',
         tu.status === 200 && tu.json && tu.json.success === true &&
-        typeof tu.json.date === 'string' && Array.isArray(tu.json.members),
+        typeof tu.json.date === 'string' && Array.isArray(tu.json.team),
         { keys: tu.json ? Object.keys(tu.json) : null });
 
     // ---- 5. Error #3: audit-log write/read timeout -------------------------

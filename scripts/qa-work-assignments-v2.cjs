@@ -106,6 +106,15 @@ async function main() {
     check('manager creates A2 (201)', a2.status === 201, a2.json);
     const a2id = a2.json && a2.json.assignment && a2.json.assignment.id;
 
+    // Self-approval blocker: assignee can never approve their own pending work.
+    const fakeApprove = await api('POST', `/api/work-assignments/${a1id}/approve`, T.employee, { approve: true });
+    check('assignee cannot self-approve (403)', fakeApprove.status === 403, fakeApprove.json);
+
+    const ap1 = await api('POST', `/api/work-assignments/${a1id}/approve`, T.manager, { approve: true });
+    check('manager approves A1 (200)', ap1.status === 200 && ap1.json && ap1.json.success, ap1.json);
+    const ap2 = await api('POST', `/api/work-assignments/${a2id}/approve`, T.manager, { approve: true });
+    check('manager approves A2 (200)', ap2.status === 200 && ap2.json && ap2.json.success, ap2.json);
+
     // Born-closed status rejected.
     const bornClosed = await api('POST', '/api/work-assignments', T.manager, {
         title: `QA born-closed ${ts}`, assignedTo: world.employee.id, status: 'completed',

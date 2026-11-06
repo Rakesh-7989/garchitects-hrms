@@ -132,6 +132,13 @@ async function main() {
         return { id: r.rows[0].id, employee_id: `qa${ts}${tag}`, password: 'Qa!' + ts + tag };
     };
 
+    // Pin office hours so every flow sees status='present' and never needs a
+    // late/early checkout reason — those gates are covered by the
+    // justifications harness. (Throwaway DB, so no restore needed.)
+    await pool.query(`INSERT INTO company_settings (setting_key, setting_value, description) VALUES ('office_start_time', '23:59', 'QA forced') ON CONFLICT (setting_key) DO UPDATE SET setting_value = '23:59'`);
+    await pool.query(`INSERT INTO company_settings (setting_key, setting_value, description) VALUES ('office_end_time', '00:00', 'QA forced') ON CONFLICT (setting_key) DO UPDATE SET setting_value = '00:00'`);
+    await pool.query(`INSERT INTO company_settings (setting_key, setting_value, description) VALUES ('checkout_grace_minutes', '9999', 'QA forced') ON CONFLICT (setting_key) DO UPDATE SET setting_value = '9999'`);
+
     world.admin = await mk('adm', 'admin');
     world.open = await mk('emp', 'employee');   // live check-in, still open
     world.done = await mk('cmp', 'employee');   // full day, checked out

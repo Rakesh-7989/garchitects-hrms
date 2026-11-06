@@ -297,7 +297,7 @@ async function runHarness(script, label, stage = 'regression') {
         p.stderr.on('data', d => (buf += d));
         p.on('close', code => resolve({ code, buf }));
     });
-    const m = out.buf.match(/(\d+)\s+passed,\s+(\d+)\s+failed/);
+    const m = out.buf.match(/(\d+)\s+pass(?:ed)?\s*[,\/]\s*(\d+)\s+fail/);
     const passed = m ? parseInt(m[1], 10) : null;
     const failed = m ? parseInt(m[2], 10) : null;
     const ok = out.code === 0 && failed === 0;

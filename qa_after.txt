@@ -1,79 +1,79 @@
-﻿==============================================
+==============================================
  HRMS QA Commander v1
  target=hermetic  stages=discover,regression,rbac,invariants,db  
 ==============================================
 
-[env] reusing an externally-managed stack (5433+3000 up) ΓÇö no teardown
-  Γ£ö [discover] manifest ΓÇö 35 modules / 7 guards / portals admin,admin-login.html,employee,login.html,manager -> qa/manifest.json
-  Γ£ö [regression] attendance check-in status ΓÇö 24 pass / 0 fail (exit 0)
+[env] reusing an externally-managed stack (5433+3000 up) — no teardown
+  ✔ [discover] manifest — 35 modules / 7 guards / portals admin,admin-login.html,employee,login.html,manager -> qa/manifest.json
+  ✔ [regression] attendance check-in status — 24 pass / 0 fail (exit 0)
 [env] (re)starting app server on 3000
 [env] server healthy
-  Γ£ö [regression] attendance break finalize ΓÇö 41 pass / 0 fail (exit 0)
+  ✔ [regression] attendance break finalize — 41 pass / 0 fail (exit 0)
 [env] (re)starting app server on 3000
 [env] server healthy
-  Γ£ö [regression] attendance my read-path ΓÇö 15 pass / 0 fail (exit 0)
+  ✔ [regression] attendance my read-path — 15 pass / 0 fail (exit 0)
 [env] (re)starting app server on 3000
 [env] server healthy
-  Γ£ö [regression] attendance card + today context ΓÇö 32 pass / 0 fail (exit 0)
+  ✔ [regression] attendance card + today context — 32 pass / 0 fail (exit 0)
 [env] (re)starting app server on 3000
 [env] server healthy
-  Γ£ö [regression] work assignments v2 ΓÇö 38 pass / 0 fail (exit 0)
+  ✔ [regression] work assignments v2 — 38 pass / 0 fail (exit 0)
 [env] (re)starting app server on 3000
 [env] server healthy
-  Γ£ö [regression] fix-sprint audit batch ΓÇö 58 pass / 0 fail (exit 0)
+  ✔ [regression] fix-sprint audit batch — 58 pass / 0 fail (exit 0)
 [env] (re)starting app server on 3000
 [env] server healthy
 [rbac] world seeded: admin, hr, manager, team_lead, employee + permEmp + targetEmp (hermetic)
-  Γ£ö [rbac] login admin ΓÇö HTTP 200
-  Γ£ö [rbac] login hr ΓÇö HTTP 200
-  Γ£ö [rbac] login manager ΓÇö HTTP 200
-  Γ£ö [rbac] login team_lead ΓÇö HTTP 200
-  Γ£ö [rbac] login employee ΓÇö HTTP 200
-  Γ£ö [rbac] 401:/api/attendance/my ΓÇö 401
-  Γ£ö [rbac] 401:/api/leave/apply ΓÇö 401
-  Γ£ö [rbac] 401:/api/payroll/all ΓÇö 401
-  Γ£ö [rbac] 401:/api/employees ΓÇö 401
-  Γ£ö [rbac] matrix:emp-list ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:emp-create ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:emp-resetpwd ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:emp-permdelete ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:att-all ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:att-my ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:att-export ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:att-checkin ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:att-checkout ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:att-markpresent ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:att-markabsent ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:payroll-list ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:payroll-gen ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:leave-list ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:leave-apply ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:mgr-team ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:mgr-today ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:mgr-leaves ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:notif-counts ΓÇö cells verified; VERIFIED-INTENT: employee 403 is by design - dashboard.js loadNotifBadge() routes employees to /announcements/unread-count + /notifications/unread-count instead
-  Γ£ö [rbac] matrix:notif-requests ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:proj-my ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:proj-list ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:proj-create ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:settings-timing ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:audit-logs ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:reports-dash ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:regularize ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:announcements ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:designations ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:departments ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:holidays ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:docs-all ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:onboarding-tasks ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:profile-updates ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:regularize-review ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:wfh-apply ΓÇö all asserted cells green
-  Γ£ö [rbac] matrix:att-photo ΓÇö all asserted cells green
+  ✔ [rbac] login admin — HTTP 200
+  ✔ [rbac] login hr — HTTP 200
+  ✔ [rbac] login manager — HTTP 200
+  ✔ [rbac] login team_lead — HTTP 200
+  ✔ [rbac] login employee — HTTP 200
+  ✔ [rbac] 401:/api/attendance/my — 401
+  ✔ [rbac] 401:/api/leave/apply — 401
+  ✔ [rbac] 401:/api/payroll/all — 401
+  ✔ [rbac] 401:/api/employees — 401
+  ✔ [rbac] matrix:emp-list — all asserted cells green
+  ✔ [rbac] matrix:emp-create — all asserted cells green
+  ✔ [rbac] matrix:emp-resetpwd — all asserted cells green
+  ✔ [rbac] matrix:emp-permdelete — all asserted cells green
+  ✔ [rbac] matrix:att-all — all asserted cells green
+  ✔ [rbac] matrix:att-my — all asserted cells green
+  ✔ [rbac] matrix:att-export — all asserted cells green
+  ✔ [rbac] matrix:att-checkin — all asserted cells green
+  ✔ [rbac] matrix:att-checkout — all asserted cells green
+  ✔ [rbac] matrix:att-markpresent — all asserted cells green
+  ✔ [rbac] matrix:att-markabsent — all asserted cells green
+  ✔ [rbac] matrix:payroll-list — all asserted cells green
+  ✔ [rbac] matrix:payroll-gen — all asserted cells green
+  ✔ [rbac] matrix:leave-list — all asserted cells green
+  ✔ [rbac] matrix:leave-apply — all asserted cells green
+  ✔ [rbac] matrix:mgr-team — all asserted cells green
+  ✔ [rbac] matrix:mgr-today — all asserted cells green
+  ✔ [rbac] matrix:mgr-leaves — all asserted cells green
+  ✔ [rbac] matrix:notif-counts — cells verified; VERIFIED-INTENT: employee 403 is by design - dashboard.js loadNotifBadge() routes employees to /announcements/unread-count + /notifications/unread-count instead
+  ✔ [rbac] matrix:notif-requests — all asserted cells green
+  ✔ [rbac] matrix:proj-my — all asserted cells green
+  ✔ [rbac] matrix:proj-list — all asserted cells green
+  ✔ [rbac] matrix:proj-create — all asserted cells green
+  ✔ [rbac] matrix:settings-timing — all asserted cells green
+  ✔ [rbac] matrix:audit-logs — all asserted cells green
+  ✔ [rbac] matrix:reports-dash — all asserted cells green
+  ✔ [rbac] matrix:regularize — all asserted cells green
+  ✔ [rbac] matrix:announcements — all asserted cells green
+  ✔ [rbac] matrix:designations — all asserted cells green
+  ✔ [rbac] matrix:departments — all asserted cells green
+  ✔ [rbac] matrix:holidays — all asserted cells green
+  ✔ [rbac] matrix:docs-all — all asserted cells green
+  ✔ [rbac] matrix:onboarding-tasks — all asserted cells green
+  ✔ [rbac] matrix:profile-updates — all asserted cells green
+  ✔ [rbac] matrix:regularize-review — all asserted cells green
+  ✔ [rbac] matrix:wfh-apply — all asserted cells green
+  ✔ [rbac] matrix:att-photo — all asserted cells green
 [rbac] 175 cell probes executed
-  Γ£ö [rbac] db:permEmp-deleted ΓÇö rows remaining: 0
-  Γ£ö [rbac] cleanup:zero-leftovers ΓÇö qa rows remaining: 0
-  Γ£ö [invariants] db invariants ΓÇö 43 pass / 0 fail (exit 0)
+  ✔ [rbac] db:permEmp-deleted — rows remaining: 0
+  ✔ [rbac] cleanup:zero-leftovers — qa rows remaining: 0
+  ✔ [invariants] db invariants — 43 pass / 0 fail (exit 0)
 [env] (re)starting app server on 3000
 [env] server healthy
   ! [db] employees by qa% id: 0 row(s)

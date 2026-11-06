@@ -122,6 +122,12 @@ async function main() {
     world.legacy = await mk('legacy');
     world.happy = await mk('happy');
     world.mgr = await mk('mgr');
+    // Throwaway DB: make every flow 'present / never early / never mid-run
+    // closed' — checkout_grace_minutes=9999 pushes the auto-checkout deadline
+    // ~7 days out (the auto-checkout tests set 00:00/0 locally to force it).
+    await pool.query(`INSERT INTO company_settings (setting_key, setting_value, description) VALUES ('office_start_time', '23:59', 'QA forced') ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`);
+    await pool.query(`INSERT INTO company_settings (setting_key, setting_value, description) VALUES ('office_end_time', '00:00', 'QA forced') ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`);
+    await pool.query(`INSERT INTO company_settings (setting_key, setting_value, description) VALUES ('checkout_grace_minutes', '9999', 'QA forced') ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`);
 
     console.log('[QA] throwaway world created:', Object.fromEntries(Object.entries(world).map(([k, v]) => [k, v.id])));
     console.log('[QA] today (IST):', today, '| weekoff_day:', weekoffDay);
@@ -230,9 +236,9 @@ async function main() {
     // ---- 6. Happy path regression: guards must not break the normal day ------
     const ciHappy = await api('POST', '/api/attendance/check-in', T.happy, { photo: SELFIE, location: LOC });
     check('happy check-in -> 200 + check_in set', ciHappy.status === 200 && !!(ciHappy.json && ciHappy.json.success && ciHappy.json.attendance && ciHappy.json.attendance.check_in), ciHappy.json);
-    const bsHappy = await api('POST', '/api/attendance/break-start', T.happy, {});
+    const bsHappy = await api('POST', '/api/attendance/break-start', T.happy, { photo: SELFIE });
     check('happy break-start -> 200 (guards don\'t block real breaks)', bsHappy.status === 200 && !!(bsHappy.json && bsHappy.json.success), bsHappy.json);
-    const beHappy = await api('POST', '/api/attendance/break-end', T.happy, {});
+    const beHappy = await api('POST', '/api/attendance/break-end', T.happy, { photo: SELFIE });
     check('happy break-end -> 200 + entry appended to break_log', beHappy.status === 200 && !!(beHappy.json && beHappy.json.success && beHappy.json.attendance && (beHappy.json.attendance.break_log || '').length > 0), beHappy.json);
     const coHappy = await api('POST', '/api/attendance/check-out', T.happy, { photo: SELFIE, location: LOC });
     check('happy check-out -> 200 + check_out set', coHappy.status === 200 && !!(coHappy.json && coHappy.json.success && coHappy.json.attendance && coHappy.json.attendance.check_out), coHappy.json);
