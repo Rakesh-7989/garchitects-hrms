@@ -850,7 +850,7 @@ CREATE TABLE IF NOT EXISTS work_assignments (
     start_date DATE,
     due_date DATE,
     status VARCHAR(20) DEFAULT 'assigned'
-        CHECK (status IN ('assigned','in_progress','blocked','completed','cancelled')),
+        CHECK (status IN ('assigned','in_progress','blocked','completed','cancelled','pending')),
     blocked_reason TEXT,
     cancel_reason TEXT,
     started_at TIMESTAMP,
@@ -870,7 +870,7 @@ ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
 ALTER TABLE work_assignments ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP;
 ALTER TABLE work_assignments DROP CONSTRAINT IF EXISTS work_assignments_status_check;
 ALTER TABLE work_assignments ADD CONSTRAINT work_assignments_status_check
-    CHECK (status IN ('assigned','in_progress','blocked','completed','cancelled'));
+    CHECK (status IN ('assigned','in_progress','blocked','completed','cancelled','pending'));
 CREATE INDEX IF NOT EXISTS idx_wa_assignee ON work_assignments(assigned_to, status);
 CREATE INDEX IF NOT EXISTS idx_wa_assigner ON work_assignments(assigned_by, status);
 CREATE INDEX IF NOT EXISTS idx_wa_project ON work_assignments(project_id);

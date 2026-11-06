@@ -669,8 +669,10 @@ router.put('/:id', verifyToken, async (req, res) => {
 
 /**
  * POST /api/work-assignments/:id/approve
- * Approve a pending work assignment. The assignee or admin/manager/team_lead
- * can approve. Once approved, status changes from 'pending' to 'assigned'.
+ * Approve a pending work assignment. Only an admin, or the team_lead/manager
+ * who made the assignment, may approve it — an assignee can never approve
+ * their own "pending" (approval is the whole point of pending). Once approved,
+ * status changes from 'pending' to 'assigned'.
  */
 router.post('/:id/approve', verifyToken, async (req, res) => {
     try {
@@ -680,6 +682,13 @@ router.post('/:id/approve', verifyToken, async (req, res) => {
         const cur = await q(`SELECT * FROM work_assignments WHERE id = $1`, [id]);
         if (cur.rows.length === 0) return res.status(404).json({ success: false, message: 'Assignment not found' });
         const row = cur.rows[0];
+
+        const overlord = req.user.role === 'admin';
+        const isAssigner = Number(row.assigned_by) === Number(req.user.id)
+            && ['manager', 'team_lead'].includes(req.user.role);
+        if (!overlord && !isAssigner) {
+            return res.status(403).json({ success: false, message: 'Only the assigner, a manager/team lead or an admin can approve this assignment' });
+        }
 
         if (row.status !== 'pending') {
             return res.status(400).json({ success: false, message: `Assignment is already ${row.status}, cannot approve` });

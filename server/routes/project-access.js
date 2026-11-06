@@ -371,7 +371,7 @@ router.post('/requests/:id/cancel', verifyToken, (req, res) => decideRequest(req
 // ---------------- DELETE /grants/:id — revoke (soft)
 router.delete('/grants/:id', verifyToken, async (req, res) => {
     const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) return res.status(400).json({ success: false, message: 'Invalid grant id' });
+    if (isNaN(id) || id > 2147483647 || id < -2147483648) return res.status(400).json({ success: false, message: 'Invalid grant id' });
     try {
         const g = await q(`SELECT * FROM project_access_grants WHERE id = $1`, [id]);
         if (g.rows.length === 0) return res.status(404).json({ success: false, message: 'Grant not found' });

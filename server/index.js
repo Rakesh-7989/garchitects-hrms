@@ -506,7 +506,7 @@ async function runMigrations() {
             priority VARCHAR(10) DEFAULT 'normal' CHECK (priority IN ('low','normal','high','urgent')),
             due_date DATE,
             status VARCHAR(20) DEFAULT 'assigned'
-                CHECK (status IN ('assigned','in_progress','completed','cancelled')),
+                CHECK (status IN ('assigned','in_progress','completed','cancelled','pending')),
             completed_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
@@ -524,7 +524,7 @@ async function runMigrations() {
         // when assigned_at was added; restore it to the created_at we do know.
         await query(`UPDATE work_assignments SET assigned_at = created_at WHERE assigned_at IS NOT NULL AND created_at IS NOT NULL AND assigned_at > created_at + interval '1 minute'`);
         await query(`ALTER TABLE work_assignments DROP CONSTRAINT IF EXISTS work_assignments_status_check`);
-        await query(`ALTER TABLE work_assignments ADD CONSTRAINT work_assignments_status_check CHECK (status IN ('assigned','in_progress','blocked','completed','cancelled'))`);
+        await query(`ALTER TABLE work_assignments ADD CONSTRAINT work_assignments_status_check CHECK (status IN ('assigned','in_progress','blocked','completed','cancelled','pending'))`);
         await query(`CREATE INDEX IF NOT EXISTS idx_wa_assignee ON work_assignments(assigned_to, status)`);
         await query(`CREATE INDEX IF NOT EXISTS idx_wa_assigner ON work_assignments(assigned_by, status)`);
         await query(`CREATE INDEX IF NOT EXISTS idx_wa_project ON work_assignments(project_id)`);

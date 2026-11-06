@@ -424,7 +424,7 @@ router.post('/break-start', verifyToken, async (req, res) => {
 
         const result = await query(
             `UPDATE attendance SET break_start = $1, break_end = NULL
-            WHERE employee_id = $2 AND date = $3 RETURNING id`,
+            WHERE employee_id = $2 AND date = $3 RETURNING *`,
             [now, req.user.id, today]
         );
         const outToken = await saveAttendancePhoto(result.rows[0].id, req.user.id, decoded.buf, 'break_out');

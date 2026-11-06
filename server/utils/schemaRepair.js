@@ -318,7 +318,7 @@ const ENSURE_TABLE_DDL = {
             start_date DATE,
             due_date DATE,
             status VARCHAR(20) DEFAULT 'assigned'
-                CHECK (status IN ('assigned','in_progress','blocked','completed','cancelled')),
+                CHECK (status IN ('assigned','in_progress','blocked','completed','cancelled','pending')),
             blocked_reason TEXT,
             cancel_reason TEXT,
             started_at TIMESTAMP,
