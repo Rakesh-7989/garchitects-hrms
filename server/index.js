@@ -6,9 +6,11 @@ require('dotenv').config();
 
 const app = express();
 // Behind Vercel's proxy, req.ip would otherwise always be 127.0.0.1.
-// Trusting the proxy makes Express read the real client IP from
-// x-forwarded-for so audit logs record where logins actually came from.
-app.set('trust proxy', true);
+// Trust exactly ONE hop (Vercel edge → function): the edge appends the true
+// client IP at the end of X-Forwarded-For, so req.ip is the real client and
+// cannot be spoofed from the client side. ('true' would let a client rotate
+// X-Forwarded-For and defeat the per-IP rate limiter.) See QA_FULL_SYSTEM_REPORT_2026-11-06.
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const { query } = require('./config/database');
 const { pgErrorResponse } = require('./utils/schemaRepair');
