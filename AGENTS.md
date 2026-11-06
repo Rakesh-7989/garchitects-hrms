@@ -213,6 +213,14 @@ themself; do not expand the guard to them without an owner decision.
   — verified end-to-end on a scratch cluster: forward → idempotent re-apply → blocked-role
   0 rows + INSERT rejected → rollback → re-apply. `scripts/qa-rls-staging-test.cjs`
   remains the read-only staging helper.
+  **Owner-accepted risk (2026-11-06, post-deploy advisor review):** advisors flag
+  `public.rls_auto_enable()` (SECURITY DEFINER) as executable by PUBLIC/anon/authenticated
+  via REST RPC. Reviewed: it is the RLS auto-enable event trigger; invoked outside a DDL
+  event-trigger context it fails closed (zero data exposure) and it is the only such
+  function (lints 0028/0029, count=1). Decision: leave unchanged — owner declined the
+  one-line `REVOKE EXECUTE ... FROM PUBLIC, anon, authenticated`. The 38 INFO findings
+  (RLS enabled, no per-table policies) are by design: deny-all for everyone except the
+  `postgres` app role.
   **Phase 2:** `docs/DATA_INVENTORY.md`, `docs/VENDOR_INVENTORY.md`,
   3 policy outlines (pending counsel). **Phase 3:** Backend `consent_records` table
   on all 3 schema layers + `POST /api/consent/record` + `GET /api/consent/mine`
