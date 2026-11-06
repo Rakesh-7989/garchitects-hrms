@@ -139,6 +139,19 @@ themself; do not expand the guard to them without an owner decision.
 
 ## 11. Current state (update this as work ships)
 
+- **Work-Assignments approval hardening + encoding repair (2026-11-06, `43c2f58` + `0e2f44c`):**
+  `work_assignments` `pending` status now in the CHECK constraint on **all three schema layers**
+  (fresh install / startup migration / lazy self-heal); `POST /work-assignments/:id/approve` is
+  **admin or the assigner only** — an assignee can never approve their own 'pending' (403 asserted
+  in harness); `break-start` returns the full row (`RETURNING *`); `project-access` grant DELETE
+  rejects out-of-int4 ids with 400. **Hermetic QA 89/89 green** (274 RBAC cell probes, 43 DB
+  invariants, zero leftovers) after pinning harness worlds to `office_start=23:59 / office_end=00:00 /
+  checkout_grace=9999` (justification gates covered by their own harness) and correcting WFH/ticket
+  expectations (201/2xx; sequential double-approve is a deterministic 400 by design). All four
+  session-corrupted QA harnesses were restored byte-exact (−1 level CP1252 each) and the repo-wide
+  scan is clean (**188/188 UTF-8-valid, 0 mojibake**); `qa_baseline/after.txt` (CP437-corrupted logs,
+  commit `3117fca`) also repaired. `qa/manifest.json` and `qa/report.json` remain gitignored.
+
 - **Attendance v2 + salary basis shipped (2026-11-04, `85a20cb` + `32a8ca1`):**
   late/early justification flow (mandatory reason before check-out; TL/Manager approve → present,
   reject late → absent; early checkout → half-day unless approved), break out/in camera selfie

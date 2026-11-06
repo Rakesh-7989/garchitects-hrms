@@ -1,7 +1,7 @@
 # Feature Design — Work Assignments Redesign (v2)
 
 **Repo:** G-Architects HRMS · **Branch:** master (auto-deploys)
-**Status:** 🔧 In progress — Phase 0 + **Increment 1 shipped**; independent audit folded in 2026-10-07; Increment 2 (timeline + roll-up + filters) pending.
+**Status:** ✅ Phase 0 + **Increment 1 (2026-10-07)** + **Increment 2 (2026-11-04)** shipped; 2026-11-06 hardening: `pending` approvals are **assigner/admin-only** (an assignee can never approve their own 'pending'), `work_assignments_status_check` gains `'pending'` on all three schema layers, break-start returns the full row (`RETURNING *`), project-access grant DELETE rejects out-of-int4 ids with 400. Encoding pass repaired the QA harness files (CP1252/CP437 double-encoding) — repo-wide scan now clean (188/188 files UTF-8-valid, 0 mojibake).
 **Related:** `docs/FEATURE_UNITS_WORK_ASSIGN.md` (original Work Assignments spec + decisions D3/D11).
 
 ---
