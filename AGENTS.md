@@ -205,10 +205,14 @@ themself; do not expand the guard to them without an owner decision.
   password_reset_otps, audit_logs, leave_applications, wfh_requests) — with proper
   per-role policies (admin/hr full access, employee own-row read), deny-all PUBLIC
   policies, app-connection-role policy placeholder, and full rollback section.
-  **NOT applied to production** — D1=false (non-superuser connection) means the
-  app-role policy placeholder `<APP_DB_ROLE>` MUST be replaced with the actual
-  DATABASE_URL role before applying, and staging-first testing is required.
-  Read-only staging test helper: `scripts/qa-rls-staging-test.cjs`.
+  **APPLIED to production 2026-10-21 09:30** (recorded in `schema_migrations`, verified
+  read-only 2026-11-06: all 8 tables `relrowsecurity=true`, all 36 `rls_*` policies live
+  plus per-table `rls_app_all`; app unaffected — policies grant role `postgres` full
+  access). `server/migrations/2026-10-18-rls-enablement.rollback.sql` (created
+  2026-11-06) reverts everything (policies dropped, RLS disabled, ledger row removed)
+  — verified end-to-end on a scratch cluster: forward → idempotent re-apply → blocked-role
+  0 rows + INSERT rejected → rollback → re-apply. `scripts/qa-rls-staging-test.cjs`
+  remains the read-only staging helper.
   **Phase 2:** `docs/DATA_INVENTORY.md`, `docs/VENDOR_INVENTORY.md`,
   3 policy outlines (pending counsel). **Phase 3:** Backend `consent_records` table
   on all 3 schema layers + `POST /api/consent/record` + `GET /api/consent/mine`

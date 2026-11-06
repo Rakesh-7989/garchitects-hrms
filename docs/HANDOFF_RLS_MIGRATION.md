@@ -1,9 +1,20 @@
 # Handoff: RLS Migration to Production
 
-**Status:** READY FOR ANOTHER AGENT TO EXECUTE  
-**Branch:** `audit/privacy-security-baseline` → `master` (already pushed, commit `000383b`)  
-**Working tree:** Clean  
-**Production deploy:** Triggered via Vercel (code is live, but RLS migration SQL is NOT yet applied to the database)
+**Status:** ✅ APPLIED — completed 2026-10-21 09:30 UTC (recorded in `schema_migrations`; re-verified read-only 2026-11-06: 8 tables `relrowsecurity=true`, 36 `rls_*` policies live)  
+**Branch:** `audit/privacy-security-baseline` → `master` (pushed, commit `000383b`)  
+**This document is retained as the procedure record**; it is not an open action item.
+
+---
+
+## What happened
+
+The RLS enablement migration was applied to the production Supabase database (`wnuozsytcbjpzdvvnlfc`)
+on 2026-10-21, as this handoff instructed. Verification (2026-11-06, read-only): all 8 target tables
+have `relrowsecurity=true`; policies `rls_app_connection_role_all` / `rls_app_all` grant role
+`postgres` full access (app unaffected); `rls_*_public_deny` policies block PUBLIC/PostgREST access;
+ledger row present. A standalone rollback script now exists at
+`server/migrations/2026-10-18-rls-enablement.rollback.sql` (tested end-to-end on a scratch cluster,
+including re-apply after rollback).
 
 ---
 
