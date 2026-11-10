@@ -223,7 +223,7 @@ The harness rolls its world back (including the exact rows `auto-attendance`
 added) so the database stays pristine, and it is **deterministic on repeat
 runs** (verified: three consecutive runs, 33/33 each).
 
-### 2.7 Live sweep — `scripts/qa-live-sweep.cjs`
+### 2.7 Live sweep + focused liveness probe — `scripts/qa-live-sweep.cjs`, `scripts/qa-cron-health.cjs`
 
 New, read-only, credential-free sweep of the deployed app: 239 API routes
 (anonymous → 401, no 2xx/5xx leak), 39 static pages, 37 clean portal URLs,
@@ -235,6 +235,19 @@ With `QA_LIVE_ADMIN_ID` / `QA_LIVE_ADMIN_PW` set it additionally logs in as an
 admin and probes **`GET /api/cron/health`**, failing the sweep if any scheduled
 job is stale or failing (skipped, not failed, without credentials). This is the
 check that will turn red the moment a cron dies again.
+
+`scripts/qa-cron-health.cjs` (`npm run qa:cron-health`) is the focused version —
+it prints one line per job and explains the two possible causes:
+
+```
+  ✖ purge-photos  0 3 * * *  last_run=never  never_ran=true stale=true
+  6 job(s) are NOT running. If every job says "never ran", Vercel Cron cannot
+  reach the production domain - check the DNS record for the custom domain.
+  If a job says "rejected", CRON_SECRET does not match what the deployment expects.
+```
+
+It exits **1** while any job is stale, so it can be wired into a monitoring
+loop once the DNS is fixed.
 
 ---
 
@@ -255,6 +268,25 @@ listening on :3000 — so a leftover app server pointing at a freshly
 initialised (empty) cluster left the whole suite running against 4 tables
 (the ones the startup migration recreates on its own). The schema is now
 loaded whenever the run created the cluster, regardless of :3000.
+
+### 3.1 Post-deploy verification (live, 2026-11-10)
+
+Pushed to `master` → Vercel production deploy `dpl_J9TCnhsoFsAyWg774ZnxitX1sAzJ`
+(commit `f674f55`), READY. Verified against the deployed app:
+
+| Probe | Result |
+|---|---|
+| `GET /api/cron/health` (no token) | **401** — the route exists and is JWT-gated (it was 404 before the deploy) |
+| `GET /api/cron/health` (admin) | **200** — 6 jobs, `healthy: false`, all `never_ran: true`, `stale: true` |
+| `GET /admin/dashboard` | **200**, "Scheduled Jobs" card present in the HTML |
+| 6 × `GET /api/cron/<job>` (no secret) | **401** — still fail-closed after the deploy |
+| production DB | `cron_runs` table **exists** (8 columns, created by the startup migration), **0 heartbeat rows** |
+| production DB (pending damage, unchanged) | 208 expired photos, 2 expired announcements still active, 9 stale `late` rows |
+
+**This is the intended end state for now**: the alarm is armed and reads red,
+and it will turn green by itself the moment the DNS record exists — the first
+successful cron run writes the heartbeat and the card flips to "OK". The
+damage is left for the crons to self-heal (owner decision, 2026-11-10).
 
 **Read-only live re-confirmation of the defect** (production DB, 2026-11-10):
 206 expired photos undeleted · 2 expired announcements still active · 9 stale
@@ -299,9 +331,11 @@ loaded whenever the run created the cluster, regardless of :3000.
 | `server/schema.sql` | `cron_runs` (layer A) |
 | `server/index.js` | `cron_runs` startup migration (layer B) |
 | `server/utils/schemaRepair.js` | `cron_runs` lazy self-heal (layer C) |
-| `scripts/qa-cron.cjs` | rewritten — 2 → 29 assertions, real side effects |
-| `scripts/qa-commander.cjs` | per-harness server env (`CRON_SECRET` for the cron harness only), fail-closed baseline |
+| `scripts/qa-cron.cjs` | rewritten — 2 → 33 assertions, real side effects |
+| `scripts/qa-cron-health.cjs` | **new** — focused live liveness probe (`npm run qa:cron-health`) |
+| `scripts/qa-commander.cjs` | per-harness server env (`CRON_SECRET` for the cron harness only), fail-closed baseline, schema-load fix |
 | `scripts/qa-live-sweep.cjs` | **new** — live read-only sweep + optional cron-liveness probe |
+| `package.json` | `qa:cron-health`, `qa:live-sweep` scripts |
 | `public/pages/admin/dashboard.html` | "Scheduled Jobs" card + loader |
 | `public/sw.js` | cache v18 → v19 |
 | `docs/FEATURE_CRON_LIVENESS.md` | this document |

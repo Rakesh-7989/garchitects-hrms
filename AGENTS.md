@@ -141,6 +141,8 @@ themself; do not expand the guard to them without an owner decision.
   `GET /api/cron/health` (admin JWT) reports every scheduled job's last run + a
   `stale` flag (stale = never ran, or >26 h old). The admin dashboard shows a
   **Scheduled Jobs** card. A cron that stops firing is now *visible*, not silent.
+  Check it any time with `npm run qa:cron-health` (needs `QA_LIVE_ADMIN_ID` /
+  `QA_LIVE_ADMIN_PW`; exits 1 while any job is stale).
 - Local run: `npm install` then `npm start` (or `npm run dev` with nodemon) on `PORT` (default 3000).
 - DB scripts: `npm run db:init`, `npm run db:migrate`, `npm run test:smtp -- <recipient>`.
 

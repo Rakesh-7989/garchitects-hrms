@@ -12,7 +12,9 @@
     "qa": "node scripts/qa-commander.cjs",
     "qa:live": "node scripts/qa-commander.cjs --target=live",
     "qa:json": "node scripts/qa-commander.cjs --json=qa/report.json",
-    "qa:inline": "node scripts/qa-inline.cjs"
+    "qa:inline": "node scripts/qa-inline.cjs",
+    "qa:cron-health": "node scripts/qa-cron-health.cjs",
+    "qa:live-sweep": "node scripts/qa-live-sweep.cjs"
   },
   "keywords": [
     "hrms",
