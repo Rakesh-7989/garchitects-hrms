@@ -142,6 +142,24 @@ commander as a regression stage:
 Full hermetic `npm run qa`: **92/92 green** (12 harnesses, 279 RBAC cell
 probes, 43 DB invariants, zero leftovers). `npm run qa:inline`: 39/39.
 
+### 4.1 The live RBAC stage had never been run — and was broken
+
+Running the live role matrix against production for the first time (with
+`QA_LIVE_ADMIN_ID` / `QA_LIVE_ADMIN_PW` set) exposed three harness bugs, all
+now fixed in `scripts/qa-commander.cjs`:
+
+| Bug | Symptom | Fix |
+|---|---|---|
+| the live branch never read the created accounts' ids back | `{qaEmpId}` / `{permEmpId}` substituted to the literal `"null"` → `DELETE /api/employees/null/permanent` → **500** | the ids are resolved from the admin list |
+| the cleanup looked accounts up in `GET /api/employees` **without a limit** | that list is paginated (default **10**) → QA accounts off the first page were never deleted (**two QA admins were left on production**) | `?limit=200` |
+| the cleanup deleted with the **QA admin's own token** | the permanent-delete route refuses a self-delete → 400 → the QA admin survived | the **main** admin token is used, an already-deleted account counts as clean, and a leftover is now a **failing** check instead of being ignored |
+
+**Live result: 89/89 green, 279 cell probes, zero leftovers** (verified by a
+direct read of the production database: 0 `qa%` employees, 9 employees total).
+The script header now also states the login budget: the limiter is 10
+attempts / 15 min **per IP** and the live target cannot restart the server to
+reset it, so two live runs inside 15 minutes start failing with 401s.
+
 ## 5. Files touched
 
 | File | Change |
@@ -155,4 +173,4 @@ probes, 43 DB invariants, zero leftovers). `npm run qa:inline`: 39/39.
 | `server/config/database.js` | **new** — a lost pooled connection is detected and the pool is recycled |
 | `server/index.js` | all 118 startup statements now retry a transient connection error |
 | `scripts/qa-consent-ui.cjs` | **new** — consent records + consent UI contract harness |
-| `scripts/qa-commander.cjs` | the new harness wired into the regression stage |
+| `scripts/qa-commander.cjs` | the new harness wired into the regression stage; the **live** RBAC stage fixed (ids resolved, paginated cleanup, main-admin token, leftover check, login-budget note) |

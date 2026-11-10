@@ -176,7 +176,13 @@ themself; do not expand the guard to them without an owner decision.
   dying statement killed the rest of the block, so the consent column never widened in
   production). Now: `database.js` recycles the pool on a connection-level error, and all 118
   startup statements retry a transient failure (4 attempts, backoff). See
-  `docs/FEATURE_CONSENT_UI_FIX.md`.
+  `docs/FEATURE_CONSENT_UI_FIX.md`. **The live RBAC stage was also repaired** (it had
+  never been run with credentials): ids are resolved from the admin list, the cleanup uses
+  `?limit=200` (the employee list is paginated with a default of 10 — two QA admins had been
+  left on production) and the **main** admin token (the route refuses a self-delete), and a
+  leftover is now a failing check. **Live target: 89/89 green, 279 cell probes, zero
+  leftovers.** ⚠️ the live login limiter is 10/15 min **per IP** and cannot be reset by
+  restarting the server → leave 15 minutes between live runs.
 
 - **Attendance matrix: click-a-date now opens the day editor (2026-11-10):** the admin
   month matrix used to **silently flip Present <-> Absent on a left click** (wiping the
