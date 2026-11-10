@@ -170,7 +170,12 @@ themself; do not expand the guard to them without an owner decision.
   (+ idempotent ALTER on boot); `sw.js` v19 → v20 (auth.js is cache-first). **QA:** new
   `scripts/qa-consent-ui.cjs` **19/19** (client + schema + API contract) wired into the
   commander; full hermetic `npm run qa` **92/92**; `qa:inline` 39/39; verified in Chromium
-  (0 console errors, consent recorded, "Manage Consent" lists it). See
+  (0 console errors, consent recorded, "Manage Consent" lists it). **Also found in the live
+  runtime logs:** the startup migration was **silently failing on Vercel** ("Connection
+  terminated due to connection timeout" — the Supabase pooler closes idle connections, and one
+  dying statement killed the rest of the block, so the consent column never widened in
+  production). Now: `database.js` recycles the pool on a connection-level error, and all 118
+  startup statements retry a transient failure (4 attempts, backoff). See
   `docs/FEATURE_CONSENT_UI_FIX.md`.
 
 - **Attendance matrix: click-a-date now opens the day editor (2026-11-10):** the admin

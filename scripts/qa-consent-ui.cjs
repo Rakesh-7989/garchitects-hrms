@@ -113,6 +113,19 @@ async function main() {
     check('schema (live): consent_records.purpose accepts a full notice paragraph',
         col && (col.len === null || col.len === -1 || col.len > 300), col);
 
+    // The startup migration must widen an EXISTING database too (a fresh
+    // install gets TEXT from schema.sql), and it must survive the Supabase
+    // pooler closing the connection mid-run - that failure is what kept the
+    // production column at VARCHAR(100) for a whole release.
+    const indexSrc = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+    check('schema (startup migration): existing databases are widened on boot',
+        /ALTER TABLE consent_records ALTER COLUMN purpose TYPE TEXT/.test(indexSrc), null);
+    check('startup migrations retry a transient connection error',
+        /async function migrate\(/.test(indexSrc) && /isConnectionError/.test(indexSrc), null);
+    const dbSrc = fs.readFileSync(path.join(ROOT, 'server', 'config', 'database.js'), 'utf8');
+    check('a lost pooled connection is recycled instead of failing the caller',
+        /function recyclePool\(/.test(dbSrc) && /isConnectionError\(err\)/.test(dbSrc), null);
+
     // ---- 3. API: record + read back ---------------------------------------
     const hash = await bcrypt.hash('Qa!' + ts + 'emp', 6);
     const emp = await pool.query(

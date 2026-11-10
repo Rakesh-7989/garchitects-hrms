@@ -63,6 +63,41 @@
 **`server/schema.sql` + `server/index.js` + `server/utils/schemaRepair.js`**
 — `consent_records.purpose` is `TEXT` on all three layers (§2, defect 5).
 
+### 3.1 The production surprise: the startup migration was silently failing
+
+After deploying, the **production** column was still `VARCHAR(100)`. The
+Vercel runtime logs said why:
+
+```
+[Migration] Leave types migration skipped: Connection terminated due to connection timeout
+```
+
+The startup migration runs at module load on a cold Vercel instance against the
+**Supabase transaction pooler** (port 6543), which closes idle connections. One
+statement dying mid-run killed **the rest of that block** — the consent column
+widening never landed, and nobody noticed because every migration failure is
+only a `console.warn`.
+
+Two systemic fixes:
+
+* `server/config/database.js` — a connection-level error (`Connection
+  terminated`, `timeout expired`, `ECONNRESET`, `EPIPE`, …) now **recycles the
+  pool**, so the next attempt opens a fresh connection instead of failing the
+  caller. This helps every request, not only the migrations.
+* `server/index.js` — all **118** startup statements now go through a
+  `migrate()` helper that retries a transient connection error up to 4 times
+  (0.5 s / 1 s / 1.5 s backoff). Every statement is idempotent, so retrying is
+  safe.
+
+The production column was widened manually once (a non-destructive
+`ALTER TABLE consent_records ALTER COLUMN purpose TYPE TEXT`) so the consent
+gate works on production immediately; the migration now applies it by itself on
+the next boot.
+
+**Lesson worth keeping:** a startup migration that only warns is a silent
+failure. The hermetic QA boots a local Postgres, so it never saw the pooler
+problem — only the live runtime logs did.
+
 **`public/pages/admin/audit-logs.html`** — the page-local `formatIstTime`
 removed (single definition in `auth.js`).
 
@@ -88,7 +123,7 @@ reached users at all (this was observed live in the browser test).
 | login page → "Privacy Policy" | 401 + page reload | opens read-only (5 notices, Close button), **no redirect**, **no console error** |
 | login page → "Manage Consent" | 404 | friendly toast "Sign in to manage your consent choices." |
 
-**Automated:** new `scripts/qa-consent-ui.cjs` (**19/19**) wired into the QA
+**Automated:** new `scripts/qa-consent-ui.cjs` (**22/22**) wired into the QA
 commander as a regression stage:
 
 * client contract (source level): no double-prefixed `apiCall('/api/…')`,
@@ -96,7 +131,9 @@ commander as a regression stage:
   buttons bound, `closeConsentModal` null-safe;
 * schema contract: `purpose` is `TEXT` in all three layers **and** the live
   column accepts a full notice paragraph (`character_maximum_length` is
-  unlimited / > 300);
+  unlimited / > 300), the startup migration widens an existing database, the
+  migrations retry a transient connection error, and a lost pooled connection
+  is recycled;
 * API contract: record with a full-length purpose → **201**, the purpose is
   stored intact, `GET /api/consent/mine` returns it, a second notice can be
   recorded, an unknown `notice_key` → 400, an invalid `choice` → 400, no token
@@ -115,5 +152,7 @@ probes, 43 DB invariants, zero leftovers). `npm run qa:inline`: 39/39.
 | `public/pages/admin/dashboard.html` | (no change needed — it only *called* the missing helper) |
 | `public/sw.js` | cache v19 → v20 (auth.js is a cache-first asset) |
 | `server/schema.sql`, `server/index.js`, `server/utils/schemaRepair.js` | `consent_records.purpose` → `TEXT` (+ idempotent ALTER on boot) |
+| `server/config/database.js` | **new** — a lost pooled connection is detected and the pool is recycled |
+| `server/index.js` | all 118 startup statements now retry a transient connection error |
 | `scripts/qa-consent-ui.cjs` | **new** — consent records + consent UI contract harness |
 | `scripts/qa-commander.cjs` | the new harness wired into the regression stage |
