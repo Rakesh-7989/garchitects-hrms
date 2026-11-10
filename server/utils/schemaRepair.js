@@ -577,6 +577,23 @@ const ENSURE_TABLE_DDL = {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_consent_records_user ON consent_records(user_id)`,
         `CREATE INDEX IF NOT EXISTS idx_consent_records_notice ON consent_records(notice_key, notice_version)`
+    ],
+    // Cron liveness heartbeat. One row per scheduled job; written by every
+    // cron run so "did this job actually fire?" is answerable from the DB.
+    // Additive + idempotent; a DB that predates the release self-heals on the
+    // first cron invocation instead of silently losing every heartbeat.
+    cron_runs: [
+        `CREATE TABLE IF NOT EXISTS cron_runs (
+            job VARCHAR(50) PRIMARY KEY,
+            last_run_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            last_success_at TIMESTAMP,
+            last_status VARCHAR(20) NOT NULL DEFAULT 'ok',
+            last_result TEXT,
+            duration_ms INT,
+            source VARCHAR(30),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_cron_runs_last_run ON cron_runs(last_run_at DESC)`
     ]
 };
 

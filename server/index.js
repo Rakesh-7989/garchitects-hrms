@@ -670,6 +670,25 @@ async function runMigrations() {
         await query(`CREATE INDEX IF NOT EXISTS idx_consent_records_notice ON consent_records(notice_key, notice_version)`);
         console.log('[Migration] consent_records table ensured.');
     } catch (e) { console.warn('[Migration] consent_records table skipped:', e.message); }
+
+    // Cron liveness heartbeat (layer B). One row per scheduled job, written by
+    // every cron run. Without it a job that silently stopped firing (bad
+    // secret, dead scheduler, DNS) is indistinguishable from a healthy one -
+    // GET /api/cron/health is the only way to see it.
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS cron_runs (
+            job VARCHAR(50) PRIMARY KEY,
+            last_run_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            last_success_at TIMESTAMP,
+            last_status VARCHAR(20) NOT NULL DEFAULT 'ok',
+            last_result TEXT,
+            duration_ms INT,
+            source VARCHAR(30),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_cron_runs_last_run ON cron_runs(last_run_at DESC)`);
+        console.log('[Migration] cron_runs table ensured (cron liveness heartbeat).');
+    } catch (e) { console.warn('[Migration] cron_runs table skipped:', e.message); }
 }
 runMigrations();
 

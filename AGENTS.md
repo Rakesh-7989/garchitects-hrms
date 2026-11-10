@@ -126,7 +126,21 @@ themself; do not expand the guard to them without an owner decision.
 - Push to `master` triggers `.github/workflows/deploy.yml` → Vercel **production** deploy via the
   REST API (`POST /v13/deployments`, `target: production`, `ref: master`). Vercel crons in
   `vercel.json` (auto-attendance, auto-checkout, purge-photos, expire-announcements,
-  expire-handovers) are guarded by `CRON_SECRET`.
+  expire-handovers, sweep-late) are guarded by `CRON_SECRET`.
+- ⚠️ **The crons only fire if the production DOMAIN resolves.** Vercel Cron dispatches to
+  the project's production domain. As of 2026-11-10 that domain is the custom domain
+  `hrms.garchitects.in`, which has **no DNS record** (NXDOMAIN at Google/Cloudflare/the
+  authoritative NS) — so **all six crons have never executed in production**. The fix is
+  infrastructure: add `hrms CNAME cname.vercel-dns.com` at `dns1-4.p02.nsone.net`, or
+  repoint the project's production domain to the working shared alias
+  `garchitects-hrms.vercel.app`. Two Vercel facts to keep in mind: Cron **does not follow
+  redirects** (so an SSO-redirecting deployment URL can never deliver a cron) and a
+  `CRON_SECRET` with trailing whitespace makes **every** invocation 401 (the guard now
+  trims both sides — see `docs/FEATURE_CRON_LIVENESS.md`).
+- Liveness is observable: every cron writes a heartbeat to `cron_runs`, and
+  `GET /api/cron/health` (admin JWT) reports every scheduled job's last run + a
+  `stale` flag (stale = never ran, or >26 h old). The admin dashboard shows a
+  **Scheduled Jobs** card. A cron that stops firing is now *visible*, not silent.
 - Local run: `npm install` then `npm start` (or `npm run dev` with nodemon) on `PORT` (default 3000).
 - DB scripts: `npm run db:init`, `npm run db:migrate`, `npm run test:smtp -- <recipient>`.
 
@@ -138,6 +152,29 @@ themself; do not expand the guard to them without an owner decision.
 - Keep commits atomic and scoped to the task; do not fold unrelated refactors into a feature commit.
 
 ## 11. Current state (update this as work ships)
+
+- **Cron liveness + guard hardening (2026-11-10):** **all six Vercel crons had never
+  executed in production** — the production custom domain `hrms.garchitects.in` has no DNS
+  record (NXDOMAIN), so Vercel Cron had nowhere to dispatch. Proven in the live DB: 206
+  expired `attendance_photos` undeleted, 2 expired announcements still active, 9 stale
+  `late` attendance rows, 0 `attendance_marked_absent` notifications all-time, 0 handovers
+  `ended`. **Shipped:** (a) guard hardened — both sides trimmed, case-insensitive `bearer`
+  (RFC 7235), `crypto.timingSafeEqual` compare, still fail-closed; (b) `cron_runs`
+  heartbeat table on **all three schema layers** (UTC-stored, written on every run incl.
+  failures and Vercel-rejected invocations); (c) `GET /api/cron/health` (admin JWT) →
+  per-job last run + `stale` (>26 h) / `never_ran` / `failing`; (d) admin dashboard
+  **Scheduled Jobs** card; (e) `server/config/cronJobs.js` registry with a QA parity
+  assert (`vercel.json` ≡ registry ≡ implemented routes); (f) `scripts/qa-cron.cjs`
+  rewritten 2 → 33 checks (real side effects + heartbeat + health + parity) and the QA
+  commander now boots the server **with** a `CRON_SECRET` for that harness only; (g) new
+  `scripts/qa-live-sweep.cjs` live read-only sweep (13/13) with an optional admin-authed
+  cron-liveness probe; (h) the QA commander no longer skips the canonical `schema.sql`
+  load when a leftover app server holds :3000 (it left the suite running against 4
+  tables). **QA:** hermetic `npm run qa` **91/91 green** (279 RBAC cell probes, 43 DB
+  invariants, zero leftovers), `qa:inline` 39/39, `qa-reg-review` 18/18 standalone, live
+  sweep 13/13. **Pending (owner):** the `hrms` DNS CNAME at `dns1-4.p02.nsone.net` +
+  approval for the attendance/photo/announcement backfill. See
+  `docs/FEATURE_CRON_LIVENESS.md`.
 
 - **Work-Assignments approval hardening + encoding repair (2026-11-06, `43c2f58` + `0e2f44c`):**
   `work_assignments` `pending` status now in the CHECK constraint on **all three schema layers**

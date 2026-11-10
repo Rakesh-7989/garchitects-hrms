@@ -1144,3 +1144,27 @@ CREATE TABLE IF NOT EXISTS project_access_grants (
 );
 CREATE INDEX IF NOT EXISTS idx_pag_emp ON project_access_grants(employee_id);
 CREATE INDEX IF NOT EXISTS idx_pag_project ON project_access_grants(project_id);
+
+-- ============================================================
+-- 28. CRON RUNS (liveness heartbeat for the scheduled jobs)
+-- ============================================================
+-- One row per scheduled job (see server/config/cronJobs.js + vercel.json).
+-- Written by every cron run so "did this job actually fire?" is answerable
+-- from the database alone. A scheduled job that silently stops firing is
+-- otherwise invisible until its business rule (auto-absent, photo purge,
+-- late sweep, ...) has been broken for weeks.
+--   last_run_at     - when the job last executed (success OR failure)
+--   last_success_at - when it last completed successfully
+--   last_status     - 'ok' | 'error' | 'unauthorized'
+--   last_result     - JSON summary of the run (counts, not payloads)
+CREATE TABLE IF NOT EXISTS cron_runs (
+    job VARCHAR(50) PRIMARY KEY,
+    last_run_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    last_success_at TIMESTAMP,
+    last_status VARCHAR(20) NOT NULL DEFAULT 'ok',
+    last_result TEXT,
+    duration_ms INT,
+    source VARCHAR(30),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cron_runs_last_run ON cron_runs(last_run_at DESC);

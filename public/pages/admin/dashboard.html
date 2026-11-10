@@ -213,6 +213,15 @@
 
             <div class="card mb-3 slide-up stagger-1">
                 <div class="card-header">
+                    <h2 style="font-size:1.1rem;font-weight:600;"><i class="fas fa-sync" style="color:var(--accent);"></i> Scheduled Jobs <span id="cronHealthBadge" style="margin-left:8px;font-size:0.78rem;font-weight:600;"></span></h2>
+                    <span style="font-size:0.78rem;color:var(--text-tertiary);">Daily automation (attendance, photos, announcements)</span>
+                </div>
+                <div id="cronHealth">
+                </div>
+            </div>
+
+            <div class="card mb-3 slide-up stagger-1">
+                <div class="card-header">
                     <h2 style="font-size:1.1rem;font-weight:600;"><i class="fas fa-tasks" style="color:var(--accent);"></i> Work Assignments</h2>
                     <a href="/manager/team-work" style="font-size:0.85rem;color:var(--primary);text-decoration:none;font-weight:500;">Manage &rarr;</a>
                 </div>
@@ -256,6 +265,7 @@
             loadPendingProfileUpdates();
             loadWorkAssignmentsOverview();
             loadDailyWorkLogsOverview();
+            loadCronHealth();
         });
 
         async function loadDashboardStats() {
@@ -518,6 +528,51 @@
                     '</tr>';
             }).join('');
             listEl.innerHTML = '<div class="table-container"><table><thead><tr><th>Assignee</th><th>Assignment</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+        }
+
+        async function loadCronHealth() {
+            const el = document.getElementById('cronHealth');
+            const badge = document.getElementById('cronHealthBadge');
+            if (!el) return;
+            const data = await apiCall('/cron/health');
+            if (!data || !data.success) {
+                el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:0.85rem;">Could not load scheduled job status.</div>';
+                if (badge) badge.textContent = '';
+                return;
+            }
+            const jobs = data.jobs || [];
+            if (badge) {
+                const staleCount = (data.stale_jobs || []).length;
+                const failingCount = (data.failing_jobs || []).length;
+                if (staleCount || failingCount) {
+                    badge.textContent = (staleCount + failingCount) + ' job(s) not healthy';
+                    badge.style.color = 'var(--danger)';
+                } else {
+                    badge.textContent = 'All jobs running';
+                    badge.style.color = 'var(--success)';
+                }
+            }
+            if (jobs.length === 0) {
+                el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:0.85rem;">No scheduled jobs reported.</div>';
+                return;
+            }
+            const rows = jobs.map(j => {
+                let statusText, statusClass;
+                if (j.last_status === 'unauthorized') { statusText = 'Rejected (secret mismatch)'; statusClass = 'danger'; }
+                else if (j.failing) { statusText = 'Last run failed'; statusClass = 'danger'; }
+                else if (j.never_ran) { statusText = 'Never ran'; statusClass = 'danger'; }
+                else if (j.stale) { statusText = 'Not run recently'; statusClass = 'warning'; }
+                else { statusText = 'OK'; statusClass = 'success'; }
+                const when = j.last_run_at ? String(j.last_run_at).replace('T', ' ').slice(0, 19) : 'never';
+                const ago = (j.age_hours !== null && j.age_hours !== undefined)
+                    ? Math.round(Number(j.age_hours) * 10) / 10 + 'h ago' : 'no run recorded';
+                return '<tr>' +
+                    '<td>' + escapeHtml(String(j.job || '').replace(/-/g, ' ')) + '<div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">' + escapeHtml(j.schedule || '') + ' UTC</div></td>' +
+                    '<td>' + escapeHtml(when) + '<div style="font-size:0.72rem;color:var(--text-secondary);margin-top:2px;">' + escapeHtml(ago) + '</div></td>' +
+                    '<td><span class="badge badge-' + statusClass + '">' + escapeHtml(statusText) + '</span></td>' +
+                    '</tr>';
+            }).join('');
+            el.innerHTML = '<div class="table-container"><table><thead><tr><th>Job</th><th>Last Run (UTC)</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
         }
 
         async function loadDailyWorkLogsOverview() {

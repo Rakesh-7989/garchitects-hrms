@@ -33,6 +33,7 @@
     { "id": "departments", "module": "departments", "method": "POST", "path": "/api/departments", "guard": "isAdmin", "expect": { "admin": "allow", "hr": 403, "manager": 403, "team_lead": 403, "employee": 403 } },
     { "id": "holidays", "module": "holidays", "method": "POST", "path": "/api/holidays", "guard": "isAdmin", "expect": { "admin": "allow", "hr": 403, "manager": 403, "team_lead": 403, "employee": 403 } },
     { "id": "docs-all", "module": "documents", "method": "GET", "path": "/api/documents/all", "guard": "isAdminOrHr", "note": "documents vault", "expect": { "admin": "allow", "hr": "allow", "manager": 403, "team_lead": 403, "employee": 403 } },
+    { "id": "cron-health", "module": "cron", "method": "GET", "path": "/api/cron/health", "guard": "verifyToken + isAdmin", "note": "scheduled-job liveness surface (admin only; deliberately NOT CRON_SECRET-gated so the founder can SEE a dead job). JWT admin -> 200 with the per-job heartbeat list; every other role -> 403 exact.", "expect": { "admin": "allow", "hr": 403, "manager": 403, "team_lead": 403, "employee": 403 } },
     { "id": "onboarding-tasks", "module": "onboarding", "method": "POST", "path": "/api/onboarding/processes/{qaEmpId}/tasks", "guard": "isAdminOrHr", "note": "entity-id row: authorized cells skipped (fake process id would 404); only the forbidden cells are asserted", "expect": { "manager": 403, "team_lead": 403, "employee": 403 } },
     { "id": "profile-updates", "module": "profileUpdates", "method": "GET", "path": "/api/profile-updates", "guard": "isAdminOrHr", "note": "profile change requests", "expect": { "admin": "allow", "hr": "allow", "manager": 403, "team_lead": 403, "employee": 403 } },
     { "id": "regularize-review", "module": "regularization", "method": "POST", "path": "/api/regularization/{qaEmpId}/review", "guard": "verifyToken + inline role check (admin/HR company-wide; manager/team_lead own tree)", "note": "review widened admin-only -> admin/HR + manager/team_lead(own tree) so the manager portal review UI works; {} body hits the status validator -> 400 for authorized roles, 403 for others (employee). Tree scope verified by scripts/qa-reg-review.cjs", "expect": { "admin": 400, "hr": 400, "manager": 400, "team_lead": 400, "employee": 403 } },
@@ -66,6 +67,7 @@
     { "module": "payroll", "method": "GET", "path": "/api/payroll/all", "note": "no token -> 401" },
     { "module": "employees", "method": "GET", "path": "/api/employees", "note": "no token -> 401" },
     { "module": "cron", "method": "GET", "path": "/api/cron/auto-attendance", "note": "no CRON_SECRET -> 401 (fail-closed)" },
+    { "module": "cron", "method": "GET", "path": "/api/cron/health", "note": "no token -> 401 (JWT-gated, not CRON_SECRET-gated)" },
     { "module": "cron", "method": "GET", "path": "/api/cron/purge-photos", "note": "no CRON_SECRET -> 401 (fail-closed)" },
     { "module": "cron", "method": "GET", "path": "/api/cron/expire-handovers", "note": "no CRON_SECRET -> 401 (fail-closed)" }
   ]

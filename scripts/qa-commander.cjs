@@ -160,6 +160,7 @@ async function hermeticUp() {
         throw new Error('DATABASE_URL is not a hermetic 5433 URL — point it at the QA Postgres (or start your own stack on 5433/3000 and rerun).');
     }
     env.selfManaged = true;
+    env.bootedPg = true;
     console.log('[env] booting hermetic stack: PG cluster -> schema -> app server');
     if (!pgBusy) {
         // Throwaway cluster, always fresh: a leftover/torn dir from a previous
@@ -198,21 +199,28 @@ async function hermeticUp() {
         // proceed when DATABASE_URL points at a QA 5433 instance.
         throw new Error('port 5433 is in use but DATABASE_URL is not a QA 5433 URL — stop that service or point DATABASE_URL at the hermetic QA DB.');
     }
-    if (!srvBusy) {
+    if (!srvBusy || env.bootedPg) {
         // Load schema.sql VERBATIM with ON_ERROR_STOP so a syntax error in the
         // canonical file fails the hermetic boot loudly (QA goes red) instead of
         // being masked — a fresh install runs this file raw via `npm run db:init`,
         // so the QA stack must validate exactly what db:init reads.
+        //
+        // The schema is loaded whenever THIS run created the cluster, even if
+        // an app server is already listening on :3000: that leftover server
+        // points at the freshly initialised (empty) database, and skipping the
+        // load here leaves the whole suite running against 4 tables.
         const schema = fs.readFileSync(path.join(ROOT, 'server', 'schema.sql'), 'utf8');
         const tmp = path.join(QA_CLUSTER, '..', 'qa-schema-raw.sql');
         fs.writeFileSync(tmp, schema);
         execFileSync(path.join(PG_BIN, 'psql.exe'), ['-h', '127.0.0.1', '-p', String(QA_PORT), '-U', 'postgres', '-d', 'garchitects_hrms', '-v', 'ON_ERROR_STOP=1', '-f', tmp], { stdio: 'pipe' });
+    }
+    if (!srvBusy) {
         await startServer();
     }
     env.pool = makePool(dbUrl());
     console.log('[env] hermetic stack is up');
 }
-async function startServer() {
+async function startServer(envOverrides = {}) {
     console.log('[env] (re)starting app server on 3000');
     killByPort(SERVER_PORT);
     if (!(await waitPortFree(SERVER_PORT))) throw new Error('port 3000 did not free in time');
@@ -221,7 +229,11 @@ async function startServer() {
     const logBase = path.join(path.dirname(QA_CLUSTER), 'qa-server');
     const outFd = fs.openSync(logBase + '.out.log', 'a');
     const errFd = fs.openSync(logBase + '.err.log', 'a');
-    spawn('node', ['server/index.js'], { cwd: ROOT, windowsHide: true, detached: true, stdio: ['ignore', outFd, errFd], env: { ...process.env } }).unref();
+    // CRON_SECRET defaults to '' (fail closed) so a developer's ambient
+    // environment can never turn the cron endpoints into open endpoints during
+    // QA - the RBAC matrix asserts they answer 401 without a secret.
+    const serverEnv = { ...process.env, CRON_SECRET: '', ...envOverrides };
+    spawn('node', ['server/index.js'], { cwd: ROOT, windowsHide: true, detached: true, stdio: ['ignore', outFd, errFd], env: serverEnv }).unref();
     // DB-strong health: an unauthenticated /api/auth/login hits the DB (401 on
     // bad creds when the DB is up, 500 when it is down) - proving the whole
     // stack, not just Express static serving, is ready.
@@ -276,6 +288,14 @@ async function stageDiscover() {
 }
 
 // ---------------- stage: regression ----------------
+// The third element is optional: { env } = extra environment for BOTH the app
+// server and the harness process. The cron harness needs a CRON_SECRET (the
+// cron endpoints fail closed without one, so the authorized half of the test
+// would otherwise be skipped - the exact blind spot that let six dead
+// production crons pass QA for months). The secret is injected ONLY for that
+// harness; every other server boot keeps CRON_SECRET empty so the RBAC
+// matrix's "cron without a secret -> 401" rows still hold.
+const QA_CRON_SECRET = 'qa-hermetic-cron-secret';
 const HARNESSES = [
     ['scripts/qa-attendance-checkin-status.cjs', 'attendance check-in status'],
     ['scripts/qa-attendance-break-finalize.cjs', 'attendance break finalize'],
@@ -286,12 +306,12 @@ const HARNESSES = [
     ['scripts/qa-fix-sprint.cjs', 'fix-sprint audit batch'],
     ['scripts/qa-runtime-errors.cjs', 'live runtime errors (dateOnly / team-updates / audit-log)'],
     ['scripts/qa-auth-flows.cjs', 'auth flows (forgot/reset OTP, token_version revocation)'],
-    ['scripts/qa-cron.cjs', 'cron endpoints (CRON_SECRET fail-closed + job execution)'],
+    ['scripts/qa-cron.cjs', 'cron endpoints (fail-closed + real side effects + liveness heartbeat)', { env: { CRON_SECRET: QA_CRON_SECRET, QA_CRON_SECRET } }],
     ['scripts/qa-wfh-tickets.cjs', 'wfh + tickets apply/approve flows'],
 ];
-async function runHarness(script, label, stage = 'regression') {
+async function runHarness(script, label, stage = 'regression', envOverrides = {}) {
     const out = await new Promise((resolve) => {
-        const p = spawn('node', [script], { cwd: ROOT, windowsHide: true });
+        const p = spawn('node', [script], { cwd: ROOT, windowsHide: true, env: { ...process.env, ...envOverrides } });
         let buf = '';
         p.stdout.on('data', d => (buf += d));
         p.stderr.on('data', d => (buf += d));
@@ -314,7 +334,12 @@ async function runHarness(script, label, stage = 'regression') {
 }
 async function stageRegression() {
     for (let i = 0; i < HARNESSES.length; i++) {
-        await runHarness(HARNESSES[i][0], HARNESSES[i][1]);
+        const [script, label, opts] = HARNESSES[i];
+        const overrides = (opts && opts.env) || {};
+        // A harness that needs extra server env (the cron secret) gets its own
+        // server boot with that env; every other boot stays fail-closed.
+        if (Object.keys(overrides).length) await startServer(overrides);
+        await runHarness(script, label, 'regression', overrides);
         // Fresh server between harnesses: the login limiter is a per-process
         // 10-attempt/15-min bucket and the whole suite needs ~20 logins.
         if (i < HARNESSES.length - 1) await startServer();

@@ -30,7 +30,7 @@ were performed; live probes were unauthenticated/GET only.
 | Unknown API route `/api/definitely-not-a-real-route-here` | **404** |
 | Unknown page `/totally-unknown-page-xyz` | **404** |
 | Invalid Bearer token → `/api/auth/me` | **401** `{"success":false,"message":"Invalid or expired token."}` |
-| All 6 cron endpoints without secret | **401** (fail-closed ✔) |
+| All 6 cron endpoints without secret | **401** (fail-closed ✔) — ⚠️ this is a **guard** test, not a **liveness** test. On 2026-11-10 it was proven that all six production crons had **never fired** (the production custom domain `hrms.garchitects.in` has no DNS record), so this row must not be read as "the crons work". See `docs/FEATURE_CRON_LIVENESS.md`. |
 | Latest deployment | READY; **0 runtime errors in 24h** (Vercel advisor/runtime-error scan) |
 
 ## 3. Security deep-dive

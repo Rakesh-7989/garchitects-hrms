@@ -357,7 +357,7 @@ Gap scale: **HIGH** = no automated coverage of a role-scoped or governance write
 | **tickets** | — | *(none)* | **HIGH** — create/respond/close flow entirely unasserted |
 | onboarding | — | onboarding-tasks (forbidden cells only) | MEDIUM — authorized cells skipped by design |
 | manager | — | mgr-team, mgr-today, mgr-leaves | MEDIUM — histories + tickets/wfh endpoints untested |
-| **cron** | — | *(none)* | **MEDIUM** — `CRON_SECRET` guard + scheduled job behaviour unprobed (security-relevant) |
+| **cron** | — | *(none)* | **MEDIUM** → **SHIPPED 2026-11-10** — `CRON_SECRET` guard + scheduled job behaviour unprobed (security-relevant). Now covered by `scripts/qa-cron.cjs` (29 checks: fail-closed + header hygiene + real side effects + liveness heartbeat + `GET /api/cron/health` + `vercel.json`⇄route parity). See `docs/FEATURE_CRON_LIVENESS.md` |
 | push | — | *(none)* | LOW — opt-in infra |
 | projects | — | proj-my, proj-list, proj-create | MEDIUM — units / `:id` / employees untested |
 | **project-reports** | — | *(none)* | **HIGH** |
