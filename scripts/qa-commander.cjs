@@ -33,6 +33,11 @@
  *               seeds the full role world via the live API, runs the matrix,
  *               and cleans up (writes to the live DB - only with creds).
  *
+ * NOTE (live target): the login limiter is 10 attempts / 15 min PER IP, and
+ * the live target cannot restart the server to reset it the way the hermetic
+ * stage does. One live run uses ~6 logins, so TWO live runs inside 15 minutes
+ * will start failing with 401s. Leave 15 minutes between live runs.
+ *
  * Exit: 0 all green; 1 if any check FAILED (db WARNs never fail the run).
  * --json=<path> writes the machine-readable report. --issues files a GitHub
  * issue (via `gh`) for each FAILED item - explicit opt-in only.
@@ -372,6 +377,10 @@ async function stageRbac() {
     if (!isLive) await startServer();
     const ts = Date.now();
     const world = {};
+    // The MAIN admin's token (QA_LIVE_ADMIN_ID/PW). The live cleanup needs it:
+    // the permanent-delete route refuses a self-delete, so the QA admin's own
+    // token cannot delete the QA admin account.
+    let liveAdminTok = null;
     const matrix = JSON.parse(fs.readFileSync(path.join(ROOT, 'qa', 'rbac-matrix.json'), 'utf8'));
 
     // ---- seed the world ----
@@ -406,6 +415,7 @@ async function stageRbac() {
     } else {
         // Live: create the role users through the admin API, then clean up at the end.
         const adminTok = await loginLive('admin');
+        liveAdminTok = adminTok;
         const createUser = async (tag, role) => {
             const r = await apiCall(base, 'POST', '/api/employees', adminTok, {
                 employee_id: `qa${ts}${tag}`, first_name: 'QA', last_name: tag.toUpperCase(),
@@ -425,6 +435,25 @@ async function stageRbac() {
         const targetSt = await createUser('target', 'employee');
         world.targetEmp = { id: null, employee_id: `qa${ts}target`, password: 'Qa!' + ts + 'target' };
         if (!(targetSt >= 200 && targetSt < 300) && targetSt !== 400) record('rbac', 'seed targetEmp', false, `create failed: HTTP ${targetSt}`);
+        // The rows that address a record by id ({qaEmpId}/{permEmpId}) need the
+        // REAL ids. The create call does not return them, so read them back
+        // from the admin list - without this the placeholders substituted to
+        // the literal "null" and every id-addressed row failed on live
+        // (DELETE /api/employees/null/permanent -> 500 "invalid input syntax").
+        // The employee list is PAGINATED (default limit 10), so looking a QA
+        // account up without a limit misses every account that is not on the
+        // first page - which is how the live cleanup used to leave rows behind.
+        const listRes = await apiCall(base, 'GET', '/api/employees?limit=200', adminTok);
+        const list = (listRes.json && listRes.json.employees) || [];
+        for (const key of Object.keys(world)) {
+            const w = world[key];
+            if (!w || w.id || !w.employee_id) continue;
+            const hit = list.find(e => e.employee_id === w.employee_id);
+            if (hit && hit.id) w.id = hit.id;
+        }
+        const unresolved = Object.keys(world).filter(k => world[k] && !world[k].id);
+        record('rbac', 'seed:ids resolved', unresolved.length === 0,
+            unresolved.length ? 'unresolved: ' + unresolved.join(', ') : `${Object.keys(world).length} id(s) resolved from the admin list`);
     }
     console.log(`[rbac] world seeded: ${ROLES.join(', ')} + permEmp + targetEmp (${isLive ? 'live' : 'hermetic'})`);
 
@@ -520,14 +549,31 @@ async function stageRbac() {
         const leftAll = await env.pool.query(`SELECT COUNT(*) n FROM employees WHERE employee_id LIKE 'qa${ts}%'`);
         record('rbac', 'cleanup:zero-leftovers', parseInt(leftAll.rows[0].n, 10) === 0, `qa rows remaining: ${leftAll.rows[0].n}`);
     } else {
-        // Live cleanup via admin API (hard delete by employee_id lookup)
-        const adminTok = tokens.admin;
+        // Live cleanup via the MAIN admin API. The QA admin's own token cannot
+        // delete itself (the route refuses a self-delete with 400), so the
+        // main admin token is used here.
+        const adminTok = liveAdminTok || tokens.admin;
+        const left = [];
         for (const role of [...ROLES, 'permEmp', 'targetEmp']) {
-            const found = await apiCall(base, 'GET', '/api/employees', adminTok);
+            const w = world[role];
+            if (!w) continue;
+            // limit=200: the employee list is paginated (default 10) and a QA
+            // account that is not on the first page would never be found.
+            const found = await apiCall(base, 'GET', '/api/employees?limit=200', adminTok);
             const list = (found.json && found.json.employees) || [];
-            const hit = list.find(e => e.employee_id === world[role].employee_id);
-            if (hit && hit.id) await apiCall(base, 'DELETE', `/api/employees/${hit.id}/permanent`, adminTok);
+            const hit = list.find(e => e.employee_id === w.employee_id);
+            if (!hit || !hit.id) {
+                // Not in the list = already gone (a matrix row may have deleted
+                // it, e.g. emp-permdelete). Nothing to clean.
+                continue;
+            }
+            const del = await apiCall(base, 'DELETE', `/api/employees/${hit.id}/permanent`, adminTok);
+            if (!(del.status >= 200 && del.status < 300)) left.push(`${w.employee_id} (delete HTTP ${del.status})`);
         }
+        // A leftover on the live database is a real (if harmless) mess: say so
+        // loudly instead of finishing the run green.
+        record('rbac', 'cleanup:zero-leftovers', left.length === 0,
+            left.length ? 'still on the live DB: ' + left.join('; ') : 'every QA account removed');
     }
 }
 // login helper used by the live branch (hermetic logins reuse the same apiCall)
