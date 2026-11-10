@@ -85,6 +85,26 @@ async function recordCronRun(job, status, result, durationMs, source) {
 // survives a serverless cold start and needs no in-memory state.
 async function recordUnauthorizedCronAttempt(job, req) {
     const schedule = cronSchedule(req);
+    // Diagnostics for "the scheduler called us and we rejected it": the header
+    // is never logged or stored (it IS the secret), only its shape:
+    //   present  - was an Authorization header sent at all?
+    //   len      - how long is the token we received vs the one we expect?
+    //   scheme   - does it start with "Bearer"?
+    // A length mismatch means the header was truncated (a newline inside the
+    // secret) or the two sides hold different values; a missing header means
+    // the deployment has no CRON_SECRET at all.
+    const header = req.headers.authorization;
+    const expected = normalizeSecret(process.env.CRON_SECRET);
+    const received = typeof header === 'string' ? header.trim() : '';
+    const token = /^bearer[ \t]+(.*)$/i.exec(received);
+    const detail = {
+        reason: 'CRON_SECRET mismatch or missing',
+        schedule,
+        header_present: typeof header === 'string',
+        scheme_ok: !!token,
+        received_len: token ? token[1].trim().length : (received ? received.length : 0),
+        expected_len: expected.length
+    };
     try {
         await runWithSchemaRepair(() => query(
             `INSERT INTO cron_runs (job, last_run_at, last_success_at, last_status, last_result, duration_ms, source)
@@ -96,8 +116,9 @@ async function recordUnauthorizedCronAttempt(job, req) {
                 source = 'vercel-cron'
              WHERE cron_runs.last_status <> 'unauthorized'
                 OR cron_runs.last_run_at < ((NOW() AT TIME ZONE 'UTC') - INTERVAL '10 minutes')`,
-            [job, JSON.stringify({ reason: 'CRON_SECRET mismatch or missing', schedule })]
+            [job, JSON.stringify(detail)]
         ));
+        console.warn('[cron] ' + job + ' rejected: ' + JSON.stringify(detail));
     } catch (e) {
         console.error(`[cron] unauthorized heartbeat failed for ${job}:`, e.message);
     }
