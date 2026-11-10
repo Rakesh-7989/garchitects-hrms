@@ -5,9 +5,12 @@
 > (a) hardens the cron guard against the two documented Vercel failure modes,
 > (b) adds a **liveness heartbeat** so a dead cron is *visible* instead of
 > invisible, (c) rewrites the QA harness so a green suite can no longer coexist
-> with six dead crons, and (d) surfaces the health of every scheduled job on
-> the admin dashboard. The remaining fix — the dead DNS record for the
-> production custom domain — is an infrastructure change owned by the founder.
+> with six dead crons, (d) surfaces the health of every scheduled job on the
+> admin dashboard, and (e) **finds and fixes the real root cause: the
+> `CRON_SECRET` the dispatcher sent did not match the one the deployment read.**
+> The dead DNS record for the custom domain looked like the cause and turned
+> out to be a **red herring** — Vercel dispatches the schedule to the
+> production *deployment*, not to the custom domain (§1.4).
 
 ---
 
@@ -31,13 +34,11 @@ attendance rows (Oct 1–10) and **0 rows for 7 November workdays**; GA0003 and
 GA0006 are each missing 2 workdays. Nothing in the product ever told anyone —
 the QA suite was green.
 
-### 1.2 Root cause (infrastructure, not application code)
+### 1.2 The first hypothesis (and why it was only part of the story)
 
-Vercel Cron dispatches to the **production domain** of the project — the docs are
-explicit: *"Vercel invokes cron jobs on the production deployment serving your
-production domain, and sends that deployment's copy in the Authorization
-header."* This project's production domain is the custom domain
-**`hrms.garchitects.in`**, which has **no DNS record**:
+Vercel Cron dispatches to the **production deployment** of the project. This
+project's production *domain* is the custom domain **`hrms.garchitects.in`**,
+which has **no DNS record**:
 
 ```
 hrms.garchitects.in  →  NXDOMAIN
@@ -54,26 +55,63 @@ record** on it. Vercel's own domain config reports the apex as
 
 Secondary factor: the project has `ssoProtection { enabled: true,
 deploymentType: 'all_except_custom_domains' }`, so the *per-deployment* URL
-(`garchitects-hrms-cxwvix084-rakesh15.vercel.app`) answers **302 →
-vercel.com/sso-api** for the cron path. Vercel Cron **does not follow
-redirects** (*"Cron jobs do not follow redirects… Redirect responses are
-treated as final for each invocation"*), so that URL could never deliver a
-cron invocation either. The shared alias `garchitects-hrms.vercel.app` is
-reachable and answers a normal 401 from our own handler — the application
-code was never the problem.
+answers **302 → vercel.com/sso-api** for the cron path, and Vercel Cron **does
+not follow redirects** (*"Cron jobs do not follow redirects… Redirect responses
+are treated as final for each invocation"*).
 
-Third factor (now mitigated in code, see §2.1): `CRON_SECRET` **is** set on the
-Vercel project (production + preview, `type: sensitive`), but its value is
-unreadable through the API. Vercel documents the failure mode precisely: *"If
-the header doesn't match the value your code reads, your endpoint returns 401
-for every invocation"* — a secret containing a newline or trailing whitespace
-is the classic cause, because Node's HTTP parser trims trailing whitespace out
-of the header value while the env var keeps it. The new heartbeat records
-this case explicitly (`last_status = 'unauthorized'`), so *"the scheduler
-called us and we rejected it"* is now distinguishable from *"the scheduler never
-called us"*.
+**This looked like the root cause — and it turned out to be wrong.** The
+heartbeat added by this release proved it: the first recorded invocation
+arrived with `source = "vercel-cron"` and the correct `x-vercel-cron-schedule`
+header, i.e. **Vercel reached the app even with the custom domain dead**.
 
-### 1.3 Why QA never caught it
+### 1.3 The real root cause: a `CRON_SECRET` mismatch
+
+The first rejected invocation was recorded as:
+
+```
+auto-checkout | last_run_at 2026-11-10 15:51:27 | last_status "unauthorized"
+               | source "vercel-cron" | schedule "45 15 * * *"
+               | {"reason":"CRON_SECRET mismatch or missing"}
+```
+
+So the dispatcher *did* call the app and *did* send an `Authorization` header —
+the header simply did not match `process.env.CRON_SECRET`. The failure modes
+that survive a trim fix are:
+
+* a **newline inside** the secret (Node's HTTP parser truncates the header at
+  the line break → the app receives a shorter token than it expects), or
+* the deployment and the dispatcher **holding different values** (the env var
+  was edited after the build; Vercel notes that *"Editing CRON_SECRET in
+  project settings changes nothing until your next deployment"*).
+
+**The fix:** rotate the project secret to a clean, whitespace-free value and
+let the next deployment capture it. `CRON_SECRET` only ever gated the six
+`/api/cron` endpoints (no user-facing impact) and the previous value was
+proven broken, so rotating it is strictly an improvement.
+
+**Verified after the rotation + redeploy** (2026-11-10 16:51 UTC):
+
+| Job | Result |
+|---|---|
+| `auto-attendance` | 200 — **marked 47** absent days (the 30-day lookback) and notified 47 employees |
+| `expire-announcements` | 200 — **expired 2** |
+| `expire-handovers` | 200 — 0 (nothing to end) |
+| `purge-photos` | 200 — **deleted 208** expired photos |
+| `auto-checkout` | 200 — 0 open days to close |
+| `sweep-late` | 200 — **absented 9** unjustified late rows |
+
+Afterwards: `expired photos left = 0`, `expired announcements left = 0`,
+`stale late rows left = 0`, `attendance_marked_absent` notifications = 47, and
+every heartbeat reads `last_status = "ok"`, `source = "vercel-cron"`. The live
+sweep's cron-liveness probe went from **red** to **green**
+(`stale=[] failing=[] never_ran=[]`).
+
+> **Note on the DNS:** `hrms.garchitects.in` still does not resolve. That is
+> **not** what stopped the crons — but it *does* mean anyone typing the
+> branded URL gets nothing, so the record is still worth adding at the
+> registrar for the users' sake.
+
+### 1.4 Why QA never caught it
 
 `scripts/qa-cron.cjs` asserted only "401 without a secret" and "200 with a
 secret" — and it **skipped the second half entirely** when `CRON_SECRET` was
@@ -295,30 +333,26 @@ damage is left for the crons to self-heal (owner decision, 2026-11-10).
 
 ---
 
-## 4. What is left for the founder (not a code change)
+## 4. Status: RESOLVED (2026-11-10, 16:51 UTC)
 
-1. **Add the `hrms` DNS record** at the authoritative nameservers
-   (`dns1-4.p02.nsone.net` for `garchitects.in`):
-   `hrms  CNAME  cname.vercel-dns.com`
-   *(or point the crons at the working shared alias `garchitects-hrms.vercel.app`
-   by replacing the custom domain on the Vercel project.)*
-   Until one of these exists, Vercel Cron has nowhere to dispatch to and the
-   heartbeat stays empty — the new health card will show **"Never ran"** for
-   all six jobs, which is the alarm.
-2. **Confirm `CRON_SECRET` is set on the Vercel project** and has no trailing
-   whitespace (the new trimming makes the latter harmless, but the value must
-   exist at all).
-3. **Backfill the damage** (needs approval — these are production writes):
-   * 9 stale `late` attendance rows → the `sweep-late` job will flip them to
-     `absent` on its first successful run (or they can be regularized by the
-     employees);
-   * 206 expired check-in photos → deleted by `purge-photos` on its first run;
-   * 2 expired announcements → deactivated by `expire-announcements`;
-   * GA0009's 7 missing November workdays and GA0003/GA0006's 2 each → the
-     `auto-attendance` job looks back 30 days, so the first successful run
-     marks those days absent and notifies the employees. **Payroll rows = 0**
-     today, so no payslip has been computed from the incomplete attendance —
-     backfilling before the first payroll run is the cheapest moment.
+| # | Item | State |
+|---|---|---|
+| 1 | **The `CRON_SECRET` mismatch** | ✅ **FIXED** — the project secret was rotated to a clean 64-char hex value and the next deployment captured it (§1.3). All six jobs now answer **200** and every heartbeat reads `last_status = "ok"`, `source = "vercel-cron"`. |
+| 2 | **The backfill** | ✅ **DONE** (the founder's decision was "let the crons self-heal") — the first successful run marked **47** missing workdays absent (with a notification per employee), purged **208** expired photos, deactivated **2** expired announcements and swept **9** unjustified `late` rows. Payroll rows were 0, so no payslip had been computed from the incomplete attendance. |
+| 3 | **The `hrms` DNS record** | ⬜ **Still open — but NOT a cron blocker.** `hrms.garchitects.in` does not resolve; Vercel dispatches the schedule to the production *deployment*, so the crons run fine. The record is still worth adding at the registrar (`hrms CNAME cname.vercel-dns.com` at `dns1-4.p02.nsone.net`) so the **branded URL works for your users**. |
+
+The **alarm that proves it** — `npm run qa:cron-health`:
+
+```
+healthy=true  stale_after_hours=26
+  ✔ auto-attendance        30 2 * * *   last_run=2026-11-10 16:51:41 (0.02h ago) status=ok
+  ✔ auto-checkout          45 15 * * *  last_run=2026-11-10 16:51:42 (0.02h ago) status=ok
+  ✔ purge-photos           0 3 * * *    last_run=2026-11-10 16:51:42 (0.02h ago) status=ok
+  ✔ expire-announcements   0 4 * * *    last_run=2026-11-10 16:51:41 (0.02h ago) status=ok
+  ✔ expire-handovers       30 4 * * *   last_run=2026-11-10 16:51:42 (0.02h ago) status=ok
+  ✔ sweep-late             0 16 * * *   last_run=2026-11-10 16:51:42 (0.02h ago) status=ok
+  All scheduled jobs are running.
+```
 
 ---
 

@@ -127,22 +127,27 @@ themself; do not expand the guard to them without an owner decision.
   REST API (`POST /v13/deployments`, `target: production`, `ref: master`). Vercel crons in
   `vercel.json` (auto-attendance, auto-checkout, purge-photos, expire-announcements,
   expire-handovers, sweep-late) are guarded by `CRON_SECRET`.
-- ⚠️ **The crons only fire if the production DOMAIN resolves.** Vercel Cron dispatches to
-  the project's production domain. As of 2026-11-10 that domain is the custom domain
-  `hrms.garchitects.in`, which has **no DNS record** (NXDOMAIN at Google/Cloudflare/the
-  authoritative NS) — so **all six crons have never executed in production**. The fix is
-  infrastructure: add `hrms CNAME cname.vercel-dns.com` at `dns1-4.p02.nsone.net`, or
-  repoint the project's production domain to the working shared alias
-  `garchitects-hrms.vercel.app`. Two Vercel facts to keep in mind: Cron **does not follow
-  redirects** (so an SSO-redirecting deployment URL can never deliver a cron) and a
-  `CRON_SECRET` with trailing whitespace makes **every** invocation 401 (the guard now
-  trims both sides — see `docs/FEATURE_CRON_LIVENESS.md`).
+- ⚠️ **The crons only fire if the `CRON_SECRET` matches.** Vercel Cron sends
+  `Authorization: Bearer <CRON_SECRET>` and the deployment reads the same env
+  var — if the two differ (a newline inside the secret truncates the header; an
+  env edit only lands on the NEXT deployment) every invocation is 401 and the
+  schedule silently does nothing. **This is what killed all six crons from
+  2026-08-31 until 2026-11-10** — the dead `hrms.garchitects.in` DNS record
+  turned out to be a red herring (Vercel dispatches to the production
+  *deployment*, not to the custom domain). The project secret was rotated to a
+  clean 64-char hex value on 2026-11-10; all six jobs now report `ok`.
+  Two Vercel facts to keep in mind: Cron **does not follow redirects** (an
+  SSO-redirecting deployment URL can never deliver a cron) and the secret must
+  be changed **plus redeployed**. See `docs/FEATURE_CRON_LIVENESS.md`.
 - Liveness is observable: every cron writes a heartbeat to `cron_runs`, and
   `GET /api/cron/health` (admin JWT) reports every scheduled job's last run + a
   `stale` flag (stale = never ran, or >26 h old). The admin dashboard shows a
   **Scheduled Jobs** card. A cron that stops firing is now *visible*, not silent.
   Check it any time with `npm run qa:cron-health` (needs `QA_LIVE_ADMIN_ID` /
   `QA_LIVE_ADMIN_PW`; exits 1 while any job is stale).
+- The `hrms.garchitects.in` DNS record (`hrms CNAME cname.vercel-dns.com` at
+  `dns1-4.p02.nsone.net`) is still worth adding — **not** for the crons, but so
+  the branded URL works for your users (it does not resolve today).
 - Local run: `npm install` then `npm start` (or `npm run dev` with nodemon) on `PORT` (default 3000).
 - DB scripts: `npm run db:init`, `npm run db:migrate`, `npm run test:smtp -- <recipient>`.
 
@@ -220,27 +225,31 @@ themself; do not expand the guard to them without an owner decision.
   asserts *"a plain click never flips the status by itself"*; `qa:inline` 39/39; full
   hermetic `npm run qa` green. See `docs/FEATURE_ATTENDANCE_EDITOR_AND_WFH.md` §5.
 
-- **Cron liveness + guard hardening (2026-11-10):** **all six Vercel crons had never
-  executed in production** — the production custom domain `hrms.garchitects.in` has no DNS
-  record (NXDOMAIN), so Vercel Cron had nowhere to dispatch. Proven in the live DB: 206
-  expired `attendance_photos` undeleted, 2 expired announcements still active, 9 stale
-  `late` attendance rows, 0 `attendance_marked_absent` notifications all-time, 0 handovers
-  `ended`. **Shipped:** (a) guard hardened — both sides trimmed, case-insensitive `bearer`
+- **Cron liveness + guard hardening (2026-11-10):** all six Vercel crons had **never
+  executed in production** — and the cause turned out to be a **`CRON_SECRET` mismatch**
+  (the dispatcher sent a token the deployment did not accept), *not* the dead
+  `hrms.garchitects.in` DNS record (Vercel dispatches to the production *deployment*, not
+  to the custom domain). The new heartbeat caught it: the first rejected invocation was
+  recorded as `source="vercel-cron"`, `last_status="unauthorized"`. **Fixed** by rotating the
+  project secret to a clean 64-char hex value + redeploying — all six jobs now report `ok`
+  and the first successful run healed the backlog (**47** absent days marked + 47 employee
+  notifications, **208** photos purged, **2** announcements expired, **9** late rows swept).
+  **Also shipped:** (a) guard hardened — both sides trimmed, case-insensitive `bearer`
   (RFC 7235), `crypto.timingSafeEqual` compare, still fail-closed; (b) `cron_runs`
   heartbeat table on **all three schema layers** (UTC-stored, written on every run incl.
-  failures and Vercel-rejected invocations); (c) `GET /api/cron/health` (admin JWT) →
+  failures and Vercel-rejected invocations, recording the rejected header's *shape* —
+  present / scheme / lengths — never the secret); (c) `GET /api/cron/health` (admin JWT) →
   per-job last run + `stale` (>26 h) / `never_ran` / `failing`; (d) admin dashboard
   **Scheduled Jobs** card; (e) `server/config/cronJobs.js` registry with a QA parity
   assert (`vercel.json` ≡ registry ≡ implemented routes); (f) `scripts/qa-cron.cjs`
   rewritten 2 → 33 checks (real side effects + heartbeat + health + parity) and the QA
   commander now boots the server **with** a `CRON_SECRET` for that harness only; (g) new
-  `scripts/qa-live-sweep.cjs` live read-only sweep (13/13) with an optional admin-authed
+  `scripts/qa-live-sweep.cjs` live read-only sweep (13/13) with an admin-authed
   cron-liveness probe; (h) the QA commander no longer skips the canonical `schema.sql`
-  load when a leftover app server holds :3000 (it left the suite running against 4
-  tables). **QA:** hermetic `npm run qa` **91/91 green** (279 RBAC cell probes, 43 DB
-  invariants, zero leftovers), `qa:inline` 39/39, `qa-reg-review` 18/18 standalone, live
-  sweep 13/13. **Pending (owner):** the `hrms` DNS CNAME at `dns1-4.p02.nsone.net` +
-  approval for the attendance/photo/announcement backfill. See
+  load when a leftover app server holds :3000. **QA:** hermetic `npm run qa` **94/94 green**
+  (284 RBAC cell probes, 43 DB invariants, zero leftovers), `qa:inline` 40/40, live sweep
+  13/13, `npm run qa:cron-health` green. **Still open (NOT a cron blocker):** the `hrms`
+  DNS CNAME at `dns1-4.p02.nsone.net`, so the branded URL works for users. See
   `docs/FEATURE_CRON_LIVENESS.md`.
 
 - **Work-Assignments approval hardening + encoding repair (2026-11-06, `43c2f58` + `0e2f44c`):**
