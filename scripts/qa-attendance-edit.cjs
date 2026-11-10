@@ -24,9 +24,12 @@
  * harness does 5 logins per run - restart the server before a rerun.
  */
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 
+const ROOT = path.resolve(__dirname, '..');
 const BASE_URL = process.env.QA_BASE_URL || 'http://localhost:3000';
 const ts = Date.now();
 const _dbUrl = process.env.DATABASE_URL;
@@ -215,6 +218,38 @@ async function main() {
         if (!auditOk) await new Promise(r => setTimeout(r, 200));
     }
     check('attendance.edit writes an audit_logs row', auditOk);
+
+    // ---- 9. UI wiring of the matrix interaction (source contract) ----------
+    // The attendance matrix is a client-side surface, so the contract that
+    // matters is: a LEFT click on a date opens the rich Edit Attendance modal
+    // for that employee+day (status/times/remarks), and the fast Present/Absent
+    // toggle is still one gesture away (right click / long press). These
+    // assertions read the page source so a refactor cannot silently turn the
+    // click back into a destructive one-click Present -> Absent flip.
+    const src = fs.readFileSync(path.join(ROOT, 'public', 'pages', 'admin', 'attendance.html'), 'utf8');
+    function fnBody(name) {
+        const start = src.indexOf('function ' + name + '(');
+        if (start === -1) return null;
+        const next = src.indexOf('\n        function ', start + 10);
+        return src.slice(start, next === -1 ? src.length : next);
+    }
+    const clickFn = fnBody('matrixCellClick');
+    const editorFn = fnBody('openMatrixDayEditor');
+    const toggleFn = fnBody('toggleMatrixDay');
+    const ctxFn = fnBody('matrixCellContextMenu');
+    const markAbsentFn = fnBody('openMarkAbsentModal');
+
+    check('UI: the matrix click handler routes to the day editor', !!(clickFn && /openMatrixDayEditor\(/.test(clickFn)), clickFn);
+    check('UI: the day editor opens the Edit Attendance modal', !!(editorFn && /openEditAttendanceModal\(/.test(editorFn)), editorFn);
+    check('UI: a plain click never flips the status by itself',
+        !!(editorFn && !/mark-absent|mark-present/.test(editorFn)), editorFn);
+    check('UI: the quick Present/Absent toggle still exists', !!(toggleFn && /mark-absent/.test(toggleFn) && /mark-present/.test(toggleFn)), toggleFn);
+    check('UI: the toggle is reachable from a right click', !!(ctxFn && /toggleMatrixDay\(/.test(ctxFn)), ctxFn);
+    check('UI: the old one-click toggle handler is gone', src.indexOf('function handleCellClick(') === -1);
+    check('UI: the Mark Absent modal is pre-filled AFTER the employee list loads',
+        !!(markAbsentFn && /await loadAllEmployees\(\)/.test(markAbsentFn)
+            && markAbsentFn.indexOf('await loadAllEmployees()') < markAbsentFn.indexOf('absentEmployee').valueOf()),
+        markAbsentFn);
 
     // ---- Summary ------------------------------------------------------------
     console.log('\n[QA] results:');

@@ -155,6 +155,22 @@ themself; do not expand the guard to them without an owner decision.
 
 ## 11. Current state (update this as work ships)
 
+- **Attendance matrix: click-a-date now opens the day editor (2026-11-10):** the admin
+  month matrix used to **silently flip Present <-> Absent on a left click** (wiping the
+  remarks and replacing the check-in with the office start) — a destructive default on a
+  payroll-affecting field, while the rich editor was only reachable from the toolbar or the
+  logs-table pencil. **Now:** left click opens the **Edit Attendance** modal for that
+  employee + day (status, check-in/out, remarks, day-context badges); **right click** (or
+  **long press** on touch) keeps the quick Present/Absent toggle; the future-date and
+  approved-leave guards are unchanged; a **WFH** cell now opens the editor too (it used to
+  fall through to the Mark Absent modal), and that modal is pre-filled **after** the
+  employee list loads (the old order wiped the pre-fill — pre-existing bug). Tooltip +
+  a line above the matrix explain the gestures. **QA:** verified in Chromium against the
+  local stack (click/right-click/long-press paths, pre-fill values, blocked cases);
+  `scripts/qa-attendance-edit.cjs` **40/40** (was 33) with a new UI-contract section that
+  asserts *"a plain click never flips the status by itself"*; `qa:inline` 39/39; full
+  hermetic `npm run qa` green. See `docs/FEATURE_ATTENDANCE_EDITOR_AND_WFH.md` §5.
+
 - **Cron liveness + guard hardening (2026-11-10):** **all six Vercel crons had never
   executed in production** — the production custom domain `hrms.garchitects.in` has no DNS
   record (NXDOMAIN), so Vercel Cron had nowhere to dispatch. Proven in the live DB: 206

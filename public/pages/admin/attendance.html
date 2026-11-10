@@ -143,6 +143,7 @@
             </div>
 
             <p style="font-size:0.8rem;color:var(--text-secondary);margin:-4px 0 8px;"><i class="fas fa-info-circle"></i> Present count includes late logins.</p>
+            <p style="font-size:0.8rem;color:var(--text-secondary);margin:-4px 0 8px;"><i class="fas fa-mouse-pointer"></i> Click any date in an employee's row to <strong>edit that day</strong> (status, check-in/out, remarks). Right-click (or long-press on touch) for the quick Present/Absent toggle.</p>
 
             <div id="lateWarningCard" style="display:none;margin-bottom:12px;padding:12px 16px;border-radius:var(--radius);background:#FEF3C7;border:1px solid #F59E0B;color:#92400E;font-size:0.85rem;">
                 <i class="fas fa-exclamation-triangle" style="margin-right:8px;"></i>
@@ -558,9 +559,19 @@
             container.removeEventListener('mouseover', matrixCellMouseOver);
             container.removeEventListener('mouseout', matrixCellMouseOut);
             container.removeEventListener('click', matrixCellClick);
+            container.removeEventListener('contextmenu', matrixCellContextMenu);
+            container.removeEventListener('touchstart', matrixCellTouchStart);
+            container.removeEventListener('touchmove', matrixCellTouchCancel);
+            container.removeEventListener('touchend', matrixCellTouchEnd);
+            container.removeEventListener('touchcancel', matrixCellTouchCancel);
             container.addEventListener('mouseover', matrixCellMouseOver);
             container.addEventListener('mouseout', matrixCellMouseOut);
             container.addEventListener('click', matrixCellClick);
+            container.addEventListener('contextmenu', matrixCellContextMenu);
+            container.addEventListener('touchstart', matrixCellTouchStart, { passive: true });
+            container.addEventListener('touchmove', matrixCellTouchCancel, { passive: true });
+            container.addEventListener('touchend', matrixCellTouchEnd, { passive: true });
+            container.addEventListener('touchcancel', matrixCellTouchCancel, { passive: true });
 
             document.getElementById('statPresent').textContent = grandPresent + grandLate;
             document.getElementById('statLate').textContent = grandLate;
@@ -592,35 +603,77 @@
             if (e.target && e.target.closest && (e.target.closest('td[data-emp]') || e.target.closest('td[data-members]'))) hideTooltip();
         }
 
-        function matrixCellClick(e) {
+        // ── Matrix cell interaction ─────────────────────────────────────────
+        // LEFT click   → opens the rich "Edit Attendance" modal for that
+        //                employee + day (status, check-in/out, remarks).
+        // RIGHT click  → the fast Present <-> Absent toggle (with a confirm).
+        // Long press   → the same toggle on touch devices.
+        //
+        // Why the split: a staff member who clicks a date wants to fix THAT
+        // day. A plain click used to silently flip Present -> Absent (wiping
+        // the remarks and setting check-in to the office start) - a
+        // destructive default on a payroll-affecting field. The quick toggle
+        // is still one gesture away, and the Mark Present / Mark Absent
+        // buttons remain the modal path for bulk corrections.
+        let matrixSuppressClick = false;
+        let matrixLongPressTimer = null;
+        let matrixLongPressCell = null;
+
+        function matrixCellFrom(e) {
             const td = e.target && e.target.closest ? e.target.closest('td[data-emp]') : null;
-            if (!td) return;
-            handleCellClick(parseInt(td.getAttribute('data-emp'), 10), parseInt(td.getAttribute('data-day'), 10), td.getAttribute('data-status'));
+            if (!td) return null;
+            return {
+                td: td,
+                empId: parseInt(td.getAttribute('data-emp'), 10),
+                day: parseInt(td.getAttribute('data-day'), 10),
+                status: td.getAttribute('data-status') || ''
+            };
         }
 
-        function showTooltip(e, name, day, status, checkIn, checkOut, location) {
-            const tip = document.getElementById('cellTooltip');
-            let locHtml = '';
-            if (location && location.includes(',')) {
-                const [lat, lon] = location.split(',');
-                locHtml = '<br>Location: <a href="https://www.google.com/maps?q=' + encodeURIComponent(lat.trim() + ',' + lon.trim()) + '" target="_blank" style="color:#60A5FA;text-decoration:none;">View on Map</a>';
-            } else if (location) {
-                locHtml = '<br>Location: ' + escapeHtml(location);
-            }
-            tip.innerHTML = '<strong>' + escapeHtml(name) + '</strong> - Day ' + day + '<br>Status: <strong>' + (statusLabels[status] || status) + '</strong>' + (checkIn ? '<br>Check In: ' + escapeHtml(checkIn) : '') + (checkOut ? '<br>Check Out: ' + escapeHtml(checkOut) : '') + locHtml;
-            tip.style.display = 'block';
-            tip.style.left = (e.clientX + 12) + 'px';
-            tip.style.top = (e.clientY + 12) + 'px';
-        }
-
-        function hideTooltip() {
-            document.getElementById('cellTooltip').style.display = 'none';
-        }
-
-        function handleCellClick(empId, day, status) {
+        function matrixDateFor(day) {
             const month = document.getElementById('filterMonth').value;
             const year = document.getElementById('filterYear').value;
-            const dateStr = year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+            return year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+        }
+
+        function matrixCellClick(e) {
+            // A long press already handled this cell - swallow the click the
+            // browser fires straight afterwards.
+            if (matrixSuppressClick) { matrixSuppressClick = false; return; }
+            const c = matrixCellFrom(e);
+            if (!c) return;
+            openMatrixDayEditor(c.empId, c.day, c.status);
+        }
+
+        function matrixCellContextMenu(e) {
+            const c = matrixCellFrom(e);
+            if (!c) return;
+            e.preventDefault();
+            if (matrixSuppressClick) { matrixSuppressClick = false; return; }
+            toggleMatrixDay(c.empId, c.day, c.status);
+        }
+
+        // Left click -> the rich editor. Two day types stay protected exactly
+        // like before: a future date cannot be edited at all, and an approved
+        // leave day is never silently turned into an absence by a stray click
+        // (the deliberate path stays the Edit Attendance button, which shows
+        // the "Approved leave" context badge).
+        function openMatrixDayEditor(empId, day, status) {
+            const dateStr = matrixDateFor(day);
+            if (status === 'upcoming') {
+                showToast('Cannot modify future dates', 'warning');
+                return;
+            }
+            if (status === 'onleave') {
+                showToast('Approved leave day. Use Mark Absent, or Edit Attendance to override it.', 'warning');
+                return;
+            }
+            openEditAttendanceModal(empId, dateStr);
+        }
+
+        // Right click / long press -> the fast Present <-> Absent toggle.
+        function toggleMatrixDay(empId, day, status) {
+            const dateStr = matrixDateFor(day);
             if (status === 'upcoming') {
                 showToast('Cannot modify future dates', 'warning');
                 return;
@@ -660,9 +713,53 @@
                 });
                 return;
             }
-            document.getElementById('absentEmployee').value = empId;
-            document.getElementById('absentDate').value = dateStr;
-            openMarkAbsentModal();
+            // WFH (and anything else): the Mark Absent modal - the right action
+            // for "claimed WFH but did not work".
+            openMarkAbsentModal(empId, dateStr);
+        }
+
+        // Long press (touch) -> the quick toggle; a plain tap -> the editor.
+        function matrixCellTouchStart(e) {
+            const c = matrixCellFrom(e);
+            if (!c) return;
+            matrixLongPressCell = c;
+            clearTimeout(matrixLongPressTimer);
+            matrixLongPressTimer = setTimeout(function() {
+                matrixLongPressTimer = null;
+                // Swallow the click the browser fires after the finger lifts.
+                matrixSuppressClick = true;
+                setTimeout(function() { matrixSuppressClick = false; }, 800);
+                if (matrixLongPressCell) {
+                    toggleMatrixDay(matrixLongPressCell.empId, matrixLongPressCell.day, matrixLongPressCell.status);
+                }
+            }, 600);
+        }
+        function matrixCellTouchCancel() {
+            clearTimeout(matrixLongPressTimer);
+            matrixLongPressTimer = null;
+        }
+        function matrixCellTouchEnd() {
+            matrixCellTouchCancel();
+        }
+
+        function showTooltip(e, name, day, status, checkIn, checkOut, location) {
+            const tip = document.getElementById('cellTooltip');
+            let locHtml = '';
+            if (location && location.includes(',')) {
+                const [lat, lon] = location.split(',');
+                locHtml = '<br>Location: <a href="https://www.google.com/maps?q=' + encodeURIComponent(lat.trim() + ',' + lon.trim()) + '" target="_blank" style="color:#60A5FA;text-decoration:none;">View on Map</a>';
+            } else if (location) {
+                locHtml = '<br>Location: ' + escapeHtml(location);
+            }
+            tip.innerHTML = '<strong>' + escapeHtml(name) + '</strong> - Day ' + day + '<br>Status: <strong>' + (statusLabels[status] || status) + '</strong>' + (checkIn ? '<br>Check In: ' + escapeHtml(checkIn) : '') + (checkOut ? '<br>Check Out: ' + escapeHtml(checkOut) : '') + locHtml
+                + '<br><span style="opacity:.7;font-size:.9em;">Click to edit this day &middot; Right-click to quick toggle</span>';
+            tip.style.display = 'block';
+            tip.style.left = (e.clientX + 12) + 'px';
+            tip.style.top = (e.clientY + 12) + 'px';
+        }
+
+        function hideTooltip() {
+            document.getElementById('cellTooltip').style.display = 'none';
         }
 
         async function loadLateWarning() {
@@ -992,10 +1089,14 @@
             btn.disabled = false;
         }
 
-        function openMarkAbsentModal() {
-            const today = getTodayIST();
-            document.getElementById('absentDate').value = today;
-            loadAllEmployees();
+        // Opens the Mark Absent modal. When empId/dateStr are given the form is
+        // pre-filled AFTER the employee list has loaded: rebuilding the
+        // <select> wipes a value that was set before the options arrived
+        // (this is why the old WFH cell click always landed on an empty form).
+        async function openMarkAbsentModal(empId, dateStr) {
+            document.getElementById('absentDate').value = dateStr || getTodayIST();
+            await loadAllEmployees();
+            if (empId) document.getElementById('absentEmployee').value = String(empId);
             document.getElementById('markAbsentModal').classList.add('active');
         }
 
