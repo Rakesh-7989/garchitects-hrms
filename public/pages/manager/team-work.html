@@ -401,7 +401,7 @@
             const dueHtml = a.due_date
                 ? '<span class="pill ' + (isOverdue(a) ? 'due-overdue' : 'prio-low') + '"><i class="fas fa-calendar-alt"></i> Due ' + formatDate(a.due_date) + (isOverdue(a) ? ' · Overdue' : '') + '</span>'
                 : '';
-            const assigneeHtml = '<span><i class="fas fa-user"></i> ' + escapeHtml((a.assigned_to_first || '') + ' ' + (a.assigned_to_last || '')) + ' <span style="opacity:0.7;">(' + escapeHtml(a.assigned_to_code || '') + ')</span></span>';
+            const assigneeHtml = '<span><i class="fas fa-user"></i> <a href="/manager/employee/' + a.assigned_to + '" style="color:inherit;text-decoration:underline;" title="Open this employee\'s full activity">' + escapeHtml((a.assigned_to_first || '') + ' ' + (a.assigned_to_last || '')) + ' <span style="opacity:0.7;">(' + escapeHtml(a.assigned_to_code || '') + ')</span></a></span>';
             const projHtml = a.project_name ? '<span><i class="fas fa-project-diagram"></i> ' + escapeHtml(a.project_name) + (a.unit_name ? ' <span style="opacity:0.75;">/ ' + escapeHtml(a.unit_name) + '</span>' : '') + '</span>' : '';
             const assignerHtml = a.assigned_by_code ? '<span><i class="fas fa-user-tie"></i> by ' + escapeHtml((a.assigned_by_first || '') + ' ' + (a.assigned_by_last || '')) + '</span>' : '';
             const assignedOnHtml = a.assigned_at ? '<span><i class="fas fa-paper-plane"></i> Assigned ' + formatDate(a.assigned_at) + '</span>' : '';

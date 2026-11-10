@@ -521,7 +521,7 @@
                 }
                 const emp = item.emp;
                 html += '<tr>';
-                html += '<td class="emp-name">' + escapeHtml(emp.first_name + ' ' + (emp.last_name || '')) + '<br><span style="font-size:0.62rem;color:var(--text-secondary);">' + escapeHtml(emp.employee_id || '') + ' · ' + escapeHtml(emp.designation_name || '-') + '</span></td>';
+                html += '<td class="emp-name"><a href="/admin/employee/' + emp.id + '" style="color:var(--primary);text-decoration:none;font-weight:600;" title="Open this employee\'s full activity (attendance, work logs, assignments)">' + escapeHtml(emp.first_name + ' ' + (emp.last_name || '')) + ' <i class="fas fa-chart-line" style="font-size:0.6rem;opacity:0.7;"></i></a><br><span style="font-size:0.62rem;color:var(--text-secondary);">' + escapeHtml(emp.employee_id || '') + ' · ' + escapeHtml(emp.designation_name || '-') + '</span></td>';
                 let p = 0, l = 0, h = 0, a = 0, w = 0, u = 0, lv = 0, hv = 0, wf = 0;
                 for (let d = 1; d <= days; d++) {
                     const cell = matrix[emp.id] && matrix[emp.id][d] ? matrix[emp.id][d] : { status: 'absent', check_in: null, check_out: null };

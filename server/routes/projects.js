@@ -400,9 +400,16 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
 router.get('/:projectId/employees', verifyToken, isManager, async (req, res) => {
     try {
         const result = await q(
-            `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.email, e.phone, 
+            `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.email, e.phone,
               e.role, e.status, e.department_id, d.name as department_name,
-              pe.unit_id, u.name as unit_name
+              pe.unit_id, u.name as unit_name,
+              (SELECT COUNT(*) FROM work_assignments wa WHERE wa.assigned_to = e.id AND wa.project_id = pe.project_id) AS assignments_total,
+              (SELECT COUNT(*) FROM work_assignments wa WHERE wa.assigned_to = e.id AND wa.project_id = pe.project_id
+                 AND wa.status IN ('assigned','in_progress','pending')) AS assignments_open,
+              (SELECT COUNT(*) FROM work_assignments wa WHERE wa.assigned_to = e.id AND wa.project_id = pe.project_id
+                 AND wa.status = 'blocked') AS assignments_blocked,
+              (SELECT COUNT(*) FROM work_assignments wa WHERE wa.assigned_to = e.id AND wa.project_id = pe.project_id
+                 AND wa.status = 'completed') AS assignments_completed
              FROM project_employees pe
              JOIN employees e ON pe.employee_id = e.id
              LEFT JOIN departments d ON e.department_id = d.id

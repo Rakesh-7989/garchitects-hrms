@@ -12,6 +12,9 @@ const { dateOnly } = require('../utils/date');
 const { startOnboarding } = require('../services/onboarding');
 const { sendWelcomeEmail } = require('../services/email');
 const { buildReportWorkbook, sendWorkbook } = require('../utils/excel');
+const { buildEmployeeMonthCells, summariseMonthCells } = require('../utils/attendanceMatrix');
+const { getWorkWeekConfig } = require('../utils/workWeek');
+const { istMonth, istYear } = require('../utils/date');
 
 const MAIN_ADMIN_ID = 1;
 
@@ -427,6 +430,251 @@ router.get('/export', verifyToken, isAdminOrHr, async (req, res) => {
 // @route   GET /api/employees/:id
 // @desc    Get single employee
 // @access  Private (Admin/HR full access; others self or reporting-chain members only, PII stripped)
+// @route   GET /api/employees/:id/activity
+// @desc    ONE employee's full picture in a single response: attendance for a
+//          month (day cells + summary) plus the recent attendance records with
+//          their check-in / check-out details (times, location, photos), the
+//          daily work logs, the work assignments (open vs completed), the leave
+//          and WFH history and the projects they are on.
+//
+//          This is the drill-down behind /admin/employee/:id - without it a
+//          staff member had to open five different pages and re-filter each
+//          one to answer "what did this person actually do?".
+//
+// @access  Private (Admin/HR company-wide; manager/team_lead own reporting
+//          tree only; an employee may only read their own)
+router.get('/:id/activity', verifyToken, async (req, res) => {
+    try {
+        const targetId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(targetId)) {
+            return res.status(400).json({ success: false, message: 'Invalid employee id' });
+        }
+
+        // ---- access scope -------------------------------------------------
+        const role = req.user.role;
+        if (role !== 'admin' && role !== 'hr') {
+            if (role === 'employee') {
+                if (targetId !== req.user.id) {
+                    return res.status(403).json({ success: false, message: 'Access denied.' });
+                }
+            } else {
+                // manager / team_lead: only their own reporting tree (plus self)
+                const { myTreeIds } = require('./project-leads');
+                const tree = await myTreeIds(req.user.id);
+                if (targetId !== req.user.id && !tree.has(targetId)) {
+                    return res.status(403).json({ success: false, message: 'You can only view activity for your own team.' });
+                }
+            }
+        }
+
+        const month = parseInt(req.query.month, 10) || istMonth();
+        const year = parseInt(req.query.year, 10) || istYear();
+        const lastDay = new Date(year, month, 0).getDate();
+        const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+        const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+        const q = (sql, params) => runWithSchemaRepair(() => query(sql, params));
+
+        // ---- the employee --------------------------------------------------
+        const empRes = await q(
+            `SELECT e.id, e.employee_id, e.first_name, e.last_name, e.email, e.phone, e.role, e.status,
+                    e.joining_date, e.designation_id, e.department_id, e.reporting_manager_id, e.secondary_reporting_manager_id,
+                    e.profile_photo,
+                    des.name AS designation_name, d.name AS department_name,
+                    rm.first_name || ' ' || rm.last_name AS reporting_manager_name,
+                    rm.employee_id AS reporting_manager_employee_id,
+                    srm.first_name || ' ' || srm.last_name AS secondary_reporting_manager_name
+               FROM employees e
+               LEFT JOIN departments d ON d.id = e.department_id
+               LEFT JOIN designations des ON des.id = e.designation_id
+               LEFT JOIN employees rm ON rm.id = e.reporting_manager_id
+               LEFT JOIN employees srm ON srm.id = e.secondary_reporting_manager_id
+              WHERE e.id = $1`,
+            [targetId]
+        );
+        if (empRes.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
+        const employee = empRes.rows[0];
+        if (employee.joining_date) employee.joining_date = dateOnly(employee.joining_date);
+        delete employee.password_hash;
+
+        // ---- attendance: the month grid + the recent records ---------------
+        const [attRows, leaveRows, holRows, wcfg] = await Promise.all([
+            q(`SELECT date, check_in, check_out, status, remarks, check_in_location, check_out_location,
+                       auto_checkout, checkout_miss_reason, photo_token, photo_token_checkout, break_start, break_end
+                  FROM attendance
+                 WHERE employee_id = $1 AND date >= $2::date AND date <= $3::date
+                 ORDER BY date`,
+                [targetId, monthStart, monthEnd]),
+            q(`SELECT start_date, end_date FROM leave_applications
+                 WHERE employee_id = $1 AND status = 'approved' AND end_date >= $2::date AND start_date <= $3::date`,
+                [targetId, monthStart, monthEnd]),
+            q(`SELECT to_char(date, 'YYYY-MM-DD') AS d FROM holidays WHERE is_active = 1 AND date >= $1::date AND date <= $2::date`,
+                [monthStart, monthEnd]),
+            getWorkWeekConfig().catch(() => ({ weekoffDay: 0 }))
+        ]);
+
+        const attMap = {};
+        attRows.rows.forEach(a => {
+            const day = new Date(a.date).getDate();
+            attMap[day] = {
+                status: a.status,
+                check_in: a.check_in,
+                check_out: a.check_out,
+                check_in_location: a.check_in_location || null,
+                remarks: a.remarks || '',
+                auto_checkout: !!a.auto_checkout,
+                photo_token: a.photo_token || null,
+                photo_token_checkout: a.photo_token_checkout || null
+            };
+        });
+
+        // Paid within the monthly quota, LOP beyond it - exactly like payroll.
+        const leaveClass = {};
+        const leaveDays = (leaveRows.rows || []).flatMap(l => {
+            const s = dateOnly(l.start_date), e = dateOnly(l.end_date);
+            if (!s || !e) return [];
+            const out = [];
+            const c = new Date(s + 'T00:00:00Z');
+            const cEnd = new Date(e + 'T00:00:00Z');
+            while (c <= cEnd) {
+                out.push(`${c.getUTCFullYear()}-${String(c.getUTCMonth() + 1).padStart(2, '0')}-${String(c.getUTCDate()).padStart(2, '0')}`);
+                c.setUTCDate(c.getUTCDate() + 1);
+            }
+            return out;
+        }).sort();
+        let leaveCount = 0;
+        leaveDays.forEach(ds => {
+            leaveClass[ds] = leaveCount < (wcfg.monthlyLeaveQuota || 0) ? 'paid' : 'lop';
+            if (leaveClass[ds] === 'paid') leaveCount++;
+        });
+
+        const holidaySet = new Set((holRows.rows || []).map(r => r.d));
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const cells = buildEmployeeMonthCells({
+            year, month, days: lastDay, attMap, leaveClass, holidaySet, wcfg, today
+        });
+        const summary = summariseMonthCells(cells);
+
+        // The recent records (the last 30 days that have a row) carry the
+        // check-in / check-out details an admin actually asks for.
+        const recent = await q(
+            `SELECT id, date, check_in, check_out, status, remarks, check_in_location, check_out_location,
+                    auto_checkout, checkout_miss_reason, photo_token, photo_token_checkout, break_start, break_end
+               FROM attendance WHERE employee_id = $1
+              ORDER BY date DESC, check_in DESC NULLS LAST LIMIT 30`,
+            [targetId]
+        );
+        const records = recent.rows.map(r => {
+            const rec = Object.assign({}, r);
+            if (rec.date != null) rec.date = dateOnly(rec.date);
+            rec.auto_checkout = !!rec.auto_checkout;
+            return rec;
+        });
+
+        // ---- work logs (self-reported daily updates) -----------------------
+        const logs = await q(
+            `SELECT dw.id, dw.work_date, dw.title, dw.description, dw.project_id, dw.unit_id, dw.assignment_id,
+                    p.name AS project_name, u.name AS unit_name, wa.title AS assignment_title
+               FROM daily_work_logs dw
+               LEFT JOIN projects p ON p.id = dw.project_id
+               LEFT JOIN project_units u ON u.id = dw.unit_id
+               LEFT JOIN work_assignments wa ON wa.id = dw.assignment_id
+              WHERE dw.employee_id = $1
+              ORDER BY dw.work_date DESC, dw.id DESC LIMIT 20`,
+            [targetId]
+        );
+        const workLogs = logs.rows.map(l => {
+            const rec = Object.assign({}, l);
+            if (rec.work_date != null) rec.work_date = dateOnly(rec.work_date);
+            return rec;
+        });
+
+        // ---- work assignments: open vs completed ----------------------------
+        const assignments = await q(
+            `SELECT wa.id, wa.title, wa.description, wa.status, wa.priority, wa.start_date, wa.due_date,
+                    wa.started_at, wa.completed_at, wa.blocked_reason, wa.cancel_reason, wa.assigned_at,
+                    wa.project_id, wa.unit_id, p.name AS project_name, u.name AS unit_name
+               FROM work_assignments wa
+               LEFT JOIN projects p ON p.id = wa.project_id
+               LEFT JOIN project_units u ON u.id = wa.unit_id
+              WHERE wa.assigned_to = $1
+              ORDER BY wa.due_date ASC NULLS LAST, wa.assigned_at DESC`,
+            [targetId]
+        );
+        const all = assignments.rows.map(a => {
+            const rec = Object.assign({}, a);
+            ['start_date', 'due_date'].forEach(k => { if (rec[k] != null) rec[k] = dateOnly(rec[k]); });
+            return rec;
+        });
+        const OPEN_STATUSES = ['assigned', 'in_progress', 'blocked', 'pending'];
+        const assignmentCounts = { open: 0, completed: 0, blocked: 0, cancelled: 0, total: all.length };
+        all.forEach(a => {
+            if (a.status === 'completed') assignmentCounts.completed++;
+            else if (a.status === 'blocked') { assignmentCounts.blocked++; assignmentCounts.open++; }
+            else if (a.status === 'cancelled') assignmentCounts.cancelled++;
+            else assignmentCounts.open++;
+        });
+
+        // ---- leave + WFH -----------------------------------------------------
+        const leave = await q(
+            `SELECT id, start_date, end_date, leave_type_id, total_days, reason, status, created_at, updated_at
+               FROM leave_applications WHERE employee_id = $1 ORDER BY start_date DESC LIMIT 10`,
+            [targetId]
+        );
+        const wfh = await q(
+            `SELECT id, start_date, end_date, total_days, reason, status, created_at FROM wfh_requests
+              WHERE employee_id = $1 ORDER BY start_date DESC LIMIT 10`,
+            [targetId]
+        );
+        const leaveRowsOut = leave.rows.map(l => {
+            const rec = Object.assign({}, l);
+            ['start_date', 'end_date', 'created_at', 'updated_at'].forEach(k => { if (rec[k] != null) rec[k] = dateOnly(rec[k]); });
+            return rec;
+        });
+        const wfhRows = wfh.rows.map(l => {
+            const rec = Object.assign({}, l);
+            ['start_date', 'end_date', 'created_at'].forEach(k => { if (rec[k] != null) rec[k] = dateOnly(rec[k]); });
+            return rec;
+        });
+
+        // ---- projects ---------------------------------------------------------
+        const projects = await q(
+            `SELECT p.id, p.name, p.status, p.customer, pe.unit_id, u.name AS unit_name
+               FROM project_employees pe
+               JOIN projects p ON p.id = pe.project_id
+               LEFT JOIN project_units u ON u.id = pe.unit_id
+              WHERE pe.employee_id = $1 ORDER BY p.name`,
+            [targetId]
+        );
+
+        res.json({
+            success: true,
+            employee,
+            period: { year, month, days: lastDay },
+            attendance: { cells, summary, records },
+            work_logs: workLogs,
+            assignments: {
+                counts: assignmentCounts,
+                open: all.filter(a => OPEN_STATUSES.includes(a.status)),
+                completed: all.filter(a => a.status === 'completed').slice(0, 20)
+            },
+            leave: leaveRowsOut,
+            wfh: wfhRows,
+            projects: projects.rows
+        });
+    } catch (error) {
+        console.error('Employee activity error:', error);
+        const e = pgErrorResponse(error);
+        res.status(e.status).json({ success: false, message: e.message });
+    }
+});
+
+// @route   GET /api/employees/:id
+// @desc    Get one employee
+// @access  Private (Admin/HR; manager for own reporting tree)
 router.get('/:id', verifyToken, async (req, res) => {
     try {
         const targetId = parseInt(req.params.id, 10);

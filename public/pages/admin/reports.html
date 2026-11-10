@@ -336,7 +336,7 @@
                     empEl.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-secondary);">No assignments yet</td></tr>';
                 } else {
                     empEl.innerHTML = r.byEmployee.map(e =>
-                        '<tr><td>' + escapeHtml(e.first_name + ' ' + (e.last_name || '')) + '</td>' +
+                        '<tr><td><a href="/admin/employee/' + e.employee_ref + '" style="color:var(--primary);text-decoration:none;font-weight:500;" title="Open this employee\'s full activity">' + escapeHtml(e.first_name + ' ' + (e.last_name || '')) + ' <i class="fas fa-chart-line" style="font-size:0.6rem;opacity:0.7;"></i></a></td>' +
                         '<td>' + escapeHtml(e.employee_id || '') + '</td>' +
                         '<td><span class="badge badge-warning">' + e.open_count + '</span></td>' +
                         '<td><span class="badge badge-success">' + e.completed_count + '</span></td>' +
@@ -362,7 +362,7 @@
                 } else {
                     recentEl.innerHTML = r.recent.map(a =>
                         '<tr><td style="font-weight:500;">' + escapeHtml(a.title) + '</td>' +
-                        '<td>' + escapeHtml((a.assignee_first || '') + ' ' + (a.assignee_last || '')) + ' <span style="font-size:0.72rem;color:var(--text-secondary);">' + escapeHtml(a.assignee_code || '') + '</span></td>' +
+                        '<td><a href="/admin/employee/' + a.assignee_ref + '" style="color:var(--primary);text-decoration:none;" title="Open this employee\'s full activity">' + escapeHtml((a.assignee_first || '') + ' ' + (a.assignee_last || '')) + '</a> <span style="font-size:0.72rem;color:var(--text-secondary);">' + escapeHtml(a.assignee_code || '') + '</span></td>' +
                         '<td>' + escapeHtml((a.assigner_first || '') + ' ' + (a.assigner_last || '')) + '</td>' +
                         '<td>' + escapeHtml(a.project_name || '—') + '</td>' +
                         '<td><span class="badge badge-' + (a.status === 'completed' ? 'success' : a.status === 'cancelled' ? 'secondary' : 'warning') + '">' + escapeHtml(String(a.status || '').replace('_', ' ')) + '</span></td>' +

@@ -155,6 +155,26 @@ themself; do not expand the guard to them without an owner decision.
 
 ## 11. Current state (update this as work ships)
 
+- **Employee 360 drill-down + project team progress (2026-11-10):** the founder asked where
+  one employee's **attendance, daily reports, work logs and check-in/check-out details** live,
+  and who was assigned the project work and whether it is done. Before this release the
+  answer was "nowhere in one place": the employee's *profile* was viewable, their *activity*
+  was spread over five pages with five different filters, the attendance register had **no**
+  per-employee filter, and the project team list showed **names only**. **Shipped:**
+  `GET /api/employees/:id/activity` (one request → profile + month cells + summary +
+  recent check-in/out records with location & photos + work logs + assignments open vs
+  completed + leave/WFH + projects), scoped admin/hr company-wide · manager/team_lead own
+  tree · employee self; the month-cell logic was **extracted** to
+  `server/utils/attendanceMatrix.js` so the matrix and the drill-down can never disagree;
+  the new page `/admin/employee/:id` + `/manager/employee/:id` (tabs: Overview, Attendance,
+  Work Logs, Assignments, Leave & WFH, Projects); entry points from **Employees**, the
+  **Attendance** matrix, **Reports**, **Projects**, **My Team** and **Team Work**; and the
+  project team list now shows each member's **done / open / blocked** assignment chips.
+  **QA:** new `scripts/qa-employee-360.cjs` **26/26** (payload, cells, records, counters,
+  the whole access model, project progress) + RBAC row `emp-activity`; full hermetic
+  `npm run qa` **94/94** (284 cell probes, zero leftovers); verified in Chromium (0 console
+  errors, every tab renders). See `docs/FEATURE_EMPLOYEE_360.md`.
+
 - **Consent gate repaired + admin dashboard errors fixed (2026-11-10):** while browser-testing
   the attendance matrix, the admin dashboard threw **3 JS errors on every load** — and chasing
   them exposed **4 pre-existing defects that had disabled the whole consent feature**: the

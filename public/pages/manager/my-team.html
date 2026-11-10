@@ -677,7 +677,7 @@
 
                 groupMembers.forEach(m => {
                     let p = 0, l = 0, h = 0, lv = 0, a = 0, w = 0, hd = 0;
-                    html += '<tr><td style="position:sticky;left:0;background:var(--bg-card);font-weight:600;white-space:nowrap;padding-left:20px;">' + escapeHtml(m.first_name + ' ' + (m.last_name || '')) + '<br><span style="font-size:0.68rem;color:var(--text-secondary);">' + escapeHtml(m.employee_id) + '</span></td>';
+                    html += '<tr><td style="position:sticky;left:0;background:var(--bg-card);font-weight:600;white-space:nowrap;padding-left:20px;"><a href="/manager/employee/' + m.id + '" style="color:var(--primary);text-decoration:none;font-weight:600;" title="Open this employee\'s full activity (attendance, work logs, assignments)">' + escapeHtml(m.first_name + ' ' + (m.last_name || '')) + ' <i class="fas fa-chart-line" style="font-size:0.62rem;opacity:0.7;"></i></a><br><span style="font-size:0.68rem;color:var(--text-secondary);">' + escapeHtml(m.employee_id) + '</span></td>';
                     for (let d = 1; d <= daysInMonth; d++) {
                         const key = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
                         const k2 = m.id + '|' + key;

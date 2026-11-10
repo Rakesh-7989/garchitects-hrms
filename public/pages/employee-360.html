@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Activity - G-Architects HRMS</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: var(--bg-light); }
+        .e360-wrap { max-width: 1200px; margin: 0 auto; padding: 18px 16px 40px; }
+        .e360-top { display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap; margin-bottom:16px; }
+        .e360-avatar { width:56px; height:56px; border-radius:50%; background:var(--primary); color:#fff;
+            display:flex; align-items:center; justify-content:center; font-size:1.1rem; font-weight:700; flex-shrink:0; }
+        .e360-name { font-size:1.25rem; font-weight:700; color:var(--text-primary); }
+        .e360-meta { font-size:0.82rem; color:var(--text-secondary); margin-top:3px; }
+        .e360-meta span + span::before { content:"·"; margin:0 6px; color:var(--text-tertiary); }
+        .e360-tabs { display:flex; gap:6px; flex-wrap:wrap; border-bottom:1px solid var(--border-light); padding-bottom:10px; margin-bottom:16px; }
+        .e360-tab { padding:7px 14px; border-radius:999px; border:1px solid var(--border); background:var(--bg-card);
+            color:var(--text-secondary); font-size:0.84rem; font-weight:500; cursor:pointer; }
+        .e360-tab.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+        .e360-panel { display:none; }
+        .e360-panel.active { display:block; }
+        .e360-summary { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+        .e360-stat { flex:1; min-width:96px; text-align:center; padding:10px 8px; background:var(--bg-card);
+            border:1px solid var(--border); border-radius:var(--radius); }
+        .e360-stat .num { font-size:1.25rem; font-weight:700; }
+        .e360-stat .lbl { font-size:0.7rem; color:var(--text-secondary); margin-top:2px; }
+        .day-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(74px,1fr)); gap:6px; }
+        .day-cell { border-radius:8px; padding:7px 4px; text-align:center; border:1px solid var(--border-light); font-size:0.72rem; }
+        .day-cell .d { font-weight:700; font-size:0.78rem; }
+        .day-cell .s { margin-top:3px; font-size:0.66rem; opacity:0.9; }
+        .day-cell .t { margin-top:2px; font-size:0.62rem; opacity:0.8; }
+        .cell-present { background:#D1FAE5; color:#065F46; }
+        .cell-late { background:#FEF3C7; color:#92400E; }
+        .cell-half-day { background:#FED7AA; color:#9A3412; }
+        .cell-absent { background:#FEE2E2; color:#991B1B; }
+        .cell-weekoff { background:#F3F4F6; color:#9CA3AF; }
+        .cell-onleave { background:#EDE9FE; color:#6D28D9; }
+        .cell-holiday { background:#FDF4FF; color:#A21CAF; }
+        .cell-wfh { background:#E0F2FE; color:#075985; }
+        .cell-upcoming { background:transparent; color:var(--text-tertiary); border-style:dashed; }
+        .dark-mode .cell-present { background:#064E3B; color:#34D399; }
+        .dark-mode .cell-late { background:#78350F; color:#FBBF24; }
+        .dark-mode .cell-half-day { background:#7C2D12; color:#FDBA74; }
+        .dark-mode .cell-absent { background:#7F1D1D; color:#F87171; }
+        .dark-mode .cell-weekoff { background:#374151; color:#6B7280; }
+        .dark-mode .cell-onleave { background:#4C1D95; color:#C4B5FD; }
+        .dark-mode .cell-holiday { background:#701A75; color:#F0ABFC; }
+        .dark-mode .cell-wfh { background:#0C4A6E; color:#7DD3FC; }
+        .list-row { display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-bottom:1px dashed var(--border-light); }
+        .list-row:last-child { border-bottom:none; }
+        .list-row .grow { flex:1; min-width:0; }
+        .list-title { font-weight:600; font-size:0.88rem; color:var(--text-primary); }
+        .list-sub { font-size:0.76rem; color:var(--text-secondary); margin-top:3px; }
+        .mono { font-variant-numeric:tabular-nums; font-family:ui-monospace,Consolas,monospace; }
+        .empty { padding:22px; text-align:center; color:var(--text-secondary); font-size:0.85rem; }
+    </style>
+</head>
+<body>
+<div class="e360-wrap">
+    <div class="e360-top">
+        <a id="backLink" href="/admin/employees" class="btn btn-secondary" style="text-decoration:none;"><i class="fas fa-arrow-left"></i> Back</a>
+        <div class="e360-avatar" id="empAvatar">--</div>
+        <div style="flex:1;min-width:220px;">
+            <div class="e360-name" id="empName">Loading...</div>
+            <div class="e360-meta" id="empMeta"></div>
+        </div>
+        <div id="empStatus"></div>
+    </div>
+
+    <div class="e360-summary" id="empSummary"></div>
+
+    <div class="e360-tabs" id="empTabs">
+        <button class="e360-tab active" data-tab="overview">Overview</button>
+        <button class="e360-tab" data-tab="attendance">Attendance</button>
+        <button class="e360-tab" data-tab="logs">Work Logs</button>
+        <button class="e360-tab" data-tab="assignments">Assignments</button>
+        <button class="e360-tab" data-tab="leave">Leave &amp; WFH</button>
+        <button class="e360-tab" data-tab="projects">Projects</button>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+        <div class="card-header">
+            <h2 style="font-size:1.05rem;font-weight:600;"><i class="fas fa-chart-simple" style="color:var(--primary);margin-right:8px;"></i>Month</h2>
+            <div style="display:flex;gap:8px;">
+                <select id="monthSel" class="form-control" style="width:110px;"></select>
+                <select id="yearSel" class="form-control" style="width:100px;"></select>
+            </div>
+        </div>
+        <div style="padding:0 16px 16px;">
+            <div class="day-grid" id="dayGrid"></div>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:0.75rem;color:var(--text-secondary);">
+                <span><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#D1FAE5;margin-right:4px;"></span>Present</span>
+                <span><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#FEF3C7;margin-right:4px;"></span>Late</span>
+                <span><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#FED7AA;margin-right:4px;"></span>Half Day</span>
+                <span><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#EDE9FE;margin-right:4px;"></span>On Leave</span>
+                <span><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#E0F2FE;margin-right:4px;"></span>WFH</span>
+                <span><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#FEE2E2;margin-right:4px;"></span>Absent</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="e360-panel active" id="panel-overview"></div>
+    <div class="e360-panel" id="panel-attendance"></div>
+    <div class="e360-panel" id="panel-logs"></div>
+    <div class="e360-panel" id="panel-assignments"></div>
+    <div class="e360-panel" id="panel-leave"></div>
+    <div class="e360-panel" id="panel-projects"></div>
+</div>
+
+<script src="/js/auth.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    const pathParts = location.pathname.split('/').filter(Boolean);
+    const portal = pathParts[0] === 'manager' ? 'manager' : 'admin';
+    const empId = pathParts[2];
+    const isManagerPortal = portal === 'manager';
+
+    document.getElementById('backLink').href = isManagerPortal ? '/manager/my-team' : '/admin/employees';
+
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const STATUS_TEXT = {
+        present: 'Present', late: 'Late', 'half-day': 'Half Day', absent: 'Absent',
+        onleave: 'On Leave', weekoff: 'Week Off', holiday: 'Holiday', wfh: 'WFH', upcoming: '--'
+    };
+    const ASSIGN_STATUS = {
+        assigned: { text: 'Assigned', cls: 'badge-secondary' },
+        pending: { text: 'Pending approval', cls: 'badge-warning' },
+        in_progress: { text: 'In Progress', cls: 'badge-info' },
+        blocked: { text: 'Blocked', cls: 'badge-danger' },
+        completed: { text: 'Completed', cls: 'badge-success' },
+        cancelled: { text: 'Cancelled', cls: 'badge-secondary' }
+    };
+
+    let data = null;
+    let month = new Date().getMonth() + 1;
+    let year = new Date().getFullYear();
+
+    function esc(v) { return escapeHtml(v); }
+    function cellClass(status, leave) {
+        if (status === 'absent' && leave === true) return 'cell-onleave';
+        return 'cell-' + (status || 'upcoming');
+    }
+    function statusLabel(cell) {
+        if (!cell) return '--';
+        if (cell.status === 'absent' && cell.leave === true) return 'On Leave (LOP)';
+        return STATUS_TEXT[cell.status] || cell.status || '--';
+    }
+    function hours(checkIn, checkOut) {
+        if (!checkIn || !checkOut) return null;
+        const toMin = t => { const p = String(t).split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); };
+        const mins = toMin(checkOut) - toMin(checkIn);
+        return mins > 0 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : null;
+    }
+    function fmtTime(t) { return t ? String(t).slice(0, 5) : ''; }
+
+    function emptyBox(msg) {
+        return '<div class="empty"><i class="fas fa-inbox" style="font-size:1.4rem;margin-bottom:8px;display:block;color:var(--text-tertiary);"></i>' + esc(msg) + '</div>';
+    }
+
+    // ---------- tabs ----------
+    document.getElementById('empTabs').addEventListener('click', (e) => {
+        const btn = e.target.closest('.e360-tab');
+        if (!btn) return;
+        document.querySelectorAll('.e360-tab').forEach(b => b.classList.toggle('active', b === btn));
+        document.querySelectorAll('.e360-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + btn.dataset.tab));
+    });
+
+    // ---------- month / year pickers ----------
+    const monthSel = document.getElementById('monthSel');
+    const yearSel = document.getElementById('yearSel');
+    for (let i = 1; i <= 12; i++) {
+        const o = document.createElement('option');
+        o.value = i; o.textContent = MONTHS[i - 1];
+        if (i === month) o.selected = true;
+        monthSel.appendChild(o);
+    }
+    const thisYear = new Date().getFullYear();
+    for (let y = thisYear - 2; y <= thisYear + 1; y++) {
+        const o = document.createElement('option');
+        o.value = y; o.textContent = y;
+        if (y === year) o.selected = true;
+        yearSel.appendChild(o);
+    }
+    monthSel.addEventListener('change', () => { month = parseInt(monthSel.value, 10); load(); });
+    yearSel.addEventListener('change', () => { year = parseInt(yearSel.value, 10); load(); });
+
+    // ---------- load ----------
+    async function load() {
+        const res = await apiCall('/employees/' + encodeURIComponent(empId) + '/activity?month=' + month + '&year=' + year);
+        if (!res || !res.success) {
+            document.getElementById('empName').textContent = (res && res.message) || 'Could not load this employee';
+            return;
+        }
+        data = res;
+        renderHeader();
+        renderSummary();
+        renderDayGrid();
+        renderOverview();
+        renderAttendance();
+        renderLogs();
+        renderAssignments();
+        renderLeave();
+        renderProjects();
+    }
+
+    function renderHeader() {
+        const e = data.employee;
+        const name = ((e.first_name || '') + ' ' + (e.last_name || '')).trim();
+        document.getElementById('empName').textContent = name || e.employee_id;
+        document.getElementById('empAvatar').textContent = getInitials(e.first_name, e.last_name);
+        const bits = [];
+        if (e.employee_id) bits.push(esc(e.employee_id));
+        if (e.designation_name) bits.push(esc(e.designation_name));
+        if (e.department_name) bits.push(esc(e.department_name));
+        if (e.reporting_manager_name) bits.push('Reports to ' + esc(e.reporting_manager_name));
+        if (e.joining_date) bits.push('Joined ' + esc(e.joining_date));
+        if (e.email) bits.push(esc(e.email));
+        document.getElementById('empMeta').innerHTML = bits.join('<span></span>');
+        const st = String(e.status || '').toLowerCase();
+        const cls = st === 'active' ? 'badge-success' : (st === 'on_hold' ? 'badge-warning' : 'badge-danger');
+        document.getElementById('empStatus').innerHTML = '<span class="badge ' + cls + '">' + esc(e.status || '') + '</span>';
+    }
+
+    function renderSummary() {
+        const s = data.attendance.summary;
+        const c = data.assignments.counts;
+        const stats = [
+            ['Present', s.present, 'var(--success)'],
+            ['Late', s.late, 'var(--warning)'],
+            ['Half Day', s.halfDay, 'var(--accent)'],
+            ['On Leave', s.leave, '#6D28D9'],
+            ['WFH', s.wfh, '#0EA5E9'],
+            ['Absent', s.absent, 'var(--danger)'],
+            ['Open Work', c.open, 'var(--primary)'],
+            ['Completed', c.completed, 'var(--success)']
+        ];
+        document.getElementById('empSummary').innerHTML = stats.map(st2 =>
+            '<div class="e360-stat"><div class="num" style="color:' + st2[2] + '">' + (st2[1] || 0) + '</div><div class="lbl">' + st2[0] + '</div></div>'
+        ).join('');
+    }
+
+    function renderDayGrid() {
+        const cells = data.attendance.cells || {};
+        const days = data.period.days;
+        let html = '';
+        for (let d = 1; d <= days; d++) {
+            const cell = cells[d] || { status: 'upcoming' };
+            const times = cell.check_in ? fmtTime(cell.check_in) + (cell.check_out ? '-' + fmtTime(cell.check_out) : '') : '';
+            html += '<div class="day-cell ' + cellClass(cell.status, cell.leave) + '" title="' + esc(statusLabel(cell)) + (times ? ' · ' + esc(times) : '') + '">' +
+                '<div class="d">' + d + '</div>' +
+                '<div class="s">' + esc(statusLabel(cell)) + '</div>' +
+                (times ? '<div class="t mono">' + esc(times) + '</div>' : '') +
+                '</div>';
+        }
+        document.getElementById('dayGrid').innerHTML = html;
+    }
+
+    function renderOverview() {
+        const e = data.employee;
+        const c = data.assignments.counts;
+        const rows = [
+            ['Employee ID', e.employee_id],
+            ['Name', ((e.first_name || '') + ' ' + (e.last_name || '')).trim()],
+            ['Designation', e.designation_name || '-'],
+            ['Department', e.department_name || '-'],
+            ['Role', e.role],
+            ['Status', e.status],
+            ['Joined', e.joining_date || '-'],
+            ['Reporting manager', e.reporting_manager_name || '-'],
+            ['Secondary manager', e.secondary_reporting_manager_name || '-'],
+            ['Email', e.email || '-'],
+            ['Phone', e.phone || '-']
+        ];
+        let html = '<div class="card"><div class="card-header"><h2 style="font-size:1.05rem;font-weight:600;"><i class="fas fa-user" style="color:var(--primary);margin-right:8px;"></i>Profile</h2></div>' +
+            '<div style="padding:14px 16px;"><div class="detail-grid">';
+        rows.forEach(r => {
+            html += '<div class="detail-row"><span class="detail-label">' + esc(r[0]) + '</span><span class="detail-value">' +
+                (r[1] ? esc(r[1]) : '<span style="color:var(--text-tertiary);">-</span>') + '</span></div>';
+        });
+        html += '</div></div></div>';
+
+        html += '<div class="card" style="margin-top:14px;"><div class="card-header"><h2 style="font-size:1.05rem;font-weight:600;"><i class="fas fa-briefcase" style="color:var(--primary);margin-right:8px;"></i>Work</h2></div>' +
+            '<div style="padding:14px 16px;"><div class="detail-grid">' +
+            '<div class="detail-row"><span class="detail-label">Open assignments</span><span class="detail-value">' + (c.open || 0) + '</span></div>' +
+            '<div class="detail-row"><span class="detail-label">Blocked</span><span class="detail-value">' + (c.blocked || 0) + '</span></div>' +
+            '<div class="detail-row"><span class="detail-label">Completed</span><span class="detail-value">' + (c.completed || 0) + '</span></div>' +
+            '<div class="detail-row"><span class="detail-label">Cancelled</span><span class="detail-value">' + (c.cancelled || 0) + '</span></div>' +
+            '<div class="detail-row"><span class="detail-label">Daily work logs (recent)</span><span class="detail-value">' + (data.work_logs || []).length + '</span></div>' +
+            '<div class="detail-row"><span class="detail-label">Projects</span><span class="detail-value">' + (data.projects || []).length + '</span></div>' +
+            '</div></div></div>';
+
+        document.getElementById('panel-overview').innerHTML = html;
+    }
+
+    function renderAttendance() {
+        const recs = data.attendance.records || [];
+        if (!recs.length) {
+            document.getElementById('panel-attendance').innerHTML = '<div class="card">' + emptyBox('No attendance recorded yet.') + '</div>';
+            return;
+        }
+        let html = '<div class="card"><div class="card-header"><h2 style="font-size:1.05rem;font-weight:600;"><i class="fas fa-clock" style="color:var(--primary);margin-right:8px;"></i>Recent check-in / check-out details</h2>' +
+            '<span style="font-size:0.78rem;color:var(--text-secondary);">last ' + recs.length + ' record(s)</span></div><div style="padding:6px 16px 14px;">';
+        recs.forEach(r => {
+            const h = hours(r.check_in, r.check_out);
+            const loc = r.check_in_location && r.check_in_location.includes(',')
+                ? '<a href="https://www.google.com/maps?q=' + encodeURIComponent(r.check_in_location) + '" target="_blank" rel="noopener" style="color:var(--primary);"><i class="fas fa-map-marker-alt"></i></a>'
+                : (r.check_in_location ? '<span style="color:var(--text-tertiary);"><i class="fas fa-map-marker-alt"></i></span>' : '');
+            const photos = (r.photo_token || r.photo_token_checkout)
+                ? '<a class="btn btn-sm btn-info" href="/api/attendance/photo/' + encodeURIComponent(r.photo_token || r.photo_token_checkout) + '" target="_blank" rel="noopener" style="text-decoration:none;"><i class="fas fa-camera"></i></a>'
+                : '';
+            html += '<div class="list-row">' +
+                '<div style="width:86px;flex-shrink:0;" class="mono">' + esc(r.date || '') + '</div>' +
+                '<div class="grow">' +
+                '<div class="list-title">' +
+                '<span class="mono">' + (fmtTime(r.check_in) ? esc(fmtTime(r.check_in)) : '-') + '</span>' +
+                (r.check_out ? ' <i class="fas fa-arrow-right" style="font-size:0.65rem;color:var(--text-tertiary);"></i> <span class="mono">' + esc(fmtTime(r.check_out)) + '</span>' : '') +
+                (h ? ' <span style="color:var(--text-secondary);font-size:0.78rem;">(' + esc(h) + ')</span>' : '') +
+                '</div>' +
+                '<div class="list-sub">' +
+                '<span class="badge badge-' + (r.status === 'present' ? 'success' : r.status === 'absent' ? 'danger' : r.status === 'late' ? 'warning' : r.status === 'half-day' ? 'warning' : r.status === 'wfh' ? 'info' : 'secondary') + '">' + esc(STATUS_TEXT[r.status] || r.status || '-') + '</span>' +
+                (r.auto_checkout ? ' <span class="badge badge-warning">Auto check-out</span>' : '') +
+                (r.remarks ? ' <span>' + esc(r.remarks) + '</span>' : '') +
+                '</div></div>' +
+                '<div style="flex-shrink:0;display:flex;gap:6px;align-items:center;">' + loc + photos + '</div>' +
+                '</div>';
+        });
+        html += '</div></div>';
+        document.getElementById('panel-attendance').innerHTML = html;
+    }
+
+    function renderLogs() {
+        const logs = data.work_logs || [];
+        if (!logs.length) {
+            document.getElementById('panel-logs').innerHTML = '<div class="card">' + emptyBox('No daily work logged yet.') + '</div>';
+            return;
+        }
+        let html = '<div class="card"><div class="card-header"><h2 style="font-size:1.05rem;font-weight:600;"><i class="fas fa-pen-to-square" style="color:var(--primary);margin-right:8px;"></i>Daily work logs</h2>' +
+            '<span style="font-size:0.78rem;color:var(--text-secondary);">last ' + logs.length + '</span></div><div style="padding:6px 16px 14px;">';
+        logs.forEach(l => {
+            html += '<div class="list-row">' +
+                '<div style="width:86px;flex-shrink:0;" class="mono">' + esc(l.work_date || '') + '</div>' +
+                '<div class="grow"><div class="list-title">' + esc(l.title || '') + '</div>' +
+                (l.description ? '<div class="list-sub">' + esc(l.description) + '</div>' : '') +
+                '<div class="list-sub">' +
+                (l.project_name ? '<i class="fas fa-project-diagram"></i> ' + esc(l.project_name) + (l.unit_name ? ' / ' + esc(l.unit_name) : '') + ' ' : '') +
+                (l.assignment_title ? '<i class="fas fa-list-check"></i> ' + esc(l.assignment_title) : '') +
+                '</div></div></div>';
+        });
+        html += '</div></div>';
+        document.getElementById('panel-logs').innerHTML = html;
+    }
+
+    function renderAssignments() {
+        const a = data.assignments || { open: [], completed: [], counts: {} };
+        const open = a.open || [];
+        const done = a.completed || [];
+        const card = (title, icon, rows) => {
+            let h = '<div class="card" style="margin-bottom:14px;"><div class="card-header"><h2 style="font-size:1.05rem;font-weight:600;"><i class="fas fa-' + icon + '" style="color:var(--primary);margin-right:8px;"></i>' + title + '</h2>' +
+                '<span style="font-size:0.78rem;color:var(--text-secondary);">' + rows.length + '</span></div><div style="padding:6px 16px 14px;">';
+            if (!rows.length) return h + emptyBox('Nothing here.') + '</div></div>';
+            rows.forEach(x => {
+                const st = ASSIGN_STATUS[x.status] || { text: x.status, cls: 'badge-secondary' };
+                h += '<div class="list-row">' +
+                    '<div class="grow"><div class="list-title">' + esc(x.title || '') + '</div>' +
+                    '<div class="list-sub">' +
+                    '<span class="badge ' + st.cls + '">' + esc(st.text) + '</span> ' +
+                    (x.priority ? '<span class="badge badge-secondary">' + esc(x.priority) + '</span> ' : '') +
+                    (x.project_name ? '<i class="fas fa-project-diagram"></i> ' + esc(x.project_name) + (x.unit_name ? ' / ' + esc(x.unit_name) : '') : 'No project') +
+                    (x.due_date ? ' · due ' + esc(x.due_date) : '') +
+                    (x.blocked_reason ? ' · <span style="color:var(--danger);">' + esc(x.blocked_reason) + '</span>' : '') +
+                    '</div></div></div>';
+            });
+            return h + '</div></div>';
+        };
+        document.getElementById('panel-assignments').innerHTML =
+            card('Open work', 'list-check', open) + card('Completed', 'check-circle', done);
+    }
+
+    function renderLeave() {
+        const leave = data.leave || [];
+        const wfh = data.wfh || [];
+        const statusBadge = s => {
+            const cls = s === 'approved' ? 'success' : s === 'pending' ? 'warning' : s === 'rejected' ? 'danger' : 'secondary';
+            return '<span class="badge badge-' + cls + '">' + esc(s || '-') + '</span>';
+        };
+        let html = '<div class="card" style="margin-bottom:14px;"><div class="card-header"><h2 style="font-size:1.05rem;font-weight:600;"><i class="fas fa-calendar-times" style="color:var(--primary);margin-right:8px;"></i>Leave</h2></div><div style="padding:6px 16px 14px;">';
+        if (!leave.length) html += emptyBox('No leave applications.');
+        leave.forEach(l => {
+            html += '<div class="list-row"><div style="width:150px;flex-shrink:0;" class="mono">' + esc(l.start_date || '') + (l.end_date && l.end_date !== l.start_date ? ' → ' + esc(l.end_date) : '') + '</div>' +
+                '<div class="grow"><div class="list-sub">' + statusBadge(l.status) + (l.total_days ? ' ' + esc(l.total_days) + ' day(s)' : '') + (l.reason ? ' · ' + esc(l.reason) : '') + '</div></div></div>';
+        });
+        html += '</div></div>';
+
+        html += '<div class="card"><div class="card-header"><h2 style="font-size:1.05rem;font-weight:600;"><i class="fas fa-house" style="color:var(--primary);margin-right:8px;"></i>Work From Home</h2></div><div style="padding:6px 16px 14px;">';
+        if (!wfh.length) html += emptyBox('No WFH requests.');
+        wfh.forEach(w => {
+            html += '<div class="list-row"><div style="width:150px;flex-shrink:0;" class="mono">' + esc(w.start_date || '') + (w.end_date && w.end_date !== w.start_date ? ' → ' + esc(w.end_date) : '') + '</div>' +
+                '<div class="grow"><div class="list-sub">' + statusBadge(w.status) + (w.total_days ? ' ' + esc(w.total_days) + ' day(s)' : '') + (w.reason ? ' · ' + esc(w.reason) : '') + '</div></div></div>';
+        });
+        html += '</div></div>';
+        document.getElementById('panel-leave').innerHTML = html;
+    }
+
+    function renderProjects() {
+        const ps = data.projects || [];
+        if (!ps.length) {
+            document.getElementById('panel-projects').innerHTML = '<div class="card">' + emptyBox('Not assigned to any project.') + '</div>';
+            return;
+        }
+        let html = '<div class="card"><div class="card-header"><h2 style="font-size:1.05rem;font-weight:600;"><i class="fas fa-project-diagram" style="color:var(--primary);margin-right:8px;"></i>Projects</h2></div><div style="padding:6px 16px 14px;">';
+        ps.forEach(p => {
+            html += '<div class="list-row"><div class="grow"><div class="list-title">' + esc(p.name || '') + '</div>' +
+                '<div class="list-sub">' + (p.customer ? esc(p.customer) + ' · ' : '') +
+                '<span class="badge badge-secondary">' + esc(p.status || '-') + '</span>' +
+                (p.unit_name ? ' · <i class="fas fa-layer-group"></i> ' + esc(p.unit_name) : '') +
+                '</div></div></div>';
+        });
+        html += '</div></div>';
+        document.getElementById('panel-projects').innerHTML = html;
+    }
+
+    load();
+})();
+</script>
+</body>
+</html>

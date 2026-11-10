@@ -574,7 +574,8 @@
                     <td><span class="badge badge-${getStatusBadge(emp.status)}" title="${escapeHtml(holdTitle)}">${escapeHtml(emp.status)}${emp.status_reason ? '*' : ''}</span></td>
                     <td>
                         <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                            <button class="btn btn-sm btn-info" onclick="viewEmployee(${emp.id})" title="View"><i class="fas fa-eye"></i></button>
+                            <button class="btn btn-sm btn-info" onclick="viewEmployee(${emp.id})" title="View profile"><i class="fas fa-eye"></i></button>
+                            <a class="btn btn-sm btn-primary" href="/admin/employee/${emp.id}" title="Attendance, work logs, assignments"><i class="fas fa-chart-line"></i></a>
                             <button class="btn btn-sm btn-secondary" onclick="editEmployee(${emp.id})" title="Edit"><i class="fas fa-edit"></i></button>
                             ${isActive
                                 ? `<button class="btn btn-sm btn-warning" onclick="toggleEmployeeStatus(${emp.id}, 'inactive')" title="Deactivate"><i class="fas fa-pause-circle"></i></button>

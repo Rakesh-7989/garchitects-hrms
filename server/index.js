@@ -140,6 +140,15 @@ function servePortalPage(section) {
 app.get('/login', (req, res) => {
     res.sendFile(path.join(__dirname, '../public/pages/login.html'));
 });
+
+// Employee 360 - the per-employee drill-down (attendance with check-in/out
+// details, daily work logs, assignments open vs completed, leave/WFH, projects).
+// One page for both portals: the API decides what the viewer may see, so an
+// admin, a manager and an employee all land on the same screen with the data
+// their role allows.
+app.get(['/admin/employee/:id', '/manager/employee/:id'], (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/pages/employee-360.html'));
+});
 app.get('/manager/:page', servePortalPage('manager'));
 app.get('/employee/:page', servePortalPage('employee'));
 app.get('/admin/:page', servePortalPage('admin'));

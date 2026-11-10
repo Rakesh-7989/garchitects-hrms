@@ -11,6 +11,7 @@ const { notify, notifyMany, managerIdsOf } = require('../services/notify');
 const { getWorkWeekConfig, isWeekOff } = require('../utils/workWeek');
 const { runAutoCheckout } = require('../services/attendanceAutoCheckout');
 const { runWithSchemaRepair, pgErrorResponse } = require('../utils/schemaRepair');
+const { buildEmployeeMonthCells, summariseMonthCells } = require('../utils/attendanceMatrix');
 
 /**
  * Decode + validate an attendance camera photo (data URL). Returns
@@ -1120,61 +1121,13 @@ router.get('/monthly', verifyToken, isManager, async (req, res) => {
         const matrix = {};
         const today = new Date();
         today.setHours(0,0,0,0);
-        const keyLocal = (y,m,d) => fmtDateStr(y,m,d); // better for local comparison? but we have key; safer use date-fmt
         employees.rows.forEach(emp => {
-            matrix[emp.id] = {};
-            const empAtt = attMap[emp.id] || {};
-            for (let d = 1; d <= lastDay; d++) {
-                const date = new Date(year, month - 1, d);
-                const dayOfWeek = date.getDay();
-                const dateStr = key(emp.id, d);
-                const rec = empAtt[d] || null;
-                const leaveCls = (leaveClassByEmp[emp.id] || {})[dateStr];
-
-                if (date > today) {
-                    matrix[emp.id][d] = { status: 'upcoming', check_in: null, check_out: null };
-                } else if (dayOfWeek === wcfg.weekoffDay) {
-                    // Week off (the ONE configured weekly off day). An EXPLICIT
-                    // attendance record always wins (a real check-in, or a
-                    // weekoff an admin marked absent). With no record it shows
-                    // the default Week Off, or a leave day.
-                    if (rec) {
-                        matrix[emp.id][d] = rec;
-                    } else if (leaveCls) {
-                        matrix[emp.id][d] = { status: leaveCls === 'paid' ? 'onleave' : 'absent', check_in: null, check_out: null, leave: true };
-                    } else {
-                        matrix[emp.id][d] = { status: 'weekoff', check_in: null, check_out: null };
-                    }
-                } else if (holidaySet.has(dateStr)) {
-                    // Declared holiday: ALWAYS shown as H for everyone unless an
-                    // admin explicitly marked this holiday absent for this
-                    // employee (recognised by its remark) - then it shows A.
-                    const adminHolidayAbsent = rec && rec.status === 'absent' && /Admin marked holiday absent/.test(rec.remarks || '');
-                    if (adminHolidayAbsent) {
-                        matrix[emp.id][d] = { status: 'absent', check_in: null, check_out: null, remarks: rec.remarks || '', leave: false };
-                    } else if (leaveCls) {
-                        matrix[emp.id][d] = { status: leaveCls === 'paid' ? 'onleave' : 'absent', check_in: null, check_out: null, leave: true };
-                    } else {
-                        matrix[emp.id][d] = { status: 'holiday', check_in: null, check_out: null };
-                    }
-                } else if (leaveCls) {
-                    // Approved leave (paid within monthly quota, LOP beyond). An
-                    // auto-marked/back-filled 'absent' row must not shadow it.
-                    matrix[emp.id][d] = { status: leaveCls === 'paid' ? 'onleave' : 'absent', check_in: null, check_out: null, leave: true };
-                } else if (rec) {
-                    matrix[emp.id][d] = rec;
-                } else if (date.getTime() === today.getTime()) {
-                    // Today with no record yet is NOT an absence: the employee
-                    // may simply not have checked in (or is on the way). Keep
-                    // the cell neutral like future days so the admin/manager
-                    // grid doesn't show everyone "Absent" at 9 AM and inflate
-                    // the month's Absent count. The day only becomes absent
-                    // once it is over (the auto-absent backend's job).
-                    matrix[emp.id][d] = { status: 'upcoming', check_in: null, check_out: null };
-                } else {
-                    matrix[emp.id][d] = { status: 'absent', check_in: null, check_out: null };
-                }
-            }
+            matrix[emp.id] = buildEmployeeMonthCells({
+                year, month, days: lastDay,
+                attMap: attMap[emp.id] || {},
+                leaveClass: leaveClassByEmp[emp.id] || {},
+                holidaySet, wcfg, today
+            });
         });
 
         res.json({
