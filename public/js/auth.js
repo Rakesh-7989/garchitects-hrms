@@ -151,7 +151,7 @@ function showToast(message, type = 'success') {
 
 // API helper function
 async function apiCall(endpoint, method = 'GET', body = null, opts = null) {
-    const { timeoutMs, silent } = opts || {};
+    const { timeoutMs, silent, noRedirect } = opts || {};
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     
@@ -177,11 +177,17 @@ async function apiCall(endpoint, method = 'GET', body = null, opts = null) {
         const response = await fetch(`${API_URL}${endpoint}`, options);
         
         if (response.status === 401) {
-            const user = getCurrentUser();
-            const loginUrl = getLoginUrl(user);
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            window.location.href = loginUrl;
+            // noRedirect: the caller is doing an OPTIONAL check that is allowed
+            // to come back empty (e.g. the consent notice lookup on the login
+            // page, where nobody is logged in yet). Redirecting to the login
+            // page there would reload the page the user is already on.
+            if (!noRedirect) {
+                const user = getCurrentUser();
+                const loginUrl = getLoginUrl(user);
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = loginUrl;
+            }
             return null;
         }
         
@@ -347,6 +353,23 @@ function formatDate(dateString, options = {}) {
 // 05:29 IST.
 function getTodayIST() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+// Format a timestamp in IST for display (audit trail, activity feed).
+// Lives here - not in a single page - because both the admin dashboard's
+// "Recent Activity" panel and the audit-log page render timestamps, and a
+// page-local copy meant the dashboard threw a ReferenceError on every load.
+function formatIstTime(ts) {
+    if (!ts) return '—';
+    try {
+        return new Date(ts).toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        });
+    } catch (_) {
+        return String(ts);
+    }
 }
 
 // Escape HTML for both text and attribute contexts.
@@ -740,8 +763,15 @@ const CONSENT_NOTICES = [
 // Check whether the current user still has pending consent notices.
 // Returns the list of notices not yet acknowledged/granted by this user.
 async function checkConsentRequired() {
+    // Not signed in (login page): there are no consent records to read yet,
+    // and asking would only produce a pointless 401.
+    if (!localStorage.getItem('token')) return CONSENT_NOTICES.filter(n => n.required);
     try {
-        const res = await apiCall('/api/consent/mine', 'GET', null, { silent: true });
+        // apiCall already prefixes '/api' - passing '/api/consent/mine' built
+        // '/api/api/consent/mine' (404) and the check always fell back to the
+        // static list. noRedirect: an anonymous visitor on the login page must
+        // not be bounced to the login page by a 401.
+        const res = await apiCall('/consent/mine', 'GET', null, { silent: true, noRedirect: true });
         if (!res || !res.success) return CONSENT_NOTICES.filter(n => n.required);
         const existing = new Set((res.consent || []).map(c => c.notice_key + ':' + c.choice));
         return CONSENT_NOTICES.filter(n => {
@@ -788,27 +818,109 @@ function buildConsentModalBody(pending) {
     return html;
 }
 
+// The consent modals are linked from the footer of EVERY page ("Privacy
+// Policy" / "Manage Consent" / "Terms of Use"), but the markup only existed
+// on the login page and the employee profile - so on every other page the
+// link threw "Cannot set properties of null (setting 'innerHTML')".
+// The markup is injected on demand instead of being duplicated into ~30
+// pages, and the buttons are (re)bound here because nothing ever bound them:
+// "I Agree & Continue" did nothing on any page.
+const CONSENT_MODAL_HTML = `
+<div class="modal" id="consentModal" onclick="if(event.target===this) closeConsentModal()">
+    <div class="modal-content consent-modal" style="max-width:620px;">
+        <div class="modal-header">
+            <h2><i class="fas fa-shield-alt" style="color:var(--primary);margin-right:8px;"></i>Privacy &amp; Consent</h2>
+            <button class="modal-close" onclick="closeConsentModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="consentModalBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" id="consentBtnSkip" style="display:none;">Skip for now</button>
+            <button class="btn btn-secondary" id="consentBtnClose" style="display:none;">Close</button>
+            <button class="btn btn-primary" id="consentBtnConfirm">I Agree &amp; Continue</button>
+        </div>
+    </div>
+</div>`;
+
+const CONSENT_MANAGE_MODAL_HTML = `
+<div class="modal" id="consentManageModal" onclick="if(event.target===this) closeConsentManageModal()">
+    <div class="modal-content consent-modal" style="max-width:620px;">
+        <div class="modal-header">
+            <h2><i class="fas fa-user-shield" style="color:var(--primary);margin-right:8px;"></i>Manage Consent</h2>
+            <button class="modal-close" onclick="closeConsentManageModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="consentManageBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeConsentManageModal()">Close</button>
+        </div>
+    </div>
+</div>`;
+
+function injectConsentModal(id, html) {
+    if (document.getElementById(id)) return;
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    while (host.firstChild) document.body.appendChild(host.firstChild);
+}
+
+let consentModalsEnsured = false;
+function ensureConsentModals() {
+    injectConsentModal('consentModal', CONSENT_MODAL_HTML);
+    injectConsentModal('consentManageModal', CONSENT_MANAGE_MODAL_HTML);
+    // Make sure a Close button exists even on the pages that carry their own
+    // (older) markup without one.
+    const modal = document.getElementById('consentModal');
+    if (modal && !document.getElementById('consentBtnClose')) {
+        const footer = modal.querySelector('.modal-footer');
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-secondary';
+        btn.id = 'consentBtnClose';
+        btn.style.display = 'none';
+        btn.textContent = 'Close';
+        if (footer) footer.insertBefore(btn, footer.firstChild);
+    }
+    // Bind the actions (idempotent).
+    const confirmBtn = document.getElementById('consentBtnConfirm');
+    if (confirmBtn) confirmBtn.onclick = confirmConsents;
+    const skipBtn = document.getElementById('consentBtnSkip');
+    if (skipBtn) skipBtn.onclick = closeConsentModal;
+    const closeBtn = document.getElementById('consentBtnClose');
+    if (closeBtn) closeBtn.onclick = closeConsentModal;
+    consentModalsEnsured = true;
+}
+
 // Show the consent modal with pending notices.
 async function showConsentModal() {
-    const pending = await checkConsentRequired();
-    if (!pending || pending.length === 0) return;
+    ensureConsentModals();
+    const loggedIn = !!localStorage.getItem('token');
+    let pending = await checkConsentRequired();
+    if (!pending || pending.length === 0) {
+        if (loggedIn) return;
+        // Anonymous visitor (login page): there are no consent records to
+        // read yet, so show the notices read-only - nothing can be recorded
+        // before the user signs in.
+        pending = CONSENT_NOTICES.filter(n => n.required);
+        if (pending.length === 0) return;
+    }
     document.getElementById('consentModalBody').innerHTML = buildConsentModalBody(pending);
-    document.getElementById('consentBtnSkip').style.display = pending.every(n => !n.required) ? 'inline-block' : 'none';
-    document.getElementById('consentBtnConfirm').style.display = pending.some(n => n.required) ? 'inline-block' : 'inline-block';
+    document.getElementById('consentBtnSkip').style.display = (!loggedIn && pending.every(n => !n.required)) ? 'inline-block' : 'none';
+    document.getElementById('consentBtnConfirm').style.display = loggedIn ? 'inline-block' : 'none';
+    document.getElementById('consentBtnClose').style.display = loggedIn ? 'none' : 'inline-block';
     document.getElementById('consentModal').classList.add('active');
 }
 
 function closeConsentModal() {
-    document.getElementById('consentModal').classList.remove('active');
+    const m = document.getElementById('consentModal');
+    if (m) m.classList.remove('active');
 }
 
 function closeConsentManageModal() {
-    document.getElementById('consentManageModal').classList.remove('active');
+    const m = document.getElementById('consentManageModal');
+    if (m) m.classList.remove('active');
 }
 
 // Record consent for one notice.
 async function recordConsent(noticeKey, choice) {
-    const res = await apiCall('/api/consent/record', 'POST', {
+    const res = await apiCall('/consent/record', 'POST', {
         notice_key: noticeKey,
         notice_version: '1.0',
         purpose: CONSENT_NOTICES.find(n => n.key === noticeKey)?.purpose || '',
@@ -869,7 +981,12 @@ async function confirmConsents() {
 
 // Show consent management modal (view + withdraw).
 async function showConsentManageModal() {
-    const res = await apiCall('/api/consent/mine', 'GET', null, { silent: true });
+    ensureConsentModals();
+    if (!localStorage.getItem('token')) {
+        showToast('Sign in to manage your consent choices.', 'info');
+        return;
+    }
+    const res = await apiCall('/consent/mine', 'GET', null, { silent: true, noRedirect: true });
     if (!res || !res.success) {
         showToast('Could not load consent records.', 'error');
         return;

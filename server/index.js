@@ -658,7 +658,7 @@ async function runMigrations() {
             user_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
             notice_key VARCHAR(100) NOT NULL,
             notice_version VARCHAR(50) NOT NULL,
-            purpose VARCHAR(100) NOT NULL,
+            purpose TEXT NOT NULL,
             choice VARCHAR(20) NOT NULL CHECK (choice IN ('granted', 'declined', 'withdrawn', 'acknowledged')),
             timestamp TIMESTAMP DEFAULT NOW(),
             method VARCHAR(50),
@@ -666,6 +666,11 @@ async function runMigrations() {
             locale VARCHAR(10),
             withdrawal_timestamp TIMESTAMP
         )`);
+        // The purpose is a full privacy-notice paragraph (300+ chars). It was
+        // VARCHAR(100), so every consent record INSERT failed with Postgres
+        // 22001 ("value too long") and the consent gate could never be
+        // satisfied. Widen it - idempotent, no data loss.
+        await query(`ALTER TABLE consent_records ALTER COLUMN purpose TYPE TEXT`);
         await query(`CREATE INDEX IF NOT EXISTS idx_consent_records_user ON consent_records(user_id)`);
         await query(`CREATE INDEX IF NOT EXISTS idx_consent_records_notice ON consent_records(notice_key, notice_version)`);
         console.log('[Migration] consent_records table ensured.');

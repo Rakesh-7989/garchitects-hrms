@@ -350,7 +350,7 @@ CREATE TABLE IF NOT EXISTS consent_records (
     user_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
     notice_key VARCHAR(100) NOT NULL,
     notice_version VARCHAR(50) NOT NULL,
-    purpose VARCHAR(100) NOT NULL,
+    purpose TEXT NOT NULL,
     choice VARCHAR(20) NOT NULL CHECK (choice IN ('granted', 'declined', 'withdrawn', 'acknowledged')),
     timestamp TIMESTAMP DEFAULT NOW(),
     method VARCHAR(50),

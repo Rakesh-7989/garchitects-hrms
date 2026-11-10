@@ -350,7 +350,7 @@
             
             // Load consent records
             try {
-                const consentRes = await apiCall('/api/consent/mine', 'GET', null, { silent: true });
+                const consentRes = await apiCall('/consent/mine', 'GET', null, { silent: true });
                 if (consentRes && consentRes.success && consentRes.consent && consentRes.consent.length > 0) {
                     let consentHtml = '<div class="detail-grid">';
                     consentRes.consent.forEach(c => {

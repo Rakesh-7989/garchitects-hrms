@@ -155,6 +155,24 @@ themself; do not expand the guard to them without an owner decision.
 
 ## 11. Current state (update this as work ships)
 
+- **Consent gate repaired + admin dashboard errors fixed (2026-11-10):** while browser-testing
+  the attendance matrix, the admin dashboard threw **3 JS errors on every load** — and chasing
+  them exposed **4 pre-existing defects that had disabled the whole consent feature**: the
+  client called `apiCall('/api/consent/mine')` while `apiCall` already prefixes `/api` (→ 404
+  `/api/api/…`); the consent modal markup existed on only 2 of ~35 pages (footer link threw a
+  TypeError everywhere else); the "I Agree & Continue" / "Skip" buttons were **never bound**
+  (so consent could not be recorded at all); and `consent_records.purpose` was `VARCHAR(100)`
+  while a notice purpose is 300+ chars (→ every insert failed with Postgres 22001). **Shipped:**
+  `formatIstTime` moved to the shared `auth.js` (the "Recent Activity" feed renders again);
+  `apiCall({noRedirect})` so an optional check can't bounce the user to the login page; the
+  consent modals are **injected on demand** and the buttons bound; anonymous visitors get a
+  read-only notice modal instead of a redirect; `purpose` → `TEXT` on all three schema layers
+  (+ idempotent ALTER on boot); `sw.js` v19 → v20 (auth.js is cache-first). **QA:** new
+  `scripts/qa-consent-ui.cjs` **19/19** (client + schema + API contract) wired into the
+  commander; full hermetic `npm run qa` **92/92**; `qa:inline` 39/39; verified in Chromium
+  (0 console errors, consent recorded, "Manage Consent" lists it). See
+  `docs/FEATURE_CONSENT_UI_FIX.md`.
+
 - **Attendance matrix: click-a-date now opens the day editor (2026-11-10):** the admin
   month matrix used to **silently flip Present <-> Absent on a left click** (wiping the
   remarks and replacing the check-in with the office start) — a destructive default on a

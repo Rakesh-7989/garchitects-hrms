@@ -307,6 +307,7 @@ const HARNESSES = [
     ['scripts/qa-runtime-errors.cjs', 'live runtime errors (dateOnly / team-updates / audit-log)'],
     ['scripts/qa-auth-flows.cjs', 'auth flows (forgot/reset OTP, token_version revocation)'],
     ['scripts/qa-cron.cjs', 'cron endpoints (fail-closed + real side effects + liveness heartbeat)', { env: { CRON_SECRET: QA_CRON_SECRET, QA_CRON_SECRET } }],
+    ['scripts/qa-consent-ui.cjs', 'consent records + consent UI contract'],
     ['scripts/qa-wfh-tickets.cjs', 'wfh + tickets apply/approve flows'],
 ];
 async function runHarness(script, label, stage = 'regression', envOverrides = {}) {
